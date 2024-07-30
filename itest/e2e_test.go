@@ -18,24 +18,25 @@ import (
 	"testing"
 	"time"
 
-	btcctypes "github.com/babylonchain/babylon/x/btccheckpoint/types"
+	"github.com/babylonlabs-io/babylon/crypto/bip322"
+	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
-	staking "github.com/babylonchain/babylon/btcstaking"
-	txformat "github.com/babylonchain/babylon/btctxformatter"
-	"github.com/babylonchain/babylon/testutil/datagen"
-	bbntypes "github.com/babylonchain/babylon/types"
-	btcstypes "github.com/babylonchain/babylon/x/btcstaking/types"
-	ckpttypes "github.com/babylonchain/babylon/x/checkpointing/types"
-	"github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/metrics"
-	"github.com/babylonchain/btc-staker/proto"
-	"github.com/babylonchain/btc-staker/staker"
-	"github.com/babylonchain/btc-staker/stakercfg"
-	service "github.com/babylonchain/btc-staker/stakerservice"
-	dc "github.com/babylonchain/btc-staker/stakerservice/client"
-	"github.com/babylonchain/btc-staker/types"
-	"github.com/babylonchain/btc-staker/utils"
-	"github.com/babylonchain/btc-staker/walletcontroller"
+	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
+	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/types"
+	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	ckpttypes "github.com/babylonlabs-io/babylon/x/checkpointing/types"
+	"github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/metrics"
+	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/staker"
+	"github.com/babylonlabs-io/btc-staker/stakercfg"
+	service "github.com/babylonlabs-io/btc-staker/stakerservice"
+	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
+	"github.com/babylonlabs-io/btc-staker/types"
+	"github.com/babylonlabs-io/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -293,7 +294,7 @@ func StartManager(
 	err = walletClient.UnlockWallet(20)
 	require.NoError(t, err)
 
-	walletPrivKey, err := walletClient.DumpPrivateKey(minerAddressDecoded)
+	walletPrivKey, err := c.DumpPrivKey(minerAddressDecoded)
 	require.NoError(t, err)
 
 	interceptor, err := signal.Intercept()
@@ -333,7 +334,7 @@ func StartManager(
 		Db:               dbbackend,
 		Sa:               stakerApp,
 		BabylonClient:    bl,
-		WalletPrivKey:    walletPrivKey,
+		WalletPrivKey:    walletPrivKey.PrivKey,
 		MinerAddr:        minerAddressDecoded,
 		serverStopper:    &interceptor,
 		wg:               &wg,
@@ -1531,6 +1532,32 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	_, status, err := wc.TxDetails(txHash, payScript)
 	require.NoError(t, err)
 	require.Equal(t, walletcontroller.TxInChain, status)
+}
+
+func TestBitcoindWalletBip322Signing(t *testing.T) {
+	h := NewBitcoindHandler(t)
+	h.Start()
+	passphrase := "pass"
+
+	_ = h.CreateWallet("test-wallet", passphrase)
+	cfg, c := defaultStakerConfig(t, passphrase)
+
+	segwitAddress, err := c.GetNewAddress("")
+	require.NoError(t, err)
+
+	controller, err := walletcontroller.NewRpcWalletController(cfg)
+	require.NoError(t, err)
+
+	err = controller.UnlockWallet(30)
+	require.NoError(t, err)
+
+	msg := []byte("test message")
+
+	bip322Signature, err := controller.SignBip322NativeSegwit(msg, segwitAddress)
+	require.NoError(t, err)
+
+	err = bip322.Verify(msg, bip322Signature, segwitAddress, regtestParams)
+	require.NoError(t, err)
 }
 
 func TestSendingStakingTransaction_Restaking(t *testing.T) {

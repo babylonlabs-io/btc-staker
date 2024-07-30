@@ -4,9 +4,9 @@ import (
 	"context"
 	"strconv"
 
-	"github.com/babylonchain/btc-staker/cmd/stakercli/helpers"
-	scfg "github.com/babylonchain/btc-staker/stakercfg"
-	dc "github.com/babylonchain/btc-staker/stakerservice/client"
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
+	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
+	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
 	"github.com/urfave/cli"
 )
 

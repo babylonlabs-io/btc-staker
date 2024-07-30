@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/babylonchain/btc-staker/types"
+	"github.com/babylonlabs-io/btc-staker/types"
 	"go.uber.org/zap"
 
 	"github.com/btcsuite/btcd/btcutil"

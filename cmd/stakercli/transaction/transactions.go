@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/babylonchain/babylon/btcstaking"
-	bbn "github.com/babylonchain/babylon/types"
-	"github.com/babylonchain/networks/parameters/parser"
+	"github.com/babylonlabs-io/babylon/btcstaking"
+	bbn "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -19,8 +19,8 @@ import (
 	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 
-	"github.com/babylonchain/btc-staker/cmd/stakercli/helpers"
-	"github.com/babylonchain/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
+	"github.com/babylonlabs-io/btc-staker/utils"
 )
 
 const (
