@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "github.com/babylonchain/btc-staker/proto";
+option go_package = "github.com/babylonlabs-io/btc-staker/proto";
 
 enum TransactionState {
     SENT_TO_BTC = 0;

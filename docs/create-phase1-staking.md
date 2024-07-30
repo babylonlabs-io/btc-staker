@@ -1,7 +1,7 @@
 # Creating and Submitting phase-1 Staking Transactions
 
 The phase-1 staking transaction is a
-[Bitcoin Staking transaction](https://github.com/babylonchain/babylon/blob/v0.9.0-rc.3/docs/staking-script.md)
+[Bitcoin Staking transaction](https://github.com/babylonlabs-io/babylon/blob/v0.9.0-rc.3/docs/staking-script.md)
 that includes an additional `OP_RETURN` field containing the staking parameters
 to enable for easy identification and taproot decoding through observing the
 Bitcoin ledger.
@@ -99,7 +99,7 @@ is the BTC staker public key in hex format.
 
 The binary `stakercli` will be used to generate the transaction using
 the `transaction create-phase1-staking-transaction-with-params` command.
-The only argument for this command is the path to the `global-params.json` 
+The only argument for this command is the path to the `global-params.json`
 downloaded from https://github.com/babylonchain/networks/blob/main/bbn-test-4/parameters/global-params.json (for testnet-4).
 Note that one should always use the latest global parameter file.
 
@@ -132,7 +132,7 @@ stakercli transaction create-phase1-staking-transaction-with-params [fullpath/to
 ```
 
 For advanced usage, one can use `stakercli transaction create-phase1-staking-transaction`
-to specify customized global parameters but should only be used for testing purpose. 
+to specify customized global parameters but should only be used for testing purpose.
 
 ## Fund Raw Transaction
 
@@ -191,7 +191,7 @@ It outputs whether the staking transaction is valid and the parsed staking data 
 stakercli transaction check-phase1-staking-transaction-params [fullpath/to/parameters.json] \
   --staking-transaction 02000000000101a252eb96c7945fc03e17aa2c135c130cf3a497bff1c5f99845bf69194788e4c80200000000fdffffff03404b4c00000000002251205e405197f52aa158a8bc3372d6569ec95abc069e93565c1588d4552173cbedb50000000000000000496a476262743400363c51c11532a48aa765f5e7d4225db68dcc530f374007354de6c0e13eb86399d23c2c25e1fcf8fd1c21b9a402c19e2e309e531e45e92fb1e9805b6056b0cc76fa00476d3800000000002251209e8ceac88cae40c4749f6d67e76509414bd4e55924b38e9e34205e41fbf93a7b0140d6d2bbb60484154f687a4f3b592b6e3f3a0abd788c3bd813d09a8d47712822854e933be6bb5b384db1b0918781582dd6d35ebd9b4d45d0f55ff9c1ab128ffd0ad80f0300 \
   --network signet
-  
+
 {
     "is_valid": true,
     "staking_data": {

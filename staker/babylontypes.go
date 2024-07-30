@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	cl "github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/stakerdb"
-	"github.com/babylonchain/btc-staker/utils"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"

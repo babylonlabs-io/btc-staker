@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	service "github.com/babylonchain/btc-staker/stakerservice"
+	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 

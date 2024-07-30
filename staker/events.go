@@ -1,7 +1,7 @@
 package staker
 
 import (
-	cl "github.com/babylonchain/btc-staker/babylonclient"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"

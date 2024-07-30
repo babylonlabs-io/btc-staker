@@ -1,8 +1,8 @@
-module github.com/babylonchain/vigilante/tools
+module github.com/babylonlabs-io/btc-staker/tools
 
 go 1.22.3
 
-require github.com/babylonchain/babylon v0.9.0-rc.3
+require github.com/babylonlabs-io/babylon v0.9.0
 
 require (
 	cloud.google.com/go v0.112.0 // indirect
@@ -218,8 +218,6 @@ require (
 )
 
 replace (
-	github.com/cosmos/ibc-go/v7 => github.com/babylonchain/ibc-go/v7 v7.0.0-20230324085744-4d6a0d2c0fcf
-
 	// Downgraded to stable version see: https://github.com/cosmos/cosmos-sdk/pull/14952
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )

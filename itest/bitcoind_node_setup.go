@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/babylonchain/btc-staker/itest/containers"
+	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/stretchr/testify/require"
 )
 

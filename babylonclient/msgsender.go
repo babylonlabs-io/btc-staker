@@ -9,7 +9,7 @@ import (
 	pv "github.com/cosmos/relayer/v2/relayer/provider"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/babylonchain/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/sirupsen/logrus"
 )
