@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	cmdadmin "github.com/babylonchain/btc-staker/cmd/stakercli/admin"
-	cmddaemon "github.com/babylonchain/btc-staker/cmd/stakercli/daemon"
-	cmdtx "github.com/babylonchain/btc-staker/cmd/stakercli/transaction"
+	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
+	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
+	cmdtx "github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
 	"github.com/urfave/cli"
 )
 

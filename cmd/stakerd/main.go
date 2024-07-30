@@ -6,10 +6,10 @@ import (
 	"os"
 	"runtime/pprof"
 
-	"github.com/babylonchain/btc-staker/metrics"
-	staker "github.com/babylonchain/btc-staker/staker"
-	scfg "github.com/babylonchain/btc-staker/stakercfg"
-	service "github.com/babylonchain/btc-staker/stakerservice"
+	"github.com/babylonlabs-io/btc-staker/metrics"
+	staker "github.com/babylonlabs-io/btc-staker/staker"
+	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
+	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lightningnetwork/lnd/signal"

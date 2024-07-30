@@ -12,11 +12,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	bbn "github.com/babylonchain/babylon/types"
-	"github.com/babylonchain/networks/parameters/parser"
+	bbn "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/networks/parameters/parser"
 
-	"github.com/babylonchain/babylon/btcstaking"
-	"github.com/babylonchain/babylon/testutil/datagen"
+	"github.com/babylonlabs-io/babylon/btcstaking"
+	"github.com/babylonlabs-io/babylon/testutil/datagen"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -27,10 +27,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 
-	cmdadmin "github.com/babylonchain/btc-staker/cmd/stakercli/admin"
-	cmddaemon "github.com/babylonchain/btc-staker/cmd/stakercli/daemon"
-	"github.com/babylonchain/btc-staker/cmd/stakercli/transaction"
-	"github.com/babylonchain/btc-staker/utils"
+	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
+	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
+	"github.com/babylonlabs-io/btc-staker/utils"
 )
 
 const (

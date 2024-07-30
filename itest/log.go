@@ -4,7 +4,7 @@
 package e2etest
 
 import (
-	"github.com/babylonchain/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakercfg"
 )
 
 var (

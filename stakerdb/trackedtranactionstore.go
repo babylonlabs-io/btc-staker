@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/babylonchain/btc-staker/proto"
-	"github.com/babylonchain/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
