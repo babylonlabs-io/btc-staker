@@ -3,9 +3,9 @@ package staker
 import (
 	"fmt"
 
-	"github.com/babylonchain/btc-staker/types"
+	"github.com/babylonlabs-io/btc-staker/types"
 
-	scfg "github.com/babylonchain/btc-staker/stakercfg"
+	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"

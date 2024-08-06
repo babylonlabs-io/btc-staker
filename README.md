@@ -57,10 +57,10 @@ Please update the following configurations in the provided file:
    and this [link](https://github.com/bitcoin/bitcoin/pull/28597).
 4. If you want to enable remote connections to the node, you can add
    `rpcallowip=0.0.0.0/0` and `rpcbind=0.0.0.0` to the bitcoind command.
-5. Start the `bitcoind` with `-txindex` option to make sure btc-staker can get 
+5. Start the `bitcoind` with `-txindex` option to make sure btc-staker can get
    all needed bitcoin transaction data.
 
-```bash 
+```bash
 # Create the service file
 sudo tee /etc/systemd/system/bitcoind.service >/dev/null <<EOF
 [Unit]
@@ -228,7 +228,7 @@ command
      getwalletinfo
     ```
    The output should be similar to this and the `format` should be `bdb`:
-   ```bash  
+   ```bash
    {
      "walletname": "btcstaker",
      "walletversion": 169900,
@@ -276,11 +276,11 @@ sudo apt install build-essential
 To get started, clone the repository to your local machine from Github:
 
 ```bash
-git clone https://github.com/babylonchain/btc-staker.git
+git clone https://github.com/babylonlabs-io/btc-staker.git
 ```
 
 You can choose a specific version from
-the [official releases page](https://github.com/babylonchain/btc-staker/releases)
+the [official releases page](https://github.com/babylonlabs-io/btc-staker/releases)
 
 ```bash
 cd btc-staker # cd into the project directory
@@ -379,7 +379,7 @@ In the following, we go through important parameters of the `stakerd.conf` file.
 Key = btc-staker
 
 # Chain id of the chain (Babylon)
-ChainID = bbn-test-3
+ChainID = bbn-test
 
 # Address of the chain's RPC server (Babylon)
 RPCAddr = http://localhost:26657

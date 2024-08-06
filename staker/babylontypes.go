@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	cl "github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/stakerdb"
-	"github.com/babylonchain/btc-staker/utils"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -39,7 +39,12 @@ func (app *StakerApp) buildOwnedDelegation(
 
 	slashingFee := app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat)
 
-	slashingTx, slashingTxSig, err := buildSlashingTxAndSig(slashingFee, externalData, storedTx, app.network)
+	stakingSlashingTx, stakingSlashingSpendInfo, err := slashingTxForStakingTx(
+		slashingFee,
+		externalData,
+		storedTx,
+		app.network,
+	)
 	if err != nil {
 		// This is truly unexpected, most probably programming error we have
 		// valid and btc confirmed staking transacion, but for some reason we cannot
@@ -55,9 +60,9 @@ func (app *StakerApp) buildOwnedDelegation(
 	// in case of estimation failure (25 sat/byte)
 	unbondingTxFeeRatePerKb := btcutil.Amount(app.feeEstimator.EstimateFeePerKb())
 
-	undelegationData, err := createUndelegationData(
+	undelegationDesc, err := createUndelegationData(
 		storedTx,
-		externalData.stakerPrivKey,
+		externalData.stakerPublicKey,
 		externalData.babylonParams.CovenantPks,
 		externalData.babylonParams.CovenantQuruomThreshold,
 		externalData.babylonParams.SlashingAddress,
@@ -74,16 +79,46 @@ func (app *StakerApp) buildOwnedDelegation(
 		return nil, fmt.Errorf("error creating undelegation data: %w", err)
 	}
 
+	stakingSlashingSig, err := app.signTaprootScriptSpendUsingWallet(
+		stakingSlashingTx,
+		storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex],
+		stakerAddress,
+		&stakingSlashingSpendInfo.RevealedLeaf,
+		&stakingSlashingSpendInfo.ControlBlock,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error signing slashing transaction for staking transaction: %w", err)
+	}
+
+	unbondingSlashingSig, err := app.signTaprootScriptSpendUsingWallet(
+		undelegationDesc.SlashUnbondingTransaction,
+		undelegationDesc.UnbondingTransaction.TxOut[0],
+		stakerAddress,
+		&undelegationDesc.SlashUnbondingTransactionSpendInfo.RevealedLeaf,
+		&undelegationDesc.SlashUnbondingTransactionSpendInfo.ControlBlock,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error signing slashing transaction for unbonding transaction: %w", err)
+	}
+
 	dg := createDelegationData(
-		externalData.stakerPrivKey.PubKey(),
+		externalData.stakerPublicKey,
 		req.inclusionBlock,
 		req.txIndex,
 		storedTx,
-		slashingTx,
-		slashingTxSig,
-		externalData.babylonPubKey,
+		stakingSlashingTx,
+		stakingSlashingSig,
+		externalData.babylonStakerAddr,
 		stakingTxInclusionProof,
-		undelegationData,
+		&cl.UndelegationData{
+			UnbondingTransaction:         undelegationDesc.UnbondingTransaction,
+			UnbondingTxValue:             undelegationDesc.UnbondingTxValue,
+			UnbondingTxUnbondingTime:     undelegationDesc.UnbondingTxUnbondingTime,
+			SlashUnbondingTransaction:    undelegationDesc.SlashUnbondingTransaction,
+			SlashUnbondingTransactionSig: unbondingSlashingSig,
+		},
 	)
 
 	return dg, nil
@@ -124,7 +159,7 @@ func (app *StakerApp) buildDelegation(
 			storedTx,
 			watchedData.SlashingTx,
 			watchedData.SlashingTxSig,
-			watchedData.StakerBabylonPubKey,
+			watchedData.StakerBabylonAddr,
 			stakingTxInclusionProof,
 			&undelegationData,
 		)

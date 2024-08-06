@@ -2,7 +2,7 @@ DOCKER = $(shell which docker)
 BUILDDIR ?= $(CURDIR)/build
 TOOLS_DIR := tools
 
-BABYLON_PKG := github.com/babylonchain/babylon/cmd/babylond
+BABYLON_PKG := github.com/babylonlabs-io/babylon/cmd/babylond
 
 GO_BIN := ${GOPATH}/bin
 
@@ -42,7 +42,7 @@ $(BUILDDIR)/:
 	mkdir -p $(BUILDDIR)/
 
 build-docker:
-	$(DOCKER) build --secret id=sshKey,src=${BBN_PRIV_DEPLOY_KEY} --tag babylonchain/btc-staker -f Dockerfile \
+	$(DOCKER) build --secret id=sshKey,src=${BBN_PRIV_DEPLOY_KEY} --tag babylonlabs-io/btc-staker -f Dockerfile \
 		$(shell git rev-parse --show-toplevel)
 
 .PHONY: build build-docker

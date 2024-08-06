@@ -8,19 +8,18 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/avast/retry-go/v4"
+	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/metrics"
+	"github.com/babylonlabs-io/btc-staker/proto"
+	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/btc-staker/types"
+	"github.com/babylonlabs-io/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	pv "github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
-
-	"github.com/avast/retry-go/v4"
-	staking "github.com/babylonchain/babylon/btcstaking"
-	cl "github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/metrics"
-	"github.com/babylonchain/btc-staker/proto"
-	scfg "github.com/babylonchain/btc-staker/stakercfg"
-	"github.com/babylonchain/btc-staker/stakerdb"
-	"github.com/babylonchain/btc-staker/types"
-	"github.com/babylonchain/btc-staker/utils"
-	"github.com/babylonchain/btc-staker/walletcontroller"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -31,7 +30,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/wallet/txrules"
 	"github.com/cometbft/cometbft/crypto/tmhash"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/kvdb"
@@ -40,10 +39,10 @@ import (
 )
 
 type externalDelegationData struct {
-	// stakerPrivKey needs to be retrieved from btc wallet
-	stakerPrivKey *btcec.PrivateKey
-	// babylonPubKey needs to be retrieved from babylon keyring
-	babylonPubKey *secp256k1.PubKey
+	// babylonStakerAddr the bech32 bbn address to receive staking rewards.
+	babylonStakerAddr sdk.AccAddress
+	// stakerPublicKey the public key of the staker.
+	stakerPublicKey *btcec.PublicKey
 	// params retrieved from babylon
 	babylonParams *cl.StakingParams
 }
@@ -769,37 +768,22 @@ func (app *StakerApp) mustBuildInclusionProof(req *sendDelegationRequest) []byte
 	return proof
 }
 
-func (app *StakerApp) stakerPrivateKey(stakerAddress btcutil.Address) (*btcec.PrivateKey, error) {
-	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
-
-	if err != nil {
-		return nil, err
-	}
-
-	privkey, err := app.wc.DumpPrivateKey(stakerAddress)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return privkey, nil
-}
-
 func (app *StakerApp) retrieveExternalDelegationData(stakerAddress btcutil.Address) (*externalDelegationData, error) {
 	params, err := app.babylonClient.Params()
 	if err != nil {
 		return nil, err
 	}
 
-	stakerPrivKey, err := app.stakerPrivateKey(stakerAddress)
+	stakerPublicKey, err := app.wc.AddressPublicKey(stakerAddress)
+
 	if err != nil {
 		return nil, err
 	}
 
 	return &externalDelegationData{
-		stakerPrivKey: stakerPrivKey,
-		babylonPubKey: app.babylonClient.GetPubKey(),
-		babylonParams: params,
+		babylonStakerAddr: app.babylonClient.GetKeyAddress(),
+		stakerPublicKey:   stakerPublicKey,
+		babylonParams:     params,
 	}, nil
 }
 
@@ -809,7 +793,8 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 	storedTx *stakerdb.StoredTransaction,
 	unbondingData *stakerdb.UnbondingStoreData,
 ) error {
-	privkey, err := app.stakerPrivateKey(stakerAddress)
+
+	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddress)
 
 	if err != nil {
 		app.logger.WithFields(logrus.Fields{
@@ -826,8 +811,8 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		return err
 	}
 
-	witness, err := createWitnessToSendUnbondingTx(
-		privkey,
+	unbondingSpendInfo, err := buildUnbondingSpendInfo(
+		stakerPubKey,
 		storedTx,
 		unbondingData,
 		params,
@@ -839,7 +824,37 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		app.logger.WithFields(logrus.Fields{
 			"stakingTxHash": stakingTxHash,
 			"err":           err,
-		}).Fatalf("Failed to create witness to send unbonding tx to btc")
+		}).Fatalf("failed to create necessary spend info to send unbonding tx")
+	}
+
+	stakerUnbondingSig, err := app.signTaprootScriptSpendUsingWallet(
+		unbondingData.UnbondingTx,
+		storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex],
+		stakerAddress,
+		&unbondingSpendInfo.RevealedLeaf,
+		&unbondingSpendInfo.ControlBlock,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to send unbondingtx. wallet signing error: %w", err)
+	}
+
+	covenantSigantures := createWitnessSignaturesForPubKeys(
+		params.CovenantPks,
+		unbondingData.CovenantSignatures,
+	)
+
+	witness, err := unbondingSpendInfo.CreateUnbondingPathWitness(
+		covenantSigantures,
+		stakerUnbondingSig,
+	)
+
+	if err != nil {
+		// we panic here, as our data should be correct at this point
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Fatalf("failed to build witness from correct data")
 	}
 
 	unbondingTx := unbondingData.UnbondingTx
@@ -1098,7 +1113,7 @@ func (app *StakerApp) handleStakingEvents() {
 					ev.stakerAddress,
 					ev.watchTxData.slashingTx,
 					ev.watchTxData.slashingTxSig,
-					ev.watchTxData.stakerBabylonPubKey,
+					ev.watchTxData.stakerBabylonAddr,
 					ev.watchTxData.stakerBtcPk,
 					ev.watchTxData.unbondingTx,
 					ev.watchTxData.slashUnbondingTx,
@@ -1274,44 +1289,6 @@ func (app *StakerApp) BabylonController() cl.BabylonClient {
 	return app.babylonClient
 }
 
-// Generate proof of possessions for staker address.
-// Requires btc wallet to be unlocked!
-func (app *StakerApp) generatePop(stakerPrivKey *btcec.PrivateKey) (*cl.BabylonPop, error) {
-	// build proof of possession, no point moving forward if staker does not have all
-	// the necessary keys
-	stakerKey := stakerPrivKey.PubKey()
-
-	encodedPubKey := schnorr.SerializePubKey(stakerKey)
-
-	babylonSig, err := app.babylonClient.Sign(
-		encodedPubKey,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	babylonSigHash := tmhash.Sum(babylonSig)
-
-	btcSig, err := schnorr.Sign(stakerPrivKey, babylonSigHash)
-
-	if err != nil {
-		return nil, err
-	}
-
-	pop, err := cl.NewBabylonPop(
-		cl.SchnorrType,
-		babylonSig,
-		btcSig.Serialize(),
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate pop: %w", err)
-	}
-
-	return pop, nil
-}
-
 func GetMinStakingTime(p *cl.StakingParams) uint32 {
 	// Actual minimum staking time in babylon is k+w, but setting it to that would
 	// result in delegation which have voting power for 0 btc blocks.
@@ -1328,7 +1305,7 @@ func (app *StakerApp) WatchStaking(
 	fpPks []*btcec.PublicKey,
 	slashingTx *wire.MsgTx,
 	slashingTxSig *schnorr.Signature,
-	stakerBabylonPk *secp256k1.PubKey,
+	stakerBabylonAddr sdk.AccAddress,
 	stakerBtcPk *btcec.PublicKey,
 	stakerAddress btcutil.Address,
 	pop *cl.BabylonPop,
@@ -1358,7 +1335,7 @@ func (app *StakerApp) WatchStaking(
 		fpPks,
 		slashingTx,
 		slashingTxSig,
-		stakerBabylonPk,
+		stakerBabylonAddr,
 		stakerBtcPk,
 		stakerAddress,
 		pop,
@@ -1466,21 +1443,32 @@ func (app *StakerApp) StakeFunds(
 
 	// build proof of possesion, no point moving forward if staker do not have all
 	// the necessary keys
-	stakerPrivKey, err := app.wc.DumpPrivateKey(stakerAddress)
+	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddress)
 
 	if err != nil {
 		return nil, err
 	}
 
-	// We build pop ourselves so no need to verify it
-	pop, err := app.generatePop(stakerPrivKey)
+	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
+
+	sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
+
+	if err != nil {
+		return nil, err
+	}
+
+	pop, err := cl.NewBabylonBip322Pop(
+		babylonAddrHash,
+		sig,
+		stakerAddress,
+	)
 
 	if err != nil {
 		return nil, err
 	}
 
 	stakingInfo, err := staking.BuildStakingInfo(
-		stakerPrivKey.PubKey(),
+		stakerPubKey,
 		fpPks,
 		params.CovenantPks,
 		params.CovenantQuruomThreshold,
@@ -1618,6 +1606,37 @@ func (app *StakerApp) waitForSpendConfirmation(stakingTxHash chainhash.Hash, ev 
 	}
 }
 
+func (app *StakerApp) signTaprootScriptSpendUsingWallet(
+	txToSign *wire.MsgTx,
+	fundingOutput *wire.TxOut,
+	signerAddress btcutil.Address,
+	leaf *txscript.TapLeaf,
+	controlBlock *txscript.ControlBlock,
+) (*schnorr.Signature, error) {
+
+	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
+		return nil, fmt.Errorf("failed to unlock wallet before signing: %w", err)
+	}
+
+	req := &walletcontroller.TaprootSigningRequest{
+		FundingOutput: fundingOutput,
+		TxToSign:      txToSign,
+		SignerAddress: signerAddress,
+		SpendDescription: &walletcontroller.SpendPathDescription{
+			ScriptLeaf:   leaf,
+			ControlBlock: controlBlock,
+		},
+	}
+
+	resp, err := app.wc.SignOneInputTaprootSpendingTransaction(req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Signature, nil
+}
+
 // SpendStake spends stake identified by stakingTxHash. Stake can be currently locked in
 // two types of outputs:
 // 1. Staking output - this is output which is created by staking transaction
@@ -1671,7 +1690,7 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting params: %w", err)
 	}
 
-	privKey, err := app.stakerPrivateKey(destAddress)
+	pubKey, err := app.wc.AddressPublicKey(destAddress)
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting private key: %w", err)
@@ -1680,7 +1699,7 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 	currentFeeRate := app.feeEstimator.EstimateFeePerKb()
 
 	spendStakeTxInfo, err := createSpendStakeTxFromStoredTx(
-		privKey.PubKey(),
+		pubKey,
 		params.CovenantPks,
 		params.CovenantQuruomThreshold,
 		tx,
@@ -1693,11 +1712,12 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 		return nil, nil, err
 	}
 
-	stakerSig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
+	stakerSig, err := app.signTaprootScriptSpendUsingWallet(
 		spendStakeTxInfo.spendStakeTx,
 		spendStakeTxInfo.fundingOutput,
-		privKey,
-		spendStakeTxInfo.fundingOutputSpendInfo.RevealedLeaf,
+		destAddress,
+		&spendStakeTxInfo.fundingOutputSpendInfo.RevealedLeaf,
+		&spendStakeTxInfo.fundingOutputSpendInfo.ControlBlock,
 	)
 
 	if err != nil {

@@ -1,9 +1,9 @@
 package staker
 
 import (
-	cl "github.com/babylonchain/btc-staker/babylonclient"
-	ut "github.com/babylonchain/btc-staker/utils"
-	"github.com/babylonchain/btc-staker/walletcontroller"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
+	ut "github.com/babylonlabs-io/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/chaincfg"
 )
 

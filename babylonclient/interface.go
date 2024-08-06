@@ -4,7 +4,8 @@ import (
 	"fmt"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/babylonchain/babylon/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	"github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -98,8 +99,7 @@ func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 }
 
 func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error) {
-	msg, err := delegationDataToMsg("signer", dg)
-
+	msg, err := delegationDataToMsg(dg)
 	if err != nil {
 		return nil, err
 	}
@@ -159,12 +159,9 @@ func GetMockClient() *MockBabylonClient {
 		panic(err)
 	}
 
-	fpBabylonPrivKey := secp256k1.GenPrivKey()
-	fpBabylonPubKey := fpBabylonPrivKey.PubKey().(*secp256k1.PubKey)
-
 	vi := FinalityProviderInfo{
-		BabylonPk: *fpBabylonPubKey,
-		BtcPk:     *fpBtcPrivKey.PubKey(),
+		BabylonAddr: datagen.GenRandomAccount().GetAddress(),
+		BtcPk:       *fpBtcPrivKey.PubKey(),
 	}
 
 	return &MockBabylonClient{

@@ -1,13 +1,17 @@
 package walletcontroller
 
 import (
+	"encoding/hex"
 	"fmt"
 	"sort"
 
-	"github.com/babylonchain/btc-staker/stakercfg"
-	scfg "github.com/babylonchain/btc-staker/stakercfg"
-	"github.com/babylonchain/btc-staker/types"
+	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	"github.com/babylonlabs-io/babylon/crypto/bip322"
+	"github.com/babylonlabs-io/btc-staker/stakercfg"
+	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -96,23 +100,25 @@ func (w *RpcWalletController) UnlockWallet(timoutSec int64) error {
 }
 
 func (w *RpcWalletController) AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error) {
-	privKey, err := w.DumpPrivKey(address)
+	encoded := address.EncodeAddress()
+
+	info, err := w.GetAddressInfo(encoded)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return privKey.PrivKey.PubKey(), nil
-}
+	if info.PubKey == nil {
+		return nil, fmt.Errorf("address %s has no public key", encoded)
+	}
 
-func (w *RpcWalletController) DumpPrivateKey(address btcutil.Address) (*btcec.PrivateKey, error) {
-	privKey, err := w.DumpPrivKey(address)
+	decodedHex, err := hex.DecodeString(*info.PubKey)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return privKey.PrivKey, nil
+	return btcec.ParsePubKey(decodedHex)
 }
 
 func (w *RpcWalletController) NetworkName() string {
@@ -255,4 +261,78 @@ func (w *RpcWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte)
 	default:
 		return nil, TxNotFound, fmt.Errorf("invalid bitcoin backend")
 	}
+}
+
+// SignBip322NativeSegwit signs arbitrary message using bip322 signing scheme.
+// To work properly:
+// - wallet must be unlocked
+// - address must be under wallet control
+// - address must be native segwit address
+func (w *RpcWalletController) SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error) {
+	toSpend, err := bip322.GetToSpendTx(msg, address)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to bip322 to spend tx: %w", err)
+	}
+
+	if !txscript.IsPayToWitnessPubKeyHash(toSpend.TxOut[0].PkScript) {
+		return nil, fmt.Errorf("Bip322NativeSegwit support only native segwit addresses")
+	}
+
+	toSpendhash := toSpend.TxHash()
+
+	toSign := bip322.GetToSignTx(toSpend)
+
+	amt := float64(0)
+	signed, all, err := w.SignRawTransactionWithWallet2(toSign, []btcjson.RawTxWitnessInput{
+		{
+			Txid:         toSpendhash.String(),
+			Vout:         0,
+			ScriptPubKey: hex.EncodeToString(toSpend.TxOut[0].PkScript),
+			Amount:       &amt,
+		},
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign raw transaction while creating bip322 signature: %w", err)
+	}
+
+	if !all {
+		return nil, fmt.Errorf("failed to create bip322 signature, address %s is not under wallet control", address)
+	}
+
+	return signed.TxIn[0].Witness, nil
+}
+
+// TODO: Temporary implementation to encapsulate signing of taproot spending transaction, it will be replaced with PSBT
+// signing in the future
+func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error) {
+	if len(req.TxToSign.TxIn) != 1 {
+		return nil, fmt.Errorf("cannot sign transaction with more than one input")
+	}
+
+	if !txscript.IsPayToTaproot(req.FundingOutput.PkScript) {
+		return nil, fmt.Errorf("cannot sign transaction spending non-taproot output")
+	}
+
+	privKey, err := w.DumpPrivKey(req.SignerAddress)
+
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
+		req.TxToSign,
+		req.FundingOutput,
+		privKey.PrivKey,
+		*req.SpendDescription.ScriptLeaf,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &TaprootSigningResult{
+		Signature: sig,
+	}, nil
 }

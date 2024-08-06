@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/babylonchain/babylon/testutil/datagen"
-	"github.com/babylonchain/btc-staker/proto"
-	"github.com/babylonchain/btc-staker/stakercfg"
-	"github.com/babylonchain/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -83,8 +83,7 @@ func genStoredTransaction(t *testing.T, r *rand.Rand, maxStakingTime uint16) *st
 		StakingTime:             uint16(stakingTime),
 		FinalityProvidersBtcPks: fpBtcPks,
 		Pop: &stakerdb.ProofOfPossession{
-			BabylonSigOverBtcPk:  datagen.GenRandomByteArray(r, 64),
-			BtcSigOverBabylonSig: datagen.GenRandomByteArray(r, 64),
+			BtcSigOverBabylonAddr: datagen.GenRandomByteArray(r, 64),
 		},
 		StakerAddress: stakerAddr.String(),
 	}
