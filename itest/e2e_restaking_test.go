@@ -9,20 +9,21 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/babylonchain/babylon/testutil/datagen"
-	bbntypes "github.com/babylonchain/babylon/types"
-	btcstypes "github.com/babylonchain/babylon/x/btcstaking/types"
-	bsctypes "github.com/babylonchain/babylon/x/btcstkconsumer/types"
-	"github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/proto"
-	"github.com/babylonchain/btc-staker/staker"
-	"github.com/babylonchain/btc-staker/walletcontroller"
+	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/types"
+	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
+	"github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/staker"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +32,7 @@ type testStakingDataWithCZFPs struct {
 	*testStakingData
 	consumerRegister *bsctypes.ConsumerRegister
 	CZFPBabylonSKs   []*secp256k1.PrivKey
-	CZFPBabylonPKs   []*secp256k1.PubKey
+	CZFPBabylonAddrs []sdk.AccAddress
 	CZFPBTCSKs       []*btcec.PrivateKey
 	CZFPBTCPKs       []*btcec.PublicKey
 }
@@ -54,16 +55,17 @@ func (tm *TestManager) getTestStakingDataWithCZFPs(
 	fpBTCSKs, fpBTCPKs, err := datagen.GenRandomBTCKeyPairs(r, numRestakedConsumerChainFPs)
 	require.NoError(t, err)
 
-	fpBBNSKs, fpBBNPKs := []*secp256k1.PrivKey{}, []*secp256k1.PubKey{}
+	fpBBNSKs := make([]*secp256k1.PrivKey, numRestakedConsumerChainFPs)
+	fpBBNAddrs := make([]sdk.AccAddress, numRestakedConsumerChainFPs)
 	for i := 0; i < numRestakedConsumerChainFPs; i++ {
 		fpBBNSK := secp256k1.GenPrivKey()
-		fpBBNSKs = append(fpBBNSKs, fpBBNSK)
-		fpBBNPK := fpBBNSK.PubKey().(*secp256k1.PubKey)
-		fpBBNPKs = append(fpBBNPKs, fpBBNPK)
+		fpBBNSKs[i] = fpBBNSK
+		fpAddr := sdk.AccAddress(fpBBNSK.PubKey().Address().Bytes())
+		fpBBNAddrs[i] = fpAddr
 	}
 
 	data.CZFPBabylonSKs = fpBBNSKs
-	data.CZFPBabylonPKs = fpBBNPKs
+	data.CZFPBabylonAddrs = fpBBNAddrs
 	data.CZFPBTCSKs = fpBTCSKs
 	data.CZFPBTCPKs = fpBTCPKs
 	data.consumerRegister = datagen.GenRandomConsumerRegister(r)
@@ -79,6 +81,14 @@ func (tm *TestManager) createAndRegisterFinalityProvidersWithCZ(
 	_, err := tm.BabylonClient.RegisterConsumerChain(data.consumerRegister.ConsumerId, data.consumerRegister.ConsumerName, data.consumerRegister.ConsumerDescription)
 	require.NoError(t, err)
 
+	// top up the addresses with some BBN
+	strAddrs := make([]string, len(data.CZFPBabylonAddrs))
+	for i, addr := range data.CZFPBabylonAddrs {
+		strAddrs[i] = addr.String()
+	}
+	err = tm.BabylonHandler.BabylonNode.TxBankMultiSend("1000000ubbn", strAddrs...)
+	require.NoError(t, err)
+
 	// create and register finality providers for consumer chains
 	for i := 0; i < data.GetNumRestakedFPsInCZ(); i++ {
 		// ensure the finality provider in data does not exist yet
@@ -87,7 +97,7 @@ func (tm *TestManager) createAndRegisterFinalityProvidersWithCZ(
 		require.Error(t, err)
 		require.True(t, errors.Is(err, babylonclient.ErrFinalityProviderDoesNotExist))
 
-		pop, err := btcstypes.NewPoP(data.CZFPBabylonSKs[i], data.CZFPBTCSKs[i])
+		pop, err := btcstypes.NewPoPBTC(data.CZFPBabylonAddrs[i], data.CZFPBTCSKs[i])
 		require.NoError(t, err)
 
 		fpPK := data.CZFPBTCPKs[i]
@@ -97,8 +107,9 @@ func (tm *TestManager) createAndRegisterFinalityProvidersWithCZ(
 		require.NoError(t, err)
 
 		// register the generated finality provider
-		_, err = tm.BabylonClient.RegisterFinalityProvider(
-			data.CZFPBabylonPKs[i],
+		err = tm.BabylonClient.RegisterFinalityProvider(
+			data.CZFPBabylonAddrs[i],
+			data.CZFPBabylonSKs[i],
 			fpBTCPK,
 			&params.MinComissionRate,
 			&sttypes.Description{
@@ -107,10 +118,15 @@ func (tm *TestManager) createAndRegisterFinalityProvidersWithCZ(
 			pop,
 			data.consumerRegister.ConsumerId,
 		)
+		require.NoError(t, err)
 
 		// ensure the finality provider has been registered
-		fp, err := tm.BabylonClient.QueryFinalityProvider(fpPK)
-		require.NoError(t, err)
+		var fp *babylonclient.FinalityProviderClientResponse
+		require.Eventually(t, func() bool {
+			fp, err = tm.BabylonClient.QueryFinalityProvider(fpPK)
+			return err == nil && fp != nil
+		}, eventuallyWaitTimeOut, eventuallyPollTime)
+
 		require.Equal(t, bbntypes.NewBIP340PubKeyFromBTCPK(&fp.FinalityProvider.BtcPk), fpBTCPK)
 	}
 
