@@ -57,4 +57,8 @@ type WalletController interface {
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
 	SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error)
+	OutputSpent(
+		txHash *chainhash.Hash,
+		outputIdx uint32,
+	) (bool, error)
 }
