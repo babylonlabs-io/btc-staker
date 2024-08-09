@@ -1,6 +1,3 @@
-//go:build e2e
-// +build e2e
-
 package e2etest
 
 import (
@@ -23,15 +20,6 @@ import (
 	"github.com/babylonchain/babylon/testutil/datagen"
 	bbntypes "github.com/babylonchain/babylon/types"
 	btcstypes "github.com/babylonchain/babylon/x/btcstaking/types"
-	"github.com/babylonchain/btc-staker/babylonclient"
-	"github.com/babylonchain/btc-staker/proto"
-	"github.com/babylonchain/btc-staker/staker"
-	"github.com/babylonchain/btc-staker/stakercfg"
-	service "github.com/babylonchain/btc-staker/stakerservice"
-	dc "github.com/babylonchain/btc-staker/stakerservice/client"
-	"github.com/babylonchain/btc-staker/types"
-	"github.com/babylonchain/btc-staker/utils"
-	"github.com/babylonchain/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -48,6 +36,17 @@ import (
 	"github.com/lightningnetwork/lnd/signal"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
+	"github.com/babylonchain/btc-staker/babylonclient"
+	"github.com/babylonchain/btc-staker/proto"
+	"github.com/babylonchain/btc-staker/staker"
+	"github.com/babylonchain/btc-staker/stakercfg"
+	service "github.com/babylonchain/btc-staker/stakerservice"
+	dc "github.com/babylonchain/btc-staker/stakerservice/client"
+	"github.com/babylonchain/btc-staker/types"
+	"github.com/babylonchain/btc-staker/utils"
+	"github.com/babylonchain/btc-staker/walletcontroller"
 )
 
 // bitcoin params used for testing
@@ -324,10 +323,10 @@ func StartManager(
 	dbbackend, err := stakercfg.GetDbBackend(cfg.DBConfig)
 	require.NoError(t, err)
 
-	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zapLogger, dbbackend)
+	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zap.NewNop(), dbbackend)
 	require.NoError(t, err)
 	// we require separate client to send BTC headers to babylon node (interface does not need this method?)
-	bl, err := babylonclient.NewBabylonController(cfg.BabylonConfig, &cfg.ActiveNetParams, logger, zapLogger)
+	bl, err := babylonclient.NewBabylonController(cfg.BabylonConfig, &cfg.ActiveNetParams, logger, zap.NewNop())
 	require.NoError(t, err)
 
 	initBtcWalletClient(
@@ -402,9 +401,22 @@ func (tm *TestManager) Stop(t *testing.T) {
 }
 
 func (tm *TestManager) RestartApp(t *testing.T) {
+	// Restart the app with no-op action
+	tm.RestartAppWithAction(t, func(t *testing.T) {})
+}
+
+// RestartAppWithAction:
+// 1. Stop the staker app
+// 2. Perform provided action. Warning:this action must not use staker app as
+// app is stopped at this point
+// 3. Start the staker app
+func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing.T)) {
 	// First stop the app
 	tm.serverStopper.RequestShutdown()
 	tm.wg.Wait()
+
+	// Perform the action
+	action(t)
 
 	// Now reset all components and start again
 	logger := logrus.New()
@@ -414,7 +426,7 @@ func (tm *TestManager) RestartApp(t *testing.T) {
 	dbbackend, err := stakercfg.GetDbBackend(tm.Config.DBConfig)
 	require.NoError(t, err)
 
-	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zapLogger, dbbackend)
+	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zap.NewNop(), dbbackend)
 	require.NoError(t, err)
 
 	interceptor, err := signal.Intercept()

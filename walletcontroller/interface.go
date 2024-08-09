@@ -36,4 +36,8 @@ type WalletController interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
 	ListOutputs(onlySpendable bool) ([]Utxo, error)
 	TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error)
+	OutputSpent(
+		txHash *chainhash.Hash,
+		outputIdx uint32,
+	) (bool, error)
 }
