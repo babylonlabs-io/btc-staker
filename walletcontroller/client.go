@@ -304,6 +304,21 @@ func (w *RpcWalletController) SignBip322NativeSegwit(msg []byte, address btcutil
 	return signed.TxIn[0].Witness, nil
 }
 
+func (w *RpcWalletController) OutputSpent(
+	txHash *chainhash.Hash,
+	outputIdx uint32,
+) (bool, error) {
+	res, err := w.Client.GetTxOut(
+		txHash, outputIdx, true,
+	)
+
+	if err != nil {
+		return false, err
+	}
+
+	return res == nil, nil
+}
+
 // TODO: Temporary implementation to encapsulate signing of taproot spending transaction, it will be replaced with PSBT
 // signing in the future
 func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error) {

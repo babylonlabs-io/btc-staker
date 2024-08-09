@@ -356,9 +356,22 @@ func (tm *TestManager) Stop(t *testing.T) {
 }
 
 func (tm *TestManager) RestartApp(t *testing.T) {
+	// Restart the app with no-op action
+	tm.RestartAppWithAction(t, func(t *testing.T) {})
+}
+
+// RestartAppWithAction:
+// 1. Stop the staker app
+// 2. Perform provided action. Warning:this action must not use staker app as
+// app is stopped at this point
+// 3. Start the staker app
+func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing.T)) {
 	// First stop the app
 	tm.serverStopper.RequestShutdown()
 	tm.wg.Wait()
+
+	// Perform the action
+	action(t)
 
 	// Now reset all components and start again
 	logger := logrus.New()
@@ -1599,4 +1612,74 @@ func TestSendingStakingTransaction_Restaking(t *testing.T) {
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+}
+
+func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
+	// need to have at least 300 block on testnet as only then segwit is activated.
+	// Mature output is out which has 100 confirmations, which means 200mature outputs
+	// will generate 300 blocks
+	numMatureOutputs := uint32(200)
+	tm := StartManager(t, numMatureOutputs)
+	defer tm.Stop(t)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+	stakingTime := uint16(staker.GetMinStakingTime(params))
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+
+	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
+	require.NoError(t, err)
+	scr, err := txscript.PayToTaprootScript(tm.CovenantPrivKeys[0].PubKey())
+	require.NoError(t, err)
+	_, st, erro := tm.Sa.Wallet().TxDetails(hashed, scr)
+	// query for exsisting tx is not an error, proper state should be returned
+	require.NoError(t, erro)
+	require.Equal(t, st, walletcontroller.TxNotFound)
+
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendStakingTxBTC(t, testStakingData)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	// must wait for all covenant signatures to be received, to be able to unbond
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	// need to activate delegation to unbond
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+
+	// Unbond staking transaction and wait for it to be included in mempool
+	feeRate := 2000
+	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String(), &feeRate)
+	require.NoError(t, err)
+	unbondingTxHash, err := chainhash.NewHashFromStr(unbondResponse.UnbondingTxHash)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		tx, err := tm.TestRpcClient.GetRawTransaction(unbondingTxHash)
+		if err != nil {
+			return false
+		}
+
+		if tx == nil {
+			return false
+
+		}
+
+		return true
+	}, 1*time.Minute, eventuallyPollTime)
+
+	tm.RestartAppWithAction(t, func(t *testing.T) {
+		// unbodning tx got confirmed during the stop period
+		_ = tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations+1, false)
+	})
+
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC)
+	// it should be possible ot spend from unbonding tx
+	tm.spendStakingTxWithHash(t, txHash)
 }
