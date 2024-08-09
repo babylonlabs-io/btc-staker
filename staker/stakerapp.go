@@ -515,6 +515,12 @@ func (app *StakerApp) handleBtcTxInfo(
 	return nil
 }
 
+func (app *StakerApp) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
+	if err := app.txTracker.SetTxSpentOnBtc(hash); err != nil {
+		app.logger.Fatalf("Error setting transaction spent on btc: %s", err)
+	}
+}
+
 // TODO: We should also handle case when btc node or babylon node lost data and start from scratch
 // i.e keep track what is last known block height on both chains and detect if after restart
 // for some reason they are behind staker
@@ -677,9 +683,9 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			app.wg.Add(1)
 			go app.checkForUnbondingTxSignaturesOnBabylon(stakingTxHash)
 		} else if localInfo.stakingTxState == proto.TransactionState_DELEGATION_ACTIVE {
-			// delegation was send to Babylon and activated by covenants, check wheter we:
-			// - did not spent tx beore restart
-			// - did not sent unbonding tx before restart
+			// delegation was sent to Babylon and activated by covenants, check whether we:
+			// - did not spend tx before restart
+			// - did not send unbonding tx before restart
 			stakingTxHash := localInfo.stakingTxHash
 			tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
 
@@ -691,6 +697,9 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			}
 
 			if !stakingOutputSpent {
+				// If the staking output is unspent, then it means that delegation is
+				// sitll considered active. We can move forward without to next transaction
+				// and leave the state as it is.
 				continue
 			}
 
@@ -711,9 +720,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			if unbondingTxStatus == walletcontroller.TxNotFound {
 				// no unbonding tx on chain and staking output already spent, most probably
 				// staking transaction has been withdrawn, update state in db
-				if err := app.txTracker.SetTxSpentOnBtc(stakingTxHash); err != nil {
-					return err
-				}
+				app.mustSetTxSpentOnBtc(stakingTxHash)
 				continue
 			}
 
@@ -724,9 +731,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			}
 
 			if unbondingOutputSpent {
-				if err := app.txTracker.SetTxSpentOnBtc(stakingTxHash); err != nil {
-					return err
-				}
+				app.mustSetTxSpentOnBtc(stakingTxHash)
 				continue
 			}
 
@@ -747,7 +752,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				return err
 			}
 
-			// unbonding tx is in mempool, wait for confirmation and infrom event
+			// unbonding tx is in mempool, wait for confirmation and inform event
 			// loop about it
 			app.wg.Add(1)
 			go app.waitForUnbondingTxConfirmation(
@@ -767,10 +772,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			}
 
 			if unbondingOutputSpent {
-				if err := app.txTracker.SetTxSpentOnBtc(stakingTxHash); err != nil {
-					return err
-				}
-				continue
+				app.mustSetTxSpentOnBtc(stakingTxHash)
 			}
 		} else {
 			// we should not have any other state here, so kill app
