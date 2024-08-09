@@ -256,3 +256,18 @@ func (w *RpcWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte)
 		return nil, TxNotFound, fmt.Errorf("invalid bitcoin backend")
 	}
 }
+func (w *RpcWalletController) OutputSpent(
+	txHash *chainhash.Hash,
+	outputIdx uint32,
+) (bool, error) {
+	res, err := w.Client.GetTxOut(
+		txHash, outputIdx, true,
+	)
+
+	if err != nil {
+		return false, err
+	}
+
+	return res == nil, nil
+}
+
