@@ -34,6 +34,10 @@ type TaprootSigningResult struct {
 	Signature *schnorr.Signature
 }
 
+type TaprootSigningResult struct {
+	Signature *schnorr.Signature
+}
+
 type WalletController interface {
 	UnlockWallet(timeoutSecs int64) error
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
