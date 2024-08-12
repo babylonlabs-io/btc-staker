@@ -944,6 +944,10 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		return fmt.Errorf("failed to send unbondingtx. wallet signing error: %w", err)
 	}
 
+	if stakerUnbondingSig.Signature == nil {
+		return fmt.Errorf("failed to receive stakerUnbondingSig.Signature")
+	}
+
 	covenantSigantures := createWitnessSignaturesForPubKeys(
 		params.CovenantPks,
 		unbondingData.CovenantSignatures,
@@ -951,7 +955,7 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 
 	witness, err := unbondingSpendInfo.CreateUnbondingPathWitness(
 		covenantSigantures,
-		stakerUnbondingSig,
+		stakerUnbondingSig.Signature,
 	)
 
 	if err != nil {
@@ -1720,7 +1724,7 @@ func (app *StakerApp) signTaprootScriptSpendUsingWallet(
 	signerAddress btcutil.Address,
 	leaf *txscript.TapLeaf,
 	controlBlock *txscript.ControlBlock,
-) (*schnorr.Signature, error) {
+) (*walletcontroller.TaprootSigningResult, error) {
 
 	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
 		return nil, fmt.Errorf("failed to unlock wallet before signing: %w", err)
@@ -1742,7 +1746,7 @@ func (app *StakerApp) signTaprootScriptSpendUsingWallet(
 		return nil, err
 	}
 
-	return resp.Signature, nil
+	return resp, nil
 }
 
 // SpendStake spends stake identified by stakingTxHash. Stake can be currently locked in
@@ -1832,15 +1836,15 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error building signature: %w", err)
 	}
 
-	witness, err := spendStakeTxInfo.fundingOutputSpendInfo.CreateTimeLockPathWitness(
-		stakerSig,
-	)
+	if stakerSig.FullInputWitness == nil {
+		return nil, nil, fmt.Errorf("failed to recevie full witness to spend staking transactions")
+	}
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error building witness: %w", err)
 	}
 
-	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = witness
+	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = stakerSig.FullInputWitness
 
 	// We do not check if transaction is spendable i.e the staking time has passed
 	// as this is validated in mempool so in of not meeting this time requirement

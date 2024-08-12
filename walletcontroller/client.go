@@ -1,18 +1,21 @@
 package walletcontroller
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"sort"
 
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
@@ -319,35 +322,117 @@ func (w *RpcWalletController) OutputSpent(
 	return res == nil, nil
 }
 
-// TODO: Temporary implementation to encapsulate signing of taproot spending transaction, it will be replaced with PSBT
-// signing in the future
-func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error) {
-	if len(req.TxToSign.TxIn) != 1 {
+func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(request *TaprootSigningRequest) (*TaprootSigningResult, error) {
+	if len(request.TxToSign.TxIn) != 1 {
 		return nil, fmt.Errorf("cannot sign transaction with more than one input")
 	}
 
-	if !txscript.IsPayToTaproot(req.FundingOutput.PkScript) {
+	if !txscript.IsPayToTaproot(request.FundingOutput.PkScript) {
 		return nil, fmt.Errorf("cannot sign transaction spending non-taproot output")
 	}
 
-	privKey, err := w.DumpPrivKey(req.SignerAddress)
+	key, err := w.AddressPublicKey(request.SignerAddress)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get public key for address: %w", err)
 	}
 
-	sig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
-		req.TxToSign,
-		req.FundingOutput,
-		privKey.PrivKey,
-		*req.SpendDescription.ScriptLeaf,
+	psbtPacket, err := psbt.New(
+		[]*wire.OutPoint{&request.TxToSign.TxIn[0].PreviousOutPoint},
+		request.TxToSign.TxOut,
+		request.TxToSign.Version,
+		request.TxToSign.LockTime,
+		[]uint32{request.TxToSign.TxIn[0].Sequence},
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create PSBT packet with transaction to sign: %w", err)
 	}
 
-	return &TaprootSigningResult{
-		Signature: sig,
-	}, nil
+	psbtPacket.Inputs[0].SighashType = txscript.SigHashDefault
+	psbtPacket.Inputs[0].WitnessUtxo = request.FundingOutput
+	psbtPacket.Inputs[0].Bip32Derivation = []*psbt.Bip32Derivation{
+		{
+			PubKey: key.SerializeCompressed(),
+		},
+	}
+
+	ctrlBlockBytes, err := request.SpendDescription.ControlBlock.ToBytes()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize control block: %w", err)
+	}
+
+	psbtPacket.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+		{
+			ControlBlock: ctrlBlockBytes,
+			Script:       request.SpendDescription.ScriptLeaf.Script,
+			LeafVersion:  request.SpendDescription.ScriptLeaf.LeafVersion,
+		},
+	}
+
+	psbtEncoded, err := psbtPacket.B64Encode()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode PSBT packet: %w", err)
+	}
+
+	sign := true
+	signResult, err := w.Client.WalletProcessPsbt(
+		psbtEncoded,
+		&sign,
+		"DEFAULT",
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign PSBT packet: %w", err)
+	}
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(signResult.Psbt)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signed PSBT packet from b64: %w", err)
+	}
+
+	decodedPsbt, err := psbt.NewFromRawBytes(bytes.NewReader(decodedBytes), false)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signed PSBT packet from bytes: %w", err)
+	}
+
+	// In our signing request we only handle transaction with one input, and request
+	// signature for one public key, thus we can receive at most one signature from btc
+	if len(decodedPsbt.Inputs[0].TaprootScriptSpendSig) == 1 {
+		schnorSignature := decodedPsbt.Inputs[0].TaprootScriptSpendSig[0].Signature
+
+		parsedSignature, err := schnorr.ParseSignature(schnorSignature)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse schnorr signature in psbt packet: %w", err)
+		}
+
+		return &TaprootSigningResult{
+			Signature: parsedSignature,
+		}, nil
+	}
+
+	// decodedPsbt.Inputs[0].TaprootScriptSpendSig was 0, it is possible that script
+	// required only one signature to build whole witness
+	if len(decodedPsbt.Inputs[0].FinalScriptWitness) > 0 {
+		// we go whole witness, return it to the caller
+		witness, err := bip322.SimpleSigToWitness(decodedPsbt.Inputs[0].FinalScriptWitness)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse witness in psbt packet: %w", err)
+		}
+
+		return &TaprootSigningResult{
+			FullInputWitness: witness,
+		}, nil
+	}
+
+	// neither witness, nor signature is filled.
+	return nil, fmt.Errorf("no signature found in PSBT packet. Wallet can't sign given tx")
+
 }
