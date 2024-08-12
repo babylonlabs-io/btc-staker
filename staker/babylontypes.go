@@ -91,6 +91,10 @@ func (app *StakerApp) buildOwnedDelegation(
 		return nil, fmt.Errorf("error signing slashing transaction for staking transaction: %w", err)
 	}
 
+	if stakingSlashingSig.Signature == nil {
+		return nil, fmt.Errorf("failed to receive stakingSlashingSig.Signature ")
+	}
+
 	unbondingSlashingSig, err := app.signTaprootScriptSpendUsingWallet(
 		undelegationDesc.SlashUnbondingTransaction,
 		undelegationDesc.UnbondingTransaction.TxOut[0],
@@ -103,13 +107,17 @@ func (app *StakerApp) buildOwnedDelegation(
 		return nil, fmt.Errorf("error signing slashing transaction for unbonding transaction: %w", err)
 	}
 
+	if unbondingSlashingSig.Signature == nil {
+		return nil, fmt.Errorf("failed to receive unbondingSlashingSig.Signature ")
+	}
+
 	dg := createDelegationData(
 		externalData.stakerPublicKey,
 		req.inclusionBlock,
 		req.txIndex,
 		storedTx,
 		stakingSlashingTx,
-		stakingSlashingSig,
+		stakingSlashingSig.Signature,
 		externalData.babylonStakerAddr,
 		stakingTxInclusionProof,
 		&cl.UndelegationData{
@@ -117,7 +125,7 @@ func (app *StakerApp) buildOwnedDelegation(
 			UnbondingTxValue:             undelegationDesc.UnbondingTxValue,
 			UnbondingTxUnbondingTime:     undelegationDesc.UnbondingTxUnbondingTime,
 			SlashUnbondingTransaction:    undelegationDesc.SlashUnbondingTransaction,
-			SlashUnbondingTransactionSig: unbondingSlashingSig,
+			SlashUnbondingTransactionSig: unbondingSlashingSig.Signature,
 		},
 	)
 
