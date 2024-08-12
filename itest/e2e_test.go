@@ -20,6 +20,7 @@ import (
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
@@ -756,9 +757,6 @@ func (tm *TestManager) sendWatchedStakingTx(
 	testStakingData *testStakingData,
 	params *babylonclient.StakingParams,
 ) *chainhash.Hash {
-	privKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
 	unbondingTme := uint16(params.FinalizationTimeoutBlocks) + 1
 
 	stakingInfo, err := staking.BuildStakingInfo(
@@ -818,13 +816,20 @@ func (tm *TestManager) sendWatchedStakingTx(
 	stakingTxSlashingPathInfo, err := stakingInfo.SlashingPathSpendInfo()
 	require.NoError(t, err)
 
-	slashSig, err := staking.SignTxWithOneScriptSpendInputFromScript(
-		slashingTx,
-		tx.TxOut[stakingOutputIdx],
-		privKey,
-		stakingTxSlashingPathInfo.RevealedLeaf.Script,
+	slashingSigResult, err := tm.Sa.Wallet().SignOneInputTaprootSpendingTransaction(
+		&walletcontroller.TaprootSigningRequest{
+			FundingOutput: stakingInfo.StakingOutput,
+			TxToSign:      slashingTx,
+			SignerAddress: tm.MinerAddr,
+			SpendDescription: &walletcontroller.SpendPathDescription{
+				ControlBlock: &stakingTxSlashingPathInfo.ControlBlock,
+				ScriptLeaf:   &stakingTxSlashingPathInfo.RevealedLeaf,
+			},
+		},
 	)
+
 	require.NoError(t, err)
+	require.NotNil(t, slashingSigResult.Signature)
 
 	serializedStakingTx, err := utils.SerializeBtcTransaction(tx)
 	require.NoError(t, err)
@@ -864,23 +869,35 @@ func (tm *TestManager) sendWatchedStakingTx(
 	)
 	require.NoError(t, err)
 
-	slashUnbondingSig, err := staking.SignTxWithOneScriptSpendInputFromScript(
-		slashUnbondingTx,
-		unbondingTx.TxOut[0],
-		privKey,
-		unbondingSlashingPathInfo.RevealedLeaf.Script,
+	slashingUnbondingSigResult, err := tm.Sa.Wallet().SignOneInputTaprootSpendingTransaction(
+		&walletcontroller.TaprootSigningRequest{
+			FundingOutput: unbondingTx.TxOut[0],
+			TxToSign:      slashUnbondingTx,
+			SignerAddress: tm.MinerAddr,
+			SpendDescription: &walletcontroller.SpendPathDescription{
+				ControlBlock: &unbondingSlashingPathInfo.ControlBlock,
+				ScriptLeaf:   &unbondingSlashingPathInfo.RevealedLeaf,
+			},
+		},
 	)
+
+	require.NoError(t, err)
+	require.NotNil(t, slashingUnbondingSigResult.Signature)
 
 	serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
 	require.NoError(t, err)
 	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
 	require.NoError(t, err)
 
-	// TODO: Update pop when new version will be ready, for now using schnorr as we don't have
-	// easy way to generate bip322 sig on backend side
-	pop, err := btcstypes.NewPoPBTC(
-		testStakingData.StakerBabylonAddr,
-		privKey,
+	babylonAddrHash := tmhash.Sum(testStakingData.StakerBabylonAddr.Bytes())
+
+	sig, err := tm.Sa.Wallet().SignBip322NativeSegwit(babylonAddrHash, tm.MinerAddr)
+	require.NoError(t, err)
+
+	pop, err := babylonclient.NewBabylonBip322Pop(
+		babylonAddrHash,
+		sig,
+		tm.MinerAddr,
 	)
 	require.NoError(t, err)
 
@@ -897,16 +914,16 @@ func (tm *TestManager) sendWatchedStakingTx(
 		hex.EncodeToString(schnorr.SerializePubKey(testStakingData.StakerKey)),
 		fpBTCPKs,
 		hex.EncodeToString(serializedSlashingTx),
-		hex.EncodeToString(slashSig.Serialize()),
+		hex.EncodeToString(slashingSigResult.Signature.Serialize()),
 		testStakingData.StakerBabylonAddr.String(),
 		tm.MinerAddr.String(),
 		hex.EncodeToString(pop.BtcSig),
 		hex.EncodeToString(serializedUnbondingTx),
 		hex.EncodeToString(serializedSlashUnbondingTx),
-		hex.EncodeToString(slashUnbondingSig.Serialize()),
+		hex.EncodeToString(slashingUnbondingSigResult.Signature.Serialize()),
 		int(unbondingTme),
 		// Use schnor verification
-		int(btcstypes.BTCSigType_BIP340),
+		int(btcstypes.BTCSigType_BIP322),
 	)
 	require.NoError(t, err)
 
@@ -1253,7 +1270,7 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].TransactionIdx, "4")
 }
 
-func ATestSendingWatchedStakingTransaction(t *testing.T) {
+func TestSendingWatchedStakingTransaction(t *testing.T) {
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
