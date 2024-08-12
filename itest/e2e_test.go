@@ -673,6 +673,44 @@ func (tm *TestManager) mineBlock(t *testing.T) *wire.MsgBlock {
 	return header
 }
 
+func (tm *TestManager) sendStakingTxBTC(t *testing.T, testStakingData *testStakingData) *chainhash.Hash {
+	fpBTCPKs := []string{}
+	for i := 0; i < testStakingData.GetNumRestakedFPs(); i++ {
+		fpBTCPK := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[i]))
+		fpBTCPKs = append(fpBTCPKs, fpBTCPK)
+	}
+	res, err := tm.StakerClient.Stake(
+		context.Background(),
+		tm.MinerAddr.String(),
+		testStakingData.StakingAmount,
+		fpBTCPKs,
+		int64(testStakingData.StakingTime),
+	)
+	require.NoError(t, err)
+	txHash := res.TxHash
+
+	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
+	require.NoError(t, err)
+	require.Equal(t, stakingDetails.StakingTxHash, txHash)
+	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
+
+	hashFromString, err := chainhash.NewHashFromStr(txHash)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	return hashFromString
+}
+
 func (tm *TestManager) sendStakingTx(t *testing.T, testStakingData *testStakingData) *chainhash.Hash {
 	fpBTCPKs := []string{}
 	for i := 0; i < testStakingData.GetNumRestakedFPs(); i++ {

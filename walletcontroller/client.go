@@ -270,4 +270,3 @@ func (w *RpcWalletController) OutputSpent(
 
 	return res == nil, nil
 }
-
