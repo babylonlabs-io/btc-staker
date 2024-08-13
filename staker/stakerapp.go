@@ -13,6 +13,7 @@ import (
 
 	"github.com/avast/retry-go/v4"
 	staking "github.com/babylonchain/babylon/btcstaking"
+
 	cl "github.com/babylonchain/btc-staker/babylonclient"
 	"github.com/babylonchain/btc-staker/proto"
 	scfg "github.com/babylonchain/btc-staker/stakercfg"
@@ -551,7 +552,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			transactionsSentToBtc = append(transactionsSentToBtc, &stakingTxHash)
 			return nil
 		case proto.TransactionState_CONFIRMED_ON_BTC:
-			transactionConfirmedOnBtc = append(transactionConfirmedOnBtc, &stakingTxHash)
+			// transactionConfirmedOnBtc = append(transactionConfirmedOnBtc, &stakingTxHash)
 			return nil
 		// We need to check any transaction which was sent to babylon, as it could be
 		// that we sent undelegation msg, but restart happened before we could update
