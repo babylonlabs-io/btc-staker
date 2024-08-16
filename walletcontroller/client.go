@@ -68,7 +68,7 @@ func NewRpcWalletControllerFromArgs(
 ) (*RpcWalletController, error) {
 
 	connCfg := &rpcclient.ConnConfig{
-		Host:                 rpcHostName(host, walletName),
+		Host:                 rpcHostURL(host, walletName),
 		User:                 user,
 		Pass:                 pass,
 		DisableTLS:           disableTls,
@@ -100,7 +100,7 @@ func NewRpcWalletControllerFromArgs(
 	}, nil
 }
 
-func rpcHostName(host, walletName string) string {
+func rpcHostURL(host, walletName string) string {
 	if len(walletName) > 0 {
 		return host + "/wallet/" + walletName
 	}
