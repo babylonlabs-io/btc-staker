@@ -260,7 +260,8 @@ func StartManager(
 	err = bh.Start()
 	require.NoError(t, err)
 
-	cfg, c := defaultStakerConfig(t, walletName, passphrase)
+	// test case with single wallet created and no wallet name set.
+	cfg, c := defaultStakerConfig(t, "", passphrase)
 
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
