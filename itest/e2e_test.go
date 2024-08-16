@@ -1509,7 +1509,8 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	h.Start()
 	passphrase := "pass"
 	numMatureOutputs := 1
-	_ = h.CreateWallet("test-wallet", passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
 	_ = h.GenerateBlocks(numMatureOutputs + 100)
 
@@ -1520,6 +1521,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.WalletRpcConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
 	scfg.WalletConfig.WalletPass = passphrase
+	scfg.WalletConfig.WalletName = walletName
 	scfg.BtcNodeBackendConfig.ActiveWalletBackend = types.BitcoindWalletBackend
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
