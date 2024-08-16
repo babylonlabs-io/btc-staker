@@ -44,6 +44,7 @@ func NewRpcWalletController(scfg *stakercfg.Config) (*RpcWalletController, error
 		scfg.WalletRpcConfig.User,
 		scfg.WalletRpcConfig.Pass,
 		scfg.ActiveNetParams.Name,
+		scfg.WalletConfig.WalletName,
 		scfg.WalletConfig.WalletPass,
 		scfg.BtcNodeBackendConfig.ActiveWalletBackend,
 		&scfg.ActiveNetParams,
@@ -58,6 +59,7 @@ func NewRpcWalletControllerFromArgs(
 	user string,
 	pass string,
 	network string,
+	walletName string,
 	walletPassphrase string,
 	nodeBackend types.SupportedWalletBackend,
 	params *chaincfg.Params,
@@ -66,7 +68,7 @@ func NewRpcWalletControllerFromArgs(
 ) (*RpcWalletController, error) {
 
 	connCfg := &rpcclient.ConnConfig{
-		Host:                 host,
+		Host:                 host + "/wallet/" + walletName,
 		User:                 user,
 		Pass:                 pass,
 		DisableTLS:           disableTls,
@@ -75,6 +77,7 @@ func NewRpcWalletControllerFromArgs(
 		// we use post mode as it sure it works with either bitcoind or btcwallet
 		// we may need to re-consider it later if we need any notifications
 		HTTPPostMode: true,
+		Params:       params.Name,
 	}
 
 	if !connCfg.DisableTLS {
