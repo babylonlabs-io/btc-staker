@@ -68,7 +68,7 @@ func NewRpcWalletControllerFromArgs(
 ) (*RpcWalletController, error) {
 
 	connCfg := &rpcclient.ConnConfig{
-		Host:                 host + "/wallet/" + walletName,
+		Host:                 rpcHostName(host, walletName),
 		User:                 user,
 		Pass:                 pass,
 		DisableTLS:           disableTls,
@@ -77,7 +77,6 @@ func NewRpcWalletControllerFromArgs(
 		// we use post mode as it sure it works with either bitcoind or btcwallet
 		// we may need to re-consider it later if we need any notifications
 		HTTPPostMode: true,
-		Params:       params.Name,
 	}
 
 	if !connCfg.DisableTLS {
@@ -99,6 +98,13 @@ func NewRpcWalletControllerFromArgs(
 		network:          params.Name,
 		backend:          nodeBackend,
 	}, nil
+}
+
+func rpcHostName(host, walletName string) string {
+	if len(walletName) > 0 {
+		return host + "/wallet/" + walletName
+	}
+	return host
 }
 
 func (w *RpcWalletController) UnlockWallet(timoutSec int64) error {
