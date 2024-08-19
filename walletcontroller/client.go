@@ -44,6 +44,7 @@ func NewRpcWalletController(scfg *stakercfg.Config) (*RpcWalletController, error
 		scfg.WalletRpcConfig.User,
 		scfg.WalletRpcConfig.Pass,
 		scfg.ActiveNetParams.Name,
+		scfg.WalletConfig.WalletName,
 		scfg.WalletConfig.WalletPass,
 		scfg.BtcNodeBackendConfig.ActiveWalletBackend,
 		&scfg.ActiveNetParams,
@@ -58,6 +59,7 @@ func NewRpcWalletControllerFromArgs(
 	user string,
 	pass string,
 	network string,
+	walletName string,
 	walletPassphrase string,
 	nodeBackend types.SupportedWalletBackend,
 	params *chaincfg.Params,
@@ -66,7 +68,7 @@ func NewRpcWalletControllerFromArgs(
 ) (*RpcWalletController, error) {
 
 	connCfg := &rpcclient.ConnConfig{
-		Host:                 host,
+		Host:                 rpcHostURL(host, walletName),
 		User:                 user,
 		Pass:                 pass,
 		DisableTLS:           disableTls,
@@ -96,6 +98,13 @@ func NewRpcWalletControllerFromArgs(
 		network:          params.Name,
 		backend:          nodeBackend,
 	}, nil
+}
+
+func rpcHostURL(host, walletName string) string {
+	if len(walletName) > 0 {
+		return host + "/wallet/" + walletName
+	}
+	return host
 }
 
 func (w *RpcWalletController) UnlockWallet(timoutSec int64) error {

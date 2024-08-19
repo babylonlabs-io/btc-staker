@@ -76,7 +76,7 @@ func keyToAddr(key *btcec.PrivateKey, net *chaincfg.Params) (btcutil.Address, er
 	return pubKeyAddr.AddressPubKeyHash(), nil
 }
 
-func defaultStakerConfig(t *testing.T, passphrase string) (*stakercfg.Config, *rpcclient.Client) {
+func defaultStakerConfig(t *testing.T, walletName, passphrase string) (*stakercfg.Config, *rpcclient.Client) {
 	defaultConfig := stakercfg.DefaultConfig()
 
 	// both wallet and node are bicoind
@@ -98,6 +98,7 @@ func defaultStakerConfig(t *testing.T, passphrase string) (*stakercfg.Config, *r
 	defaultConfig.WalletRpcConfig.Pass = bitcoindPass
 	defaultConfig.WalletRpcConfig.DisableTls = true
 	defaultConfig.WalletConfig.WalletPass = passphrase
+	defaultConfig.WalletConfig.WalletName = walletName
 
 	// node configuration
 	defaultConfig.BtcNodeBackendConfig.Bitcoind.RPCHost = bitcoindHost
@@ -223,7 +224,8 @@ func StartManager(
 	h := NewBitcoindHandler(t)
 	h.Start()
 	passphrase := "pass"
-	_ = h.CreateWallet("test-wallet", passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
 	br := h.GenerateBlocks(int(numMatureOutputsInWallet) + 100)
 
@@ -258,7 +260,7 @@ func StartManager(
 	err = bh.Start()
 	require.NoError(t, err)
 
-	cfg, c := defaultStakerConfig(t, passphrase)
+	cfg, c := defaultStakerConfig(t, walletName, passphrase)
 
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
@@ -1507,7 +1509,8 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	h.Start()
 	passphrase := "pass"
 	numMatureOutputs := 1
-	_ = h.CreateWallet("test-wallet", passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
 	_ = h.GenerateBlocks(numMatureOutputs + 100)
 
@@ -1518,6 +1521,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.WalletRpcConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
 	scfg.WalletConfig.WalletPass = passphrase
+	scfg.WalletConfig.WalletName = walletName
 	scfg.BtcNodeBackendConfig.ActiveWalletBackend = types.BitcoindWalletBackend
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
@@ -1577,9 +1581,9 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	h := NewBitcoindHandler(t)
 	h.Start()
 	passphrase := "pass"
-
-	_ = h.CreateWallet("test-wallet", passphrase)
-	cfg, c := defaultStakerConfig(t, passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
+	cfg, c := defaultStakerConfig(t, walletName, passphrase)
 
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
