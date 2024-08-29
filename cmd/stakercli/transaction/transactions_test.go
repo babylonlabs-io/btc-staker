@@ -22,6 +22,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/stretchr/testify/require"
@@ -204,6 +205,17 @@ func appRunCreatePhase1UnbondingTx(r *rand.Rand, t *testing.T, app *cli.App, arg
 	output := appRunWithOutput(r, t, app, args)
 
 	var data transaction.CreatePhase1UnbondingTxResponse
+	err := json.Unmarshal([]byte(output), &data)
+	require.NoError(t, err)
+	return data
+}
+
+func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreateWithdrawalTxResponse {
+	args := []string{"stakercli", "transaction", "create-phase1-withdrawal-transaction"}
+	args = append(args, arguments...)
+	output := appRunWithOutput(r, t, app, args)
+
+	var data transaction.CreateWithdrawalTxResponse
 	err := json.Unmarshal([]byte(output), &data)
 	require.NoError(t, err)
 	return data
@@ -491,5 +503,204 @@ func FuzzCreateUnbondingTx(f *testing.F) {
 		decoded, err := psbt.NewFromRawBytes(bytes.NewReader(decodedBytes), false)
 		require.NoError(t, err)
 		require.NotNil(t, decoded)
+	})
+}
+
+func FuzzCreateWithdrawalStaking(f *testing.F) {
+	paramsFilePath := createTempFileWithParams(f)
+
+	datagen.AddRandomSeedsToFuzzer(f, 10)
+	f.Fuzz(func(t *testing.T, seed int64) {
+		r := rand.New(rand.NewSource(seed))
+
+		stakerParams, _ := createCustomValidStakeParams(t, r, &globalParams, &chaincfg.RegressionNetParams)
+
+		info, tx, err := btcstaking.BuildV0IdentifiableStakingOutputsAndTx(
+			lastParams.Tag,
+			stakerParams.StakerPk,
+			stakerParams.FinalityProviderPk,
+			lastParams.CovenantPks,
+			lastParams.CovenantQuorum,
+			stakerParams.StakingTime,
+			stakerParams.StakingAmount,
+			&chaincfg.RegressionNetParams,
+		)
+		require.NoError(t, err)
+
+		fakeInputHash := sha256.Sum256([]byte{0x01})
+		tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{Hash: fakeInputHash, Index: 0}, nil, nil))
+
+		serializedStakingTx, err := utils.SerializeBtcTransaction(tx)
+		require.NoError(t, err)
+
+		key, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		addr, err := btcutil.NewAddressTaproot(
+			schnorr.SerializePubKey(key.PubKey()),
+			&chaincfg.RegressionNetParams,
+		)
+		require.NoError(t, err)
+
+		fee := int64(100)
+		createTxCmdArgs := []string{
+			paramsFilePath,
+			fmt.Sprintf("--staking-transaction=%s", hex.EncodeToString(serializedStakingTx)),
+			fmt.Sprintf("--tx-inclusion-height=%d", stakerParams.InclusionHeight),
+			fmt.Sprintf("--withdrawal-address=%s", addr.EncodeAddress()),
+			fmt.Sprintf("--withdrawal-fee=%d", fee),
+			fmt.Sprintf("--network=%s", chaincfg.RegressionNetParams.Name),
+		}
+
+		app := testApp()
+		wr := appRunCreatePhase1WithdrawalTx(r, t, app, createTxCmdArgs)
+		require.NotNil(t, wr)
+
+		wtx, _, err := bbn.NewBTCTxFromHex(wr.WithdrawalTxHex)
+		require.NoError(t, err)
+		require.NotNil(t, wtx)
+		require.Len(t, wtx.TxOut, 1)
+		require.Len(t, wtx.TxIn, 1)
+
+		stakingTxHash := tx.TxHash()
+		require.Equal(t, stakingTxHash, wtx.TxIn[0].PreviousOutPoint.Hash)
+		require.Equal(t, uint32(0), wtx.TxIn[0].PreviousOutPoint.Index)
+		require.Equal(t, uint32(stakerParams.StakingTime), wtx.TxIn[0].Sequence)
+		require.Equal(t, int32(2), tx.Version)
+
+		addrPkScript, err := txscript.PayToAddrScript(addr)
+		require.NoError(t, err)
+		require.Equal(t, addrPkScript, wtx.TxOut[0].PkScript)
+		require.Equal(t, int64(stakerParams.StakingAmount)-fee, wtx.TxOut[0].Value)
+
+		decodedBytes, err := base64.StdEncoding.DecodeString(wr.WithdrawalPsbtPacketBase64)
+		require.NoError(t, err)
+		require.NotNil(t, decodedBytes)
+		decoded, err := psbt.NewFromRawBytes(bytes.NewReader(decodedBytes), false)
+		require.NoError(t, err)
+		require.NotNil(t, decoded)
+
+		require.Len(t, decoded.Inputs, 1)
+		require.Equal(t, info.StakingOutput, decoded.Inputs[0].WitnessUtxo)
+		require.Equal(t, schnorr.SerializePubKey(stakerParams.StakerPk), decoded.Inputs[0].TaprootBip32Derivation[0].XOnlyPubKey)
+
+		tli, err := info.TimeLockPathSpendInfo()
+		require.NoError(t, err)
+		ctrlBlockBytes, err := tli.ControlBlock.ToBytes()
+		require.NoError(t, err)
+		require.Equal(t, ctrlBlockBytes, decoded.Inputs[0].TaprootLeafScript[0].ControlBlock)
+		require.Equal(t, tli.RevealedLeaf.Script, decoded.Inputs[0].TaprootLeafScript[0].Script)
+		require.Equal(t, tli.RevealedLeaf.LeafVersion, decoded.Inputs[0].TaprootLeafScript[0].LeafVersion)
+
+	})
+}
+
+func FuzzCreateWithdrawalUnbonding(f *testing.F) {
+	paramsFilePath := createTempFileWithParams(f)
+
+	datagen.AddRandomSeedsToFuzzer(f, 10)
+	f.Fuzz(func(t *testing.T, seed int64) {
+		r := rand.New(rand.NewSource(seed))
+
+		stakerParams, _ := createCustomValidStakeParams(t, r, &globalParams, &chaincfg.RegressionNetParams)
+
+		_, tx, err := btcstaking.BuildV0IdentifiableStakingOutputsAndTx(
+			lastParams.Tag,
+			stakerParams.StakerPk,
+			stakerParams.FinalityProviderPk,
+			lastParams.CovenantPks,
+			lastParams.CovenantQuorum,
+			stakerParams.StakingTime,
+			stakerParams.StakingAmount,
+			&chaincfg.RegressionNetParams,
+		)
+		require.NoError(t, err)
+		fakeInputHash := sha256.Sum256([]byte{0x01})
+		tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{Hash: fakeInputHash, Index: 0}, nil, nil))
+
+		stakingTxHash := tx.TxHash()
+
+		unbondingInfo, err := btcstaking.BuildUnbondingInfo(
+			stakerParams.StakerPk,
+			[]*btcec.PublicKey{stakerParams.FinalityProviderPk},
+			lastParams.CovenantPks,
+			lastParams.CovenantQuorum,
+			lastParams.UnbondingTime,
+			stakerParams.StakingAmount-lastParams.UnbondingFee,
+			&chaincfg.RegressionNetParams,
+		)
+
+		require.NoError(t, err)
+
+		unbondingTx := wire.NewMsgTx(2)
+		unbondingTx.AddTxIn(wire.NewTxIn(&wire.OutPoint{Hash: stakingTxHash, Index: 0}, nil, nil))
+		unbondingTx.AddTxOut(unbondingInfo.UnbondingOutput)
+
+		serializedStakingTx, err := utils.SerializeBtcTransaction(tx)
+		require.NoError(t, err)
+
+		unbondingTxHash := unbondingTx.TxHash()
+
+		serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
+		require.NoError(t, err)
+
+		key, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		addr, err := btcutil.NewAddressTaproot(
+			schnorr.SerializePubKey(key.PubKey()),
+			&chaincfg.RegressionNetParams,
+		)
+		require.NoError(t, err)
+
+		fee := int64(100)
+		createTxCmdArgs := []string{
+			paramsFilePath,
+			fmt.Sprintf("--staking-transaction=%s", hex.EncodeToString(serializedStakingTx)),
+			fmt.Sprintf("--tx-inclusion-height=%d", stakerParams.InclusionHeight),
+			fmt.Sprintf("--withdrawal-address=%s", addr.EncodeAddress()),
+			fmt.Sprintf("--withdrawal-fee=%d", fee),
+			fmt.Sprintf("--unbonding-transaction=%s", hex.EncodeToString(serializedUnbondingTx)),
+			fmt.Sprintf("--network=%s", chaincfg.RegressionNetParams.Name),
+		}
+
+		app := testApp()
+		wr := appRunCreatePhase1WithdrawalTx(r, t, app, createTxCmdArgs)
+		require.NotNil(t, wr)
+
+		wtx, _, err := bbn.NewBTCTxFromHex(wr.WithdrawalTxHex)
+		require.NoError(t, err)
+		require.NotNil(t, wtx)
+		require.Len(t, wtx.TxOut, 1)
+		require.Len(t, wtx.TxIn, 1)
+
+		require.Equal(t, unbondingTxHash, wtx.TxIn[0].PreviousOutPoint.Hash)
+		require.Equal(t, uint32(0), wtx.TxIn[0].PreviousOutPoint.Index)
+		require.Equal(t, uint32(lastParams.UnbondingTime), wtx.TxIn[0].Sequence)
+		require.Equal(t, int32(2), tx.Version)
+
+		addrPkScript, err := txscript.PayToAddrScript(addr)
+		require.NoError(t, err)
+		require.Equal(t, addrPkScript, wtx.TxOut[0].PkScript)
+		require.Equal(t, int64(unbondingInfo.UnbondingOutput.Value)-fee, wtx.TxOut[0].Value)
+
+		decodedBytes, err := base64.StdEncoding.DecodeString(wr.WithdrawalPsbtPacketBase64)
+		require.NoError(t, err)
+		require.NotNil(t, decodedBytes)
+		decoded, err := psbt.NewFromRawBytes(bytes.NewReader(decodedBytes), false)
+		require.NoError(t, err)
+		require.NotNil(t, decoded)
+
+		require.Len(t, decoded.Inputs, 1)
+		require.Equal(t, unbondingInfo.UnbondingOutput, decoded.Inputs[0].WitnessUtxo)
+		require.Equal(t, schnorr.SerializePubKey(stakerParams.StakerPk), decoded.Inputs[0].TaprootBip32Derivation[0].XOnlyPubKey)
+
+		tli, err := unbondingInfo.TimeLockPathSpendInfo()
+		require.NoError(t, err)
+		ctrlBlockBytes, err := tli.ControlBlock.ToBytes()
+		require.NoError(t, err)
+		require.Equal(t, ctrlBlockBytes, decoded.Inputs[0].TaprootLeafScript[0].ControlBlock)
+		require.Equal(t, tli.RevealedLeaf.Script, decoded.Inputs[0].TaprootLeafScript[0].Script)
+		require.Equal(t, tli.RevealedLeaf.LeafVersion, decoded.Inputs[0].TaprootLeafScript[0].LeafVersion)
 	})
 }

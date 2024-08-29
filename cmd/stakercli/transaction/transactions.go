@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cometbft/cometbft/libs/os"
@@ -24,16 +26,19 @@ import (
 )
 
 const (
-	stakingTransactionFlag  = "staking-transaction"
-	networkNameFlag         = "network"
-	stakerPublicKeyFlag     = "staker-pk"
-	finalityProviderKeyFlag = "finality-provider-pk"
-	txInclusionHeightFlag   = "tx-inclusion-height"
-	tagFlag                 = "tag"
-	covenantMembersPksFlag  = "covenant-committee-pks"
-	covenantQuorumFlag      = "covenant-quorum"
-	minStakingAmountFlag    = "min-staking-amount"
-	maxStakingAmountFlag    = "max-staking-amount"
+	stakingTransactionFlag       = "staking-transaction"
+	unbondingTransactionFlag     = "unbonding-transaction"
+	networkNameFlag              = "network"
+	stakerPublicKeyFlag          = "staker-pk"
+	finalityProviderKeyFlag      = "finality-provider-pk"
+	txInclusionHeightFlag        = "tx-inclusion-height"
+	tagFlag                      = "tag"
+	covenantMembersPksFlag       = "covenant-committee-pks"
+	covenantQuorumFlag           = "covenant-quorum"
+	minStakingAmountFlag         = "min-staking-amount"
+	maxStakingAmountFlag         = "max-staking-amount"
+	withdrawalAddressFlag        = "withdrawal-address"
+	withdrawalTransactionFeeFlag = "withdrawal-fee"
 )
 
 var TransactionCommands = []cli.Command{
@@ -48,6 +53,7 @@ var TransactionCommands = []cli.Command{
 			checkPhase1StakingTransactionParamsCmd,
 			createPhase1StakingTransactionWithParamsCmd,
 			createPhase1UnbondingTransactionCmd,
+			createPhase1WithdrawalTransactionCmd,
 		},
 	},
 }
@@ -783,6 +789,322 @@ func createPhase1UnbondingTransaction(ctx *cli.Context) error {
 		UnbondingTxHex:            hex.EncodeToString(unbondingTxBytes),
 		UnbondingPsbtPacketBase64: unbondingPacketEncoded,
 	}
+	helpers.PrintRespJSON(resp)
+	return nil
+}
+
+type withdrawalInfo struct {
+	withdrawalOutputvalue btcutil.Amount
+	withdrawalSequence    uint32
+	withdrawalInput       *wire.OutPoint
+	withdrawalFundingUtxo *wire.TxOut
+	withdrawalSpendInfo   *btcstaking.SpendInfo
+}
+
+func outputsAreEqual(a *wire.TxOut, b *wire.TxOut) bool {
+	return a.Value == b.Value && bytes.Equal(a.PkScript, b.PkScript)
+}
+
+// createPhase1WithdrawalTransactionCmd creates un-signed withdrawal transaction based on
+// provided valid phase1 staking transaction or valid unbonding transaction.
+var createPhase1WithdrawalTransactionCmd = cli.Command{
+	Name:      "create-phase1-withdrawal-transaction",
+	ShortName: "crpwt",
+	Usage:     "stakercli transaction create-phase1-withdrawal-transaction [fullpath/to/parameters.json]",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:     stakingTransactionFlag,
+			Usage:    "original hex encoded staking transaction",
+			Required: true,
+		},
+		cli.Uint64Flag{
+			Name:     txInclusionHeightFlag,
+			Usage:    "Inclusion height of the staking transaction. Necessary to chose correct global parameters for transaction",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     withdrawalAddressFlag,
+			Usage:    "btc address to which send the withdrawed funds",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     withdrawalTransactionFeeFlag,
+			Usage:    "fee to pay for withdrawal transaction",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     networkNameFlag,
+			Usage:    "Bitcoin network on which withdrawal should take place one of (mainnet, testnet3, regtest, simnet, signet)",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:  unbondingTransactionFlag,
+			Usage: "hex encoded unbonding transaction. This should only be provided, if withdrawal is being done from unbonding output",
+		},
+	},
+	Action: createPhase1WitdrawalTransaction,
+}
+
+type CreateWithdrawalTxResponse struct {
+	// bare hex of created withdrawal transaction
+	WithdrawalTxHex string `json:"withdrawal_tx_hex"`
+	// base64 encoded psbt packet which can be used to sign the transaction using
+	// staker bitcoind wallet using `walletprocesspsbt` rpc call
+	WithdrawalPsbtPacketBase64 string `json:"withdrawal_psbt_packet_base64"`
+}
+
+func createWithdrawalInfo(
+	unbondingTxHex string,
+	stakingTxHash *chainhash.Hash,
+	withdrawalFee btcutil.Amount,
+	parsedStakingTransaction *btcstaking.ParsedV0StakingTx,
+	paramsForHeight *parser.ParsedVersionedGlobalParams,
+	net *chaincfg.Params) (*withdrawalInfo, error) {
+
+	if len(unbondingTxHex) > 0 {
+		// withdrawal from unbonding output
+		unbondingTx, _, err := bbn.NewBTCTxFromHex(unbondingTxHex)
+
+		if err != nil {
+			return nil, fmt.Errorf("error parsing unbonding transaction: %w", err)
+		}
+
+		unbondingTxHash := unbondingTx.TxHash()
+
+		if err := btcstaking.IsSimpleTransfer(unbondingTx); err != nil {
+			return nil, fmt.Errorf("unbonding transaction is not valid: %w", err)
+		}
+
+		if !unbondingTx.TxIn[0].PreviousOutPoint.Hash.IsEqual(stakingTxHash) {
+			return nil, fmt.Errorf("unbonding transaction does not spend staking transaction hash")
+		}
+
+		if unbondingTx.TxIn[0].PreviousOutPoint.Index != uint32(parsedStakingTransaction.StakingOutputIdx) {
+			return nil, fmt.Errorf("unbonding transaction does not spend staking transaction index")
+		}
+
+		expectedUnbondingAmount := parsedStakingTransaction.StakingOutput.Value - int64(paramsForHeight.UnbondingFee)
+
+		if expectedUnbondingAmount <= 0 {
+			return nil, fmt.Errorf("too low staking output value to create unbonding transaction. Staking amount: %d, Unbonding fee: %d", parsedStakingTransaction.StakingOutput.Value, paramsForHeight.UnbondingFee)
+		}
+
+		unbondingInfo, err := btcstaking.BuildUnbondingInfo(
+			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+			paramsForHeight.CovenantPks,
+			paramsForHeight.CovenantQuorum,
+			paramsForHeight.UnbondingTime,
+			btcutil.Amount(expectedUnbondingAmount),
+			net,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("error building unbonding info: %w", err)
+		}
+
+		if !outputsAreEqual(unbondingInfo.UnbondingOutput, unbondingTx.TxOut[0]) {
+			return nil, fmt.Errorf("unbonding transaction output does not match with expected output")
+		}
+
+		timeLockPathInfo, err := unbondingInfo.TimeLockPathSpendInfo()
+
+		if err != nil {
+			return nil, fmt.Errorf("error building time lock path spend info: %w", err)
+		}
+
+		withdrawalOutputValue := unbondingTx.TxOut[0].Value - int64(withdrawalFee)
+
+		if withdrawalOutputValue <= 0 {
+			return nil, fmt.Errorf("too low unbonding output value to create withdrawal transaction. Unbonding amount: %d, Withdrawal fee: %d", unbondingTx.TxOut[0].Value, withdrawalFee)
+		}
+
+		return &withdrawalInfo{
+			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+			withdrawalSequence:    uint32(paramsForHeight.UnbondingTime),
+			withdrawalInput:       wire.NewOutPoint(&unbondingTxHash, 0),
+			withdrawalFundingUtxo: unbondingTx.TxOut[0],
+			withdrawalSpendInfo:   timeLockPathInfo,
+		}, nil
+	} else {
+		stakingInfo, err := btcstaking.BuildStakingInfo(
+			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+			paramsForHeight.CovenantPks,
+			paramsForHeight.CovenantQuorum,
+			parsedStakingTransaction.OpReturnData.StakingTime,
+			btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
+			net,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("error building staking info: %w", err)
+		}
+
+		timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+
+		if err != nil {
+			return nil, fmt.Errorf("error building timelock path spend info: %w", err)
+		}
+
+		withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
+
+		if withdrawalOutputValue <= 0 {
+			return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
+		}
+
+		return &withdrawalInfo{
+			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+			withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
+			withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
+			withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
+			withdrawalSpendInfo:   timelockPathInfo,
+		}, nil
+	}
+}
+
+func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
+	inputFilePath := ctx.Args().First()
+	if len(inputFilePath) == 0 {
+		return errors.New("json file input is empty")
+	}
+
+	if !os.FileExists(inputFilePath) {
+		return fmt.Errorf("json file input %s does not exist", inputFilePath)
+	}
+
+	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputFilePath)
+
+	if err != nil {
+		return fmt.Errorf("error parsing file %s: %w", inputFilePath, err)
+	}
+
+	net := ctx.String(networkNameFlag)
+
+	currentParams, err := utils.GetBtcNetworkParams(net)
+
+	if err != nil {
+		return err
+	}
+
+	withdrawalFee, err := parseAmountFromCliCtx(ctx, withdrawalTransactionFeeFlag)
+
+	if err != nil {
+		return err
+	}
+
+	withdrawalAddressString := ctx.String(withdrawalAddressFlag)
+
+	withdrawalAddress, err := btcutil.DecodeAddress(withdrawalAddressString, currentParams)
+
+	if err != nil {
+		return fmt.Errorf("error decoding withdrawal address: %w", err)
+	}
+
+	stakingTxHex := ctx.String(stakingTransactionFlag)
+
+	stakingTx, _, err := bbn.NewBTCTxFromHex(stakingTxHex)
+
+	if err != nil {
+		return err
+	}
+
+	stakingTxInclusionHeight := ctx.Uint64(txInclusionHeightFlag)
+
+	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
+
+	if paramsForHeight == nil {
+		return fmt.Errorf("no global params found for height %d", stakingTxInclusionHeight)
+	}
+
+	parsedStakingTransaction, err := btcstaking.ParseV0StakingTx(
+		stakingTx,
+		paramsForHeight.Tag,
+		paramsForHeight.CovenantPks,
+		paramsForHeight.CovenantQuorum,
+		currentParams,
+	)
+
+	if err != nil {
+		return fmt.Errorf("provided staking transaction is not valid: %w, for params at height %d", err, stakingTxInclusionHeight)
+	}
+
+	stakingTxHash := stakingTx.TxHash()
+
+	unbondingTxHex := ctx.String(unbondingTransactionFlag)
+
+	wi, err := createWithdrawalInfo(
+		unbondingTxHex,
+		&stakingTxHash,
+		withdrawalFee,
+		parsedStakingTransaction,
+		paramsForHeight,
+		currentParams,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	withdrawalPkScript, err := txscript.PayToAddrScript(withdrawalAddress)
+
+	if err != nil {
+		return fmt.Errorf("error creating pk script for withdrawal address: %w", err)
+	}
+
+	withdrawTxPsbPacket, err := psbt.New(
+		[]*wire.OutPoint{wi.withdrawalInput},
+		[]*wire.TxOut{
+			wire.NewTxOut(int64(wi.withdrawalOutputvalue), withdrawalPkScript),
+		},
+		2,
+		0,
+		[]uint32{wi.withdrawalSequence},
+	)
+
+	if err != nil {
+		return err
+	}
+
+	serializedControlBlock, err := wi.withdrawalSpendInfo.ControlBlock.ToBytes()
+
+	if err != nil {
+		return err
+	}
+
+	// Fill psbt packet with data which will make it possible for staker to sign
+	// it using his bitcoind wallet
+	withdrawTxPsbPacket.Inputs[0].SighashType = txscript.SigHashDefault
+	withdrawTxPsbPacket.Inputs[0].WitnessUtxo = wi.withdrawalFundingUtxo
+	withdrawTxPsbPacket.Inputs[0].TaprootBip32Derivation = []*psbt.TaprootBip32Derivation{
+		{
+			XOnlyPubKey: parsedStakingTransaction.OpReturnData.StakerPublicKey.Marshall(),
+		},
+	}
+	withdrawTxPsbPacket.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+		{
+			ControlBlock: serializedControlBlock,
+			Script:       wi.withdrawalSpendInfo.RevealedLeaf.Script,
+			LeafVersion:  wi.withdrawalSpendInfo.RevealedLeaf.LeafVersion,
+		},
+	}
+
+	withdrawalTxBytes, err := utils.SerializeBtcTransaction(withdrawTxPsbPacket.UnsignedTx)
+	if err != nil {
+		return err
+	}
+
+	encodedPsbtPacket, err := withdrawTxPsbPacket.B64Encode()
+
+	if err != nil {
+		return err
+	}
+
+	resp := &CreateWithdrawalTxResponse{
+		WithdrawalTxHex:            hex.EncodeToString(withdrawalTxBytes),
+		WithdrawalPsbtPacketBase64: encodedPsbtPacket,
+	}
+
 	helpers.PrintRespJSON(resp)
 	return nil
 }
