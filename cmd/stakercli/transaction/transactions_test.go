@@ -446,13 +446,15 @@ func FuzzCheckPhase1Tx(f *testing.F) {
 			r, t, app, checkArgs,
 		)
 		require.NotNil(t, resCheck)
-		require.True(t, resCheck.IsValid)
-		require.NotNil(t, resCheck.StakingData)
-		require.Equal(t, globalParams.Versions[0].Version, uint64(resCheck.StakingData.ParamsVersion))
-		require.Equal(t, stakerParams.StakingAmount, btcutil.Amount(resCheck.StakingData.StakingAmount))
-		require.Equal(t, stakerParams.StakingTime, uint16(resCheck.StakingData.StakingTimeBlocks))
-		require.Equal(t, keyToSchnorrHex(stakerParams.StakerPk), resCheck.StakingData.StakerPublicKeyHex)
-		require.Equal(t, keyToSchnorrHex(stakerParams.FinalityProviderPk), resCheck.StakingData.FinalityProviderPublicKeyHex)
+		require.Len(t, resCheck.ValidityInfo, 1)
+
+		require.True(t, resCheck.ValidityInfo[0].IsValid)
+		require.NotNil(t, resCheck.ValidityInfo[0].StakingData)
+		require.Equal(t, globalParams.Versions[0].Version, resCheck.ValidityInfo[0].ParametersVersion)
+		require.Equal(t, stakerParams.StakingAmount, btcutil.Amount(resCheck.ValidityInfo[0].StakingData.StakingAmount))
+		require.Equal(t, stakerParams.StakingTime, uint16(resCheck.ValidityInfo[0].StakingData.StakingTimeBlocks))
+		require.Equal(t, keyToSchnorrHex(stakerParams.StakerPk), resCheck.ValidityInfo[0].StakingData.StakerPublicKeyHex)
+		require.Equal(t, keyToSchnorrHex(stakerParams.FinalityProviderPk), resCheck.ValidityInfo[0].StakingData.FinalityProviderPublicKeyHex)
 	})
 }
 

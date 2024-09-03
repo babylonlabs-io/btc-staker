@@ -82,20 +82,25 @@ type StakingTxData struct {
 	FinalityProviderPublicKeyHex string `json:"finality_provider_public_key_hex"`
 	StakingAmount                int64  `json:"staking_amount"`
 	StakingTimeBlocks            int64  `json:"staking_time_blocks"`
-	// ParamsVersion is the version of the global parameters aginst which is valid
-	ParamsVersion int64 `json:"params_version"`
+}
+
+type ValidityInfo struct {
+	ParametersVersion uint64         `json:"parameters_version"`
+	IsValid           bool           `json:"is_valid"`
+	ErrMsg            string         `json:"err_msg,omitempty"`
+	StakingData       *StakingTxData `json:"staking_data,omitempty"`
 }
 
 type CheckPhase1StakingTxResponse struct {
-	IsValid bool `json:"is_valid"`
-	// StakingData will only be populated if the transaction is valid
-	StakingData *StakingTxData `json:"staking_data"`
+	ValidityInfo []*ValidityInfo `json:"validity_info"`
 }
 
 func validateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
+
+	var info []*ValidityInfo
 
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
 		params := globalParams.Versions[i]
@@ -108,32 +113,48 @@ func validateTxAgainstParams(
 			net,
 		)
 		if err != nil {
+			info = append(info, &ValidityInfo{
+				ParametersVersion: params.Version,
+				IsValid:           false,
+				ErrMsg:            fmt.Sprintf("error parsing tx: %s", err.Error()),
+			})
 			continue
 		}
 
 		if parsed.OpReturnData.StakingTime < params.MinStakingTime || parsed.OpReturnData.StakingTime > params.MaxStakingTime {
+			info = append(info, &ValidityInfo{
+				ParametersVersion: params.Version,
+				IsValid:           false,
+				ErrMsg:            fmt.Sprintf("staking time %d is out of bounds", parsed.OpReturnData.StakingTime),
+			})
 			continue
 		}
 
 		if btcutil.Amount(parsed.StakingOutput.Value) < params.MinStakingAmount || btcutil.Amount(parsed.StakingOutput.Value) > params.MaxStakingAmount {
+			info = append(info, &ValidityInfo{
+				ParametersVersion: params.Version,
+				IsValid:           false,
+				ErrMsg:            fmt.Sprintf("staking amount %d is out of bounds", parsed.StakingOutput.Value),
+			})
 			continue
 		}
 
-		// At this point we know staking transaction is valid against this version of global params
-		return &CheckPhase1StakingTxResponse{
-			IsValid: true,
+		info = append(info, &ValidityInfo{
+			ParametersVersion: params.Version,
+			IsValid:           true,
 			StakingData: &StakingTxData{
-				StakerPublicKeyHex:           hex.EncodeToString(parsed.OpReturnData.StakerPublicKey.Marshall()),
-				FinalityProviderPublicKeyHex: hex.EncodeToString(parsed.OpReturnData.FinalityProviderPublicKey.Marshall()),
+				StakerPublicKeyHex:           hex.EncodeToString(schnorr.SerializePubKey(parsed.OpReturnData.StakerPublicKey.PubKey)),
+				FinalityProviderPublicKeyHex: hex.EncodeToString(schnorr.SerializePubKey(parsed.OpReturnData.FinalityProviderPublicKey.PubKey)),
 				StakingAmount:                parsed.StakingOutput.Value,
 				StakingTimeBlocks:            int64(parsed.OpReturnData.StakingTime),
-				ParamsVersion:                int64(params.Version),
-			},
-		}
+			}})
+
+		// We found latest valid version, no need to check further
+		break
 	}
 
 	return &CheckPhase1StakingTxResponse{
-		IsValid: false,
+		ValidityInfo: info,
 	}
 }
 
