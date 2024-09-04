@@ -462,9 +462,9 @@ func parseWatchStakingRequest(
 	currentParams *cl.StakingParams,
 	network *chaincfg.Params,
 ) (*stakingRequestedEvent, error) {
-	// TODO: This check re-implements whole babylon validation logic. We should
+	// TODO(https://github.com/babylonlabs-io/btc-staker/issues/32):
+	// This check re-implements whole babylon validation logic. We should
 	// refactor this to use babylon validation utilities.
-
 	if stakingTime < currentParams.MinStakingTime || stakingTime > currentParams.MaxStakingTime {
 		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
 			stakingTime, currentParams.MinStakingTime, currentParams.MaxStakingTime)
