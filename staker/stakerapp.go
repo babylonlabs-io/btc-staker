@@ -98,21 +98,6 @@ const (
 
 	defaultWalletUnlockTimeout = 15
 
-	// Actual virtual size of transaction which spends staking transaction through slashing
-	// path. In reality it highly depends on slashingAddress size:
-	// for p2pk - 222vb
-	// for p2wpkh - 177vb
-	// for p2tr - 189vb
-	// We are chosing 180vb as we expect slashing address will be one of the more recent
-	// address types.
-	// Transaction is quite big as witness to spend is composed of:
-	// 1. StakerSig
-	// 2. CovenantSig
-	// 3. FinalityProviderSig
-	// 4. StakingScript
-	// 5. Taproot control block
-	slashingPathSpendTxVSize = 180
-
 	// Set minimum fee to 1 sat/byte, as in standard rules policy
 	MinFeePerKb = txrules.DefaultRelayFeePerKb
 
@@ -1401,15 +1386,6 @@ func (app *StakerApp) BabylonController() cl.BabylonClient {
 	return app.babylonClient
 }
 
-func GetMinStakingTime(p *cl.StakingParams) uint32 {
-	// Actual minimum staking time in babylon is k+w, but setting it to that would
-	// result in delegation which have voting power for 0 btc blocks.
-	// therefore setting it to 2*w + k, will result in delegation with voting power
-	// for at least w blocks. Therefore this conditions enforces min staking time i.e time
-	// when stake is active of w blocks
-	return 2*p.FinalizationTimeoutBlocks + p.ConfirmationTimeBlocks
-}
-
 func (app *StakerApp) WatchStaking(
 	stakingTx *wire.MsgTx,
 	stakingTime uint16,
@@ -1538,11 +1514,14 @@ func (app *StakerApp) StakeFunds(
 		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
 			stakingAmount, slashingFee)
 	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
 
-	minStakingTime := GetMinStakingTime(params)
-	if uint32(stakingTimeBlocks) < minStakingTime {
-		return nil, fmt.Errorf("staking time %d is less than minimum staking time %d",
-			stakingTimeBlocks, minStakingTime)
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
 	}
 
 	// unlock wallet for the rest of the operations

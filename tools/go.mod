@@ -2,7 +2,7 @@ module github.com/babylonlabs-io/btc-staker/tools
 
 go 1.22.3
 
-require github.com/babylonlabs-io/babylon v0.9.0
+require github.com/babylonlabs-io/babylon v0.9.3-0.20240904123958-b1e255a85e76
 
 require (
 	cloud.google.com/go v0.112.0 // indirect
