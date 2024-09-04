@@ -56,17 +56,13 @@ func (app *StakerApp) buildOwnedDelegation(
 		}).Fatalf("Failed to build delegation data for already confirmed staking transaction")
 	}
 
-	// TODO: Option to use custom fee rate, as estimator uses pretty big value for fee
-	// in case of estimation failure (25 sat/byte)
-	unbondingTxFeeRatePerKb := btcutil.Amount(app.feeEstimator.EstimateFeePerKb())
-
 	undelegationDesc, err := createUndelegationData(
 		storedTx,
 		externalData.stakerPublicKey,
 		externalData.babylonParams.CovenantPks,
 		externalData.babylonParams.CovenantQuruomThreshold,
-		externalData.babylonParams.SlashingAddress,
-		unbondingTxFeeRatePerKb,
+		externalData.babylonParams.SlashingPkScript,
+		externalData.babylonParams.UnbondingFee,
 		// TODO: Possiblity to customize finalization time
 		uint16(externalData.babylonParams.MinUnbondingTime)+1,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),

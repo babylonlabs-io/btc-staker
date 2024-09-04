@@ -100,13 +100,18 @@ func NewBabylonController(
 }
 
 type StakingTrackerResponse struct {
-	SlashingAddress         btcutil.Address
+	SlashingPkScript        []byte
 	SlashingRate            sdkmath.LegacyDec
 	MinComissionRate        sdkmath.LegacyDec
 	CovenantPks             []*btcec.PublicKey
 	CovenantQuruomThreshold uint32
 	MinSlashingFee          btcutil.Amount
-	MinUnbodningTime        uint16
+	MinUnbondingTime        uint16
+	UnbondingFee            btcutil.Amount
+	MinStakingTime          uint16
+	MaxStakingTime          uint16
+	MinStakingValue         btcutil.Amount
+	MaxStakingValue         btcutil.Amount
 }
 
 type FinalityProviderInfo struct {
@@ -175,18 +180,23 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 
 	minUnbondingTime := sdkmath.Max[uint16](
 		uint16(bccParams.CheckpointFinalizationTimeout),
-		stakingTrackerParams.MinUnbodningTime,
+		stakingTrackerParams.MinUnbondingTime,
 	)
 
 	return &StakingParams{
 		ConfirmationTimeBlocks:    uint32(bccParams.BtcConfirmationDepth),
 		FinalizationTimeoutBlocks: uint32(bccParams.CheckpointFinalizationTimeout),
-		SlashingAddress:           stakingTrackerParams.SlashingAddress,
+		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
 		CovenantPks:               stakingTrackerParams.CovenantPks,
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
 		SlashingRate:              stakingTrackerParams.SlashingRate,
 		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
 		MinUnbondingTime:          minUnbondingTime,
+		UnbondingFee:              stakingTrackerParams.UnbondingFee,
+		MinStakingTime:            stakingTrackerParams.MinStakingTime,
+		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
+		MinStakingValue:           stakingTrackerParams.MinStakingValue,
+		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
 	}, nil
 }
 
@@ -446,11 +456,6 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		return nil, err
 	}
 
-	slashingAddress, err := btcutil.DecodeAddress(response.Params.SlashingAddress, bc.btcParams)
-	if err != nil {
-		return nil, err
-	}
-
 	// check this early than covenant config makes sense, so that rest of the
 	// code can assume that:
 	// 1. covenant quorum is less or equal to number of covenant pks
@@ -473,18 +478,43 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		covenantPks = append(covenantPks, covenantBtcPk)
 	}
 
-	if response.Params.MinUnbondingTime > math.MaxUint16 {
+	if response.Params.MinUnbondingTimeBlocks > math.MaxUint16 {
 		return nil, fmt.Errorf("min unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
+	if response.Params.MinStakingTimeBlocks > math.MaxUint16 {
+		return nil, fmt.Errorf("min staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if response.Params.MaxStakingTimeBlocks > math.MaxUint16 {
+		return nil, fmt.Errorf("max staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if response.Params.MinStakingValueSat < 0 {
+		return nil, fmt.Errorf("min staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if response.Params.MaxStakingValueSat < 0 {
+		return nil, fmt.Errorf("max staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if response.Params.UnbondingFeeSat < 0 {
+		return nil, fmt.Errorf("unbonding fee is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
 	return &StakingTrackerResponse{
-		SlashingAddress:         slashingAddress,
+		SlashingPkScript:        response.Params.SlashingPkScript,
 		SlashingRate:            response.Params.SlashingRate,
 		MinComissionRate:        response.Params.MinCommissionRate,
 		CovenantPks:             covenantPks,
 		MinSlashingFee:          btcutil.Amount(response.Params.MinSlashingTxFeeSat),
 		CovenantQuruomThreshold: response.Params.CovenantQuorum,
-		MinUnbodningTime:        uint16(response.Params.MinUnbondingTime),
+		MinUnbondingTime:        uint16(response.Params.MinUnbondingTimeBlocks),
+		UnbondingFee:            btcutil.Amount(response.Params.UnbondingFeeSat),
+		MinStakingTime:          uint16(response.Params.MinStakingTimeBlocks),
+		MaxStakingTime:          uint16(response.Params.MaxStakingTimeBlocks),
+		MinStakingValue:         btcutil.Amount(response.Params.MinStakingValueSat),
+		MaxStakingValue:         btcutil.Amount(response.Params.MaxStakingValueSat),
 	}, nil
 }
 

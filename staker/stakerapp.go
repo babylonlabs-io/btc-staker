@@ -1401,15 +1401,6 @@ func (app *StakerApp) BabylonController() cl.BabylonClient {
 	return app.babylonClient
 }
 
-func GetMinStakingTime(p *cl.StakingParams) uint32 {
-	// Actual minimum staking time in babylon is k+w, but setting it to that would
-	// result in delegation which have voting power for 0 btc blocks.
-	// therefore setting it to 2*w + k, will result in delegation with voting power
-	// for at least w blocks. Therefore this conditions enforces min staking time i.e time
-	// when stake is active of w blocks
-	return 2*p.FinalizationTimeoutBlocks + p.ConfirmationTimeBlocks
-}
-
 func (app *StakerApp) WatchStaking(
 	stakingTx *wire.MsgTx,
 	stakingTime uint16,
@@ -1539,10 +1530,9 @@ func (app *StakerApp) StakeFunds(
 			stakingAmount, slashingFee)
 	}
 
-	minStakingTime := GetMinStakingTime(params)
-	if uint32(stakingTimeBlocks) < minStakingTime {
+	if stakingTimeBlocks < params.MinStakingTime {
 		return nil, fmt.Errorf("staking time %d is less than minimum staking time %d",
-			stakingTimeBlocks, minStakingTime)
+			stakingTimeBlocks, params.MinStakingTime)
 	}
 
 	// unlock wallet for the rest of the operations

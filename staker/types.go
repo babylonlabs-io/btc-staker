@@ -111,7 +111,7 @@ func slashingTxForStakingTx(
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
 		storedTx.StakingOutputIndex,
-		delegationData.babylonParams.SlashingAddress,
+		delegationData.babylonParams.SlashingPkScript,
 		stakerPubKey,
 		lockSlashTxLockTime,
 		int64(slashingFee),
@@ -328,8 +328,8 @@ func createUndelegationData(
 	stakerPubKey *btcec.PublicKey,
 	covenantPubKeys []*btcec.PublicKey,
 	covenantThreshold uint32,
-	slashingAddress btcutil.Address,
-	feeRatePerKb btcutil.Amount,
+	slashingPkScript []byte,
+	unbondingTxFee btcutil.Amount,
 	unbondingTime uint16,
 	slashingFee btcutil.Amount,
 	slashingRate sdkmath.LegacyDec,
@@ -339,19 +339,17 @@ func createUndelegationData(
 
 	stakingOutpout := storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex]
 
-	unbondingTxFee := txrules.FeeForSerializeSize(feeRatePerKb, slashingPathSpendTxVSize)
-
 	unbondingOutputValue := stakingOutpout.Value - int64(unbondingTxFee)
 
 	if unbondingOutputValue <= 0 {
 		return nil, fmt.Errorf(
-			"too large fee rate %d sats/kb. Staking output value:%d sats. Unbonding tx fee:%d sats", int64(feeRatePerKb), stakingOutpout.Value, int64(unbondingTxFee),
+			"staking output value:%d sats. Unbonding tx fee:%d sats", stakingOutpout.Value, int64(unbondingTxFee),
 		)
 	}
 
 	if unbondingOutputValue <= int64(slashingFee) {
 		return nil, fmt.Errorf(
-			"too large fee rate %d sats/kb. Unbonding output value %d sats. Slashing tx fee: %d sats", int64(feeRatePerKb), unbondingOutputValue, int64(slashingFee),
+			"unbonding output value %d sats. Slashing tx fee: %d sats", unbondingOutputValue, int64(slashingFee),
 		)
 	}
 
@@ -376,7 +374,7 @@ func createUndelegationData(
 	slashUnbondingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		unbondingTx,
 		0,
-		slashingAddress,
+		slashingPkScript,
 		stakerPubKey,
 		unbondingTime,
 		int64(slashingFee),
@@ -494,7 +492,7 @@ func parseWatchStakingRequest(
 		stakingOutputIdx,
 		int64(currentParams.MinSlashingTxFeeSat),
 		currentParams.SlashingRate,
-		currentParams.SlashingAddress,
+		currentParams.SlashingPkScript,
 		stakerBtcPk,
 		unbondingTime,
 		network,
@@ -561,7 +559,7 @@ func parseWatchStakingRequest(
 		0,
 		int64(currentParams.MinSlashingTxFeeSat),
 		currentParams.SlashingRate,
-		currentParams.SlashingAddress,
+		currentParams.SlashingPkScript,
 		stakerBtcPk,
 		unbondingTime,
 		network,

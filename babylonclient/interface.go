@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	pv "github.com/cosmos/relayer/v2/relayer/provider"
@@ -27,8 +28,8 @@ type StakingParams struct {
 	// Bitcoin public key of the current covenant
 	CovenantPks []*btcec.PublicKey
 
-	// Address to which slashing transactions are sent
-	SlashingAddress btcutil.Address
+	// PkScript that must be inserted in the slashing output of the slashing transaction
+	SlashingPkScript []byte
 
 	// The rate at which the staked funds will be slashed, expressed as a decimal.
 	SlashingRate sdkmath.LegacyDec
@@ -38,6 +39,21 @@ type StakingParams struct {
 
 	// Minimum unbonding time required by bayblon
 	MinUnbondingTime uint16
+
+	// Fee required by unbonding transaction
+	UnbondingFee btcutil.Amount
+
+	// Minimum staking time required by bayblon
+	MinStakingTime uint16
+
+	// Maximum staking time required by bayblon
+	MaxStakingTime uint16
+
+	// Minimum staking value required by bayblon
+	MinStakingValue btcutil.Amount
+
+	// Maximum staking value required by bayblon
+	MaxStakingValue btcutil.Amount
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -154,6 +170,8 @@ func GetMockClient() *MockBabylonClient {
 
 	slashingAddress, _ := btcutil.NewAddressPubKey(covenantPk.PubKey().SerializeCompressed(), &chaincfg.SimNetParams)
 
+	slashingPkScript, err := txscript.PayToAddrScript(slashingAddress)
+
 	fpBtcPrivKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		panic(err)
@@ -170,7 +188,7 @@ func GetMockClient() *MockBabylonClient {
 			FinalizationTimeoutBlocks: 5,
 			MinSlashingTxFeeSat:       btcutil.Amount(1000),
 			CovenantPks:               []*btcec.PublicKey{covenantPk.PubKey()},
-			SlashingAddress:           slashingAddress,
+			SlashingPkScript:          slashingPkScript,
 			SlashingRate:              sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
 		},
 		babylonKey:             priv,
