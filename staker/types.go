@@ -462,6 +462,19 @@ func parseWatchStakingRequest(
 	currentParams *cl.StakingParams,
 	network *chaincfg.Params,
 ) (*stakingRequestedEvent, error) {
+	// TODO: This check re-implements whole babylon validation logic. We should
+	// refactor this to use babylon validation utilities.
+
+	if stakingTime < currentParams.MinStakingTime || stakingTime > currentParams.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTime, currentParams.MinStakingTime, currentParams.MaxStakingTime)
+	}
+
+	if stakingValue < currentParams.MinStakingValue || stakingValue > currentParams.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingValue, currentParams.MinStakingValue, currentParams.MaxStakingValue)
+	}
+
 	stakingInfo, err := staking.BuildStakingInfo(
 		stakerBtcPk,
 		fpBtcPks,
@@ -587,6 +600,12 @@ func parseWatchStakingRequest(
 
 	if unbondingTx.TxOut[0].Value >= stakingTx.TxOut[stakingOutputIdx].Value {
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding tx value must be less than staking output value")
+	}
+
+	if stakingTx.TxOut[stakingOutputIdx].Value-unbondingTx.TxOut[0].Value != int64(currentParams.UnbondingFee) {
+		return nil, fmt.Errorf("failed to watch staking tx. unbonding tx fee must be equal to %d, and it is equal to %d",
+			currentParams.UnbondingFee,
+			unbondingTx.TxOut[0].Value-stakingTx.TxOut[stakingOutputIdx].Value)
 	}
 
 	stakingTxHash := stakingTx.TxHash()

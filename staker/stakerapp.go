@@ -1529,10 +1529,14 @@ func (app *StakerApp) StakeFunds(
 		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
 			stakingAmount, slashingFee)
 	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
 
-	if stakingTimeBlocks < params.MinStakingTime {
-		return nil, fmt.Errorf("staking time %d is less than minimum staking time %d",
-			stakingTimeBlocks, params.MinStakingTime)
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
 	}
 
 	// unlock wallet for the rest of the operations
