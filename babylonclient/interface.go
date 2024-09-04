@@ -172,6 +172,10 @@ func GetMockClient() *MockBabylonClient {
 
 	slashingPkScript, err := txscript.PayToAddrScript(slashingAddress)
 
+	if err != nil {
+		panic(err)
+	}
+
 	fpBtcPrivKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		panic(err)

@@ -98,21 +98,6 @@ const (
 
 	defaultWalletUnlockTimeout = 15
 
-	// Actual virtual size of transaction which spends staking transaction through slashing
-	// path. In reality it highly depends on slashingAddress size:
-	// for p2pk - 222vb
-	// for p2wpkh - 177vb
-	// for p2tr - 189vb
-	// We are chosing 180vb as we expect slashing address will be one of the more recent
-	// address types.
-	// Transaction is quite big as witness to spend is composed of:
-	// 1. StakerSig
-	// 2. CovenantSig
-	// 3. FinalityProviderSig
-	// 4. StakingScript
-	// 5. Taproot control block
-	slashingPathSpendTxVSize = 180
-
 	// Set minimum fee to 1 sat/byte, as in standard rules policy
 	MinFeePerKb = txrules.DefaultRelayFeePerKb
 
