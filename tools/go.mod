@@ -2,7 +2,7 @@ module github.com/babylonlabs-io/btc-staker/tools
 
 go 1.22.3
 
-require github.com/babylonlabs-io/babylon v0.9.3-0.20240904123958-b1e255a85e76
+require github.com/babylonlabs-io/babylon v0.10.0
 
 require (
 	cloud.google.com/go v0.112.0 // indirect
@@ -81,7 +81,6 @@ require (
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/distribution/reference v0.5.0 // indirect
-	github.com/docker/docker v23.0.8+incompatible // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
 	github.com/emicklei/dot v1.6.1 // indirect
