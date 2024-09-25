@@ -3,15 +3,11 @@ FROM golang:1.22.3 as builder
 # Install cli tools for building and final image
 RUN apt-get update && apt-get install -y make git bash gcc curl jq
 
-RUN mkdir -p /root/.ssh && ssh-keyscan github.com >> /root/.ssh/known_hosts
-RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
-ENV GOPRIVATE=github.com/babylonlabs-io/*
-
 # Build
 WORKDIR /go/src/github.com/babylonlabs-io/btc-staker
 # Cache dependencies
 COPY go.mod go.sum /go/src/github.com/babylonlabs-io/btc-staker/
-RUN --mount=type=secret,id=sshKey,target=/root/.ssh/id_rsa go mod download
+RUN go mod download
 
 # Copy the rest of the files
 COPY ./ /go/src/github.com/babylonlabs-io/btc-staker/

@@ -98,21 +98,6 @@ const (
 
 	defaultWalletUnlockTimeout = 15
 
-	// Actual virtual size of transaction which spends staking transaction through slashing
-	// path. In reality it highly depends on slashingAddress size:
-	// for p2pk - 222vb
-	// for p2wpkh - 177vb
-	// for p2tr - 189vb
-	// We are chosing 180vb as we expect slashing address will be one of the more recent
-	// address types.
-	// Transaction is quite big as witness to spend is composed of:
-	// 1. StakerSig
-	// 2. CovenantSig
-	// 3. FinalityProviderSig
-	// 4. StakingScript
-	// 5. Taproot control block
-	slashingPathSpendTxVSize = 180
-
 	// Set minimum fee to 1 sat/byte, as in standard rules policy
 	MinFeePerKb = txrules.DefaultRelayFeePerKb
 
@@ -515,9 +500,16 @@ func (app *StakerApp) handleBtcTxInfo(
 	return nil
 }
 
+func (app *StakerApp) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
+	if err := app.txTracker.SetTxSpentOnBtc(hash); err != nil {
+		app.logger.Fatalf("Error setting transaction spent on btc: %s", err)
+	}
+}
+
 // TODO: We should also handle case when btc node or babylon node lost data and start from scratch
 // i.e keep track what is last known block height on both chains and detect if after restart
 // for some reason they are behind staker
+// TODO: Refactor this functions after adding unit tests to stakerapp
 func (app *StakerApp) checkTransactionsStatus() error {
 	stakingParams, err := app.babylonClient.Params()
 
@@ -564,10 +556,16 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			})
 			return nil
 		case proto.TransactionState_DELEGATION_ACTIVE:
-			// we recevied all necessary data from babylon nothing to do here
+			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
+				stakingTxHash:  &stakingTxHash,
+				stakingTxState: tx.State,
+			})
 			return nil
 		case proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC:
-			// unbonding tx was sent to babylon, received all signatures and was confirmed on btc, nothing to do here
+			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
+				stakingTxHash:  &stakingTxHash,
+				stakingTxState: tx.State,
+			})
 			return nil
 		case proto.TransactionState_SPENT_ON_BTC:
 			// nothing to do, staking transaction is already spent
@@ -669,6 +667,98 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			// we crashed after succesful send to babaylon, restart checking for unbonding signatures
 			app.wg.Add(1)
 			go app.checkForUnbondingTxSignaturesOnBabylon(stakingTxHash)
+		} else if localInfo.stakingTxState == proto.TransactionState_DELEGATION_ACTIVE {
+			// delegation was sent to Babylon and activated by covenants, check whether we:
+			// - did not spend tx before restart
+			// - did not send unbonding tx before restart
+			stakingTxHash := localInfo.stakingTxHash
+			tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
+
+			// 1. First check if staking output is still unspent on BTC chain
+			stakingOutputSpent, err := app.wc.OutputSpent(stakingTxHash, tx.StakingOutputIndex)
+
+			if err != nil {
+				return err
+			}
+
+			if !stakingOutputSpent {
+				// If the staking output is unspent, then it means that delegation is
+				// sitll considered active. We can move forward without to next transaction
+				// and leave the state as it is.
+				continue
+			}
+
+			// 2. Staking output has been spent, we need to check whether this is unbonding
+			// or withdrawal transaction
+			unbondingTxHash := tx.UnbondingTxData.UnbondingTx.TxHash()
+
+			_, unbondingTxStatus, err := app.wc.TxDetails(
+				&unbondingTxHash,
+				// unbonding tx always have only one output
+				tx.UnbondingTxData.UnbondingTx.TxOut[0].PkScript,
+			)
+
+			if err != nil {
+				return err
+			}
+
+			if unbondingTxStatus == walletcontroller.TxNotFound {
+				// no unbonding tx on chain and staking output already spent, most probably
+				// staking transaction has been withdrawn, update state in db
+				app.mustSetTxSpentOnBtc(stakingTxHash)
+				continue
+			}
+
+			unbondingOutputSpent, err := app.wc.OutputSpent(&unbondingTxHash, 0)
+
+			if err != nil {
+				return err
+			}
+
+			if unbondingOutputSpent {
+				app.mustSetTxSpentOnBtc(stakingTxHash)
+				continue
+			}
+
+			// At this point:
+			// - staking output is spent
+			// - unbonding tx has been found in the btc chain
+			// - unbonding output is not spent
+			// we can start waiting for unbonding tx confirmation
+			ev, err := app.notifier.RegisterConfirmationsNtfn(
+				&unbondingTxHash,
+				tx.UnbondingTxData.UnbondingTx.TxOut[0].PkScript,
+				UnbondingTxConfirmations,
+				// unbonding transactions will for sure be included after staking tranasction
+				tx.StakingTxConfirmationInfo.Height,
+			)
+
+			if err != nil {
+				return err
+			}
+
+			// unbonding tx is in mempool, wait for confirmation and inform event
+			// loop about it
+			app.wg.Add(1)
+			go app.waitForUnbondingTxConfirmation(
+				ev,
+				tx.UnbondingTxData,
+				stakingTxHash,
+			)
+		} else if localInfo.stakingTxState == proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC {
+			stakingTxHash := localInfo.stakingTxHash
+			tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
+			unbondingTxHash := tx.UnbondingTxData.UnbondingTx.TxHash()
+
+			unbondingOutputSpent, err := app.wc.OutputSpent(&unbondingTxHash, 0)
+
+			if err != nil {
+				return err
+			}
+
+			if unbondingOutputSpent {
+				app.mustSetTxSpentOnBtc(stakingTxHash)
+			}
 		} else {
 			// we should not have any other state here, so kill app
 			return fmt.Errorf("unexpected local transaction state: %s, expected: %s", localInfo.stakingTxState, proto.TransactionState_SENT_TO_BABYLON)
@@ -839,6 +929,10 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		return fmt.Errorf("failed to send unbondingtx. wallet signing error: %w", err)
 	}
 
+	if stakerUnbondingSig.Signature == nil {
+		return fmt.Errorf("failed to receive stakerUnbondingSig.Signature")
+	}
+
 	covenantSigantures := createWitnessSignaturesForPubKeys(
 		params.CovenantPks,
 		unbondingData.CovenantSignatures,
@@ -846,7 +940,7 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 
 	witness, err := unbondingSpendInfo.CreateUnbondingPathWitness(
 		covenantSigantures,
-		stakerUnbondingSig,
+		stakerUnbondingSig.Signature,
 	)
 
 	if err != nil {
@@ -930,11 +1024,13 @@ func (app *StakerApp) sendUnbondingTxToBtc(
 	return notificationEv, nil
 }
 
+// waitForUnbondingTxConfirmation blocks until unbonding tx is confirmed on btc chain.
 func (app *StakerApp) waitForUnbondingTxConfirmation(
 	waitEv *notifier.ConfirmationEvent,
 	unbondingData *stakerdb.UnbondingStoreData,
 	stakingTxHash *chainhash.Hash,
 ) {
+	defer app.wg.Done()
 	defer waitEv.Cancel()
 	unbondingTxHash := unbondingData.UnbondingTx.TxHash()
 
@@ -996,7 +1092,8 @@ func (app *StakerApp) sendUnbondingTxToBtcTask(
 		return
 	}
 
-	app.waitForUnbondingTxConfirmation(
+	app.wg.Add(1)
+	go app.waitForUnbondingTxConfirmation(
 		waitEv,
 		unbondingData,
 		stakingTxHash,
@@ -1289,15 +1386,6 @@ func (app *StakerApp) BabylonController() cl.BabylonClient {
 	return app.babylonClient
 }
 
-func GetMinStakingTime(p *cl.StakingParams) uint32 {
-	// Actual minimum staking time in babylon is k+w, but setting it to that would
-	// result in delegation which have voting power for 0 btc blocks.
-	// therefore setting it to 2*w + k, will result in delegation with voting power
-	// for at least w blocks. Therefore this conditions enforces min staking time i.e time
-	// when stake is active of w blocks
-	return 2*p.FinalizationTimeoutBlocks + p.ConfirmationTimeBlocks
-}
-
 func (app *StakerApp) WatchStaking(
 	stakingTx *wire.MsgTx,
 	stakingTime uint16,
@@ -1426,11 +1514,14 @@ func (app *StakerApp) StakeFunds(
 		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
 			stakingAmount, slashingFee)
 	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
 
-	minStakingTime := GetMinStakingTime(params)
-	if uint32(stakingTimeBlocks) < minStakingTime {
-		return nil, fmt.Errorf("staking time %d is less than minimum staking time %d",
-			stakingTimeBlocks, minStakingTime)
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
 	}
 
 	// unlock wallet for the rest of the operations
@@ -1612,7 +1703,7 @@ func (app *StakerApp) signTaprootScriptSpendUsingWallet(
 	signerAddress btcutil.Address,
 	leaf *txscript.TapLeaf,
 	controlBlock *txscript.ControlBlock,
-) (*schnorr.Signature, error) {
+) (*walletcontroller.TaprootSigningResult, error) {
 
 	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
 		return nil, fmt.Errorf("failed to unlock wallet before signing: %w", err)
@@ -1634,7 +1725,7 @@ func (app *StakerApp) signTaprootScriptSpendUsingWallet(
 		return nil, err
 	}
 
-	return resp.Signature, nil
+	return resp, nil
 }
 
 // SpendStake spends stake identified by stakingTxHash. Stake can be currently locked in
@@ -1724,15 +1815,15 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error building signature: %w", err)
 	}
 
-	witness, err := spendStakeTxInfo.fundingOutputSpendInfo.CreateTimeLockPathWitness(
-		stakerSig,
-	)
+	if stakerSig.FullInputWitness == nil {
+		return nil, nil, fmt.Errorf("failed to recevie full witness to spend staking transactions")
+	}
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error building witness: %w", err)
 	}
 
-	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = witness
+	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = stakerSig.FullInputWitness
 
 	// We do not check if transaction is spendable i.e the staking time has passed
 	// as this is validated in mempool so in of not meeting this time requirement

@@ -15,7 +15,6 @@ import (
 	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/proto"
-	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -191,10 +190,10 @@ func TestRestakingToConsumerChains(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
+	stakingTime := uint16(1000)
 
 	// restaked to 2 Babylon finality providers and 3 CZ finality providers
-	data := tm.getTestStakingDataWithCZFPs(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 2, 3)
+	data := tm.getTestStakingDataWithCZFPs(t, tm.WalletPubKey, stakingTime, 50000, 2, 3)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)

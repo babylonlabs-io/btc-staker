@@ -30,8 +30,11 @@ type TaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription
 }
 
+// TaprootSigningResult contains result of signing taproot spend through bitcoind
+// wallet. It will contain either Signature or FullInputWitness, never both.
 type TaprootSigningResult struct {
-	Signature *schnorr.Signature
+	Signature        *schnorr.Signature
+	FullInputWitness wire.TxWitness
 }
 
 type WalletController interface {
@@ -57,4 +60,8 @@ type WalletController interface {
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
 	SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error)
+	OutputSpent(
+		txHash *chainhash.Hash,
+		outputIdx uint32,
+	) (bool, error)
 }
