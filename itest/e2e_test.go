@@ -20,6 +20,7 @@ import (
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
@@ -75,7 +76,7 @@ func keyToAddr(key *btcec.PrivateKey, net *chaincfg.Params) (btcutil.Address, er
 	return pubKeyAddr.AddressPubKeyHash(), nil
 }
 
-func defaultStakerConfig(t *testing.T, passphrase string) (*stakercfg.Config, *rpcclient.Client) {
+func defaultStakerConfig(t *testing.T, walletName, passphrase string) (*stakercfg.Config, *rpcclient.Client) {
 	defaultConfig := stakercfg.DefaultConfig()
 
 	// both wallet and node are bicoind
@@ -97,6 +98,7 @@ func defaultStakerConfig(t *testing.T, passphrase string) (*stakercfg.Config, *r
 	defaultConfig.WalletRpcConfig.Pass = bitcoindPass
 	defaultConfig.WalletRpcConfig.DisableTls = true
 	defaultConfig.WalletConfig.WalletPass = passphrase
+	defaultConfig.WalletConfig.WalletName = walletName
 
 	// node configuration
 	defaultConfig.BtcNodeBackendConfig.Bitcoind.RPCHost = bitcoindHost
@@ -139,7 +141,7 @@ type TestManager struct {
 	Db               kvdb.Backend
 	Sa               *staker.StakerApp
 	BabylonClient    *babylonclient.BabylonController
-	WalletPrivKey    *btcec.PrivateKey
+	WalletPubKey     *btcec.PublicKey
 	MinerAddr        btcutil.Address
 	serverStopper    *signal.Interceptor
 	wg               *sync.WaitGroup
@@ -222,7 +224,8 @@ func StartManager(
 	h := NewBitcoindHandler(t)
 	h.Start()
 	passphrase := "pass"
-	_ = h.CreateWallet("test-wallet", passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
 	br := h.GenerateBlocks(int(numMatureOutputsInWallet) + 100)
 
@@ -243,13 +246,16 @@ func StartManager(
 	require.NoError(t, err)
 	baseHeaderHex := hex.EncodeToString(buff.Bytes())
 
+	pkScript, err := txscript.PayToAddrScript(minerAddressDecoded)
+	require.NoError(t, err)
+
 	bh, err := NewBabylonNodeHandler(
 		quorum,
 		coventantPrivKeys[0].PubKey(),
 		coventantPrivKeys[1].PubKey(),
 		coventantPrivKeys[2].PubKey(),
 		// all slashings will be sent back to wallet
-		minerAddressDecoded.EncodeAddress(),
+		hex.EncodeToString(pkScript),
 		baseHeaderHex,
 	)
 	require.NoError(t, err)
@@ -257,7 +263,7 @@ func StartManager(
 	err = bh.Start()
 	require.NoError(t, err)
 
-	cfg, c := defaultStakerConfig(t, passphrase)
+	cfg, c := defaultStakerConfig(t, walletName, passphrase)
 
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
@@ -294,7 +300,13 @@ func StartManager(
 	err = walletClient.UnlockWallet(20)
 	require.NoError(t, err)
 
-	walletPrivKey, err := c.DumpPrivKey(minerAddressDecoded)
+	info, err := c.GetAddressInfo(br.Address)
+	require.NoError(t, err)
+
+	pubKeyHex := *info.PubKey
+	pubKeyBytes, err := hex.DecodeString(pubKeyHex)
+	require.NoError(t, err)
+	walletPubKey, err := btcec.ParsePubKey(pubKeyBytes)
 	require.NoError(t, err)
 
 	interceptor, err := signal.Intercept()
@@ -334,7 +346,7 @@ func StartManager(
 		Db:               dbbackend,
 		Sa:               stakerApp,
 		BabylonClient:    bl,
-		WalletPrivKey:    walletPrivKey.PrivKey,
+		WalletPubKey:     walletPubKey,
 		MinerAddr:        minerAddressDecoded,
 		serverStopper:    &interceptor,
 		wg:               &wg,
@@ -356,9 +368,22 @@ func (tm *TestManager) Stop(t *testing.T) {
 }
 
 func (tm *TestManager) RestartApp(t *testing.T) {
+	// Restart the app with no-op action
+	tm.RestartAppWithAction(t, func(t *testing.T) {})
+}
+
+// RestartAppWithAction:
+// 1. Stop the staker app
+// 2. Perform provided action. Warning:this action must not use staker app as
+// app is stopped at this point
+// 3. Start the staker app
+func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing.T)) {
 	// First stop the app
 	tm.serverStopper.RequestShutdown()
 	tm.wg.Wait()
+
+	// Perform the action
+	action(t)
 
 	// Now reset all components and start again
 	logger := logrus.New()
@@ -785,7 +810,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		tx,
 		uint32(stakingOutputIdx),
-		params.SlashingAddress,
+		params.SlashingPkScript,
 		testStakingData.StakerKey,
 		unbondingTme,
 		int64(params.MinSlashingTxFeeSat)+10,
@@ -797,20 +822,27 @@ func (tm *TestManager) sendWatchedStakingTx(
 	stakingTxSlashingPathInfo, err := stakingInfo.SlashingPathSpendInfo()
 	require.NoError(t, err)
 
-	slashSig, err := staking.SignTxWithOneScriptSpendInputFromScript(
-		slashingTx,
-		tx.TxOut[stakingOutputIdx],
-		tm.WalletPrivKey,
-		stakingTxSlashingPathInfo.RevealedLeaf.Script,
+	slashingSigResult, err := tm.Sa.Wallet().SignOneInputTaprootSpendingTransaction(
+		&walletcontroller.TaprootSigningRequest{
+			FundingOutput: stakingInfo.StakingOutput,
+			TxToSign:      slashingTx,
+			SignerAddress: tm.MinerAddr,
+			SpendDescription: &walletcontroller.SpendPathDescription{
+				ControlBlock: &stakingTxSlashingPathInfo.ControlBlock,
+				ScriptLeaf:   &stakingTxSlashingPathInfo.RevealedLeaf,
+			},
+		},
 	)
+
 	require.NoError(t, err)
+	require.NotNil(t, slashingSigResult.Signature)
 
 	serializedStakingTx, err := utils.SerializeBtcTransaction(tx)
 	require.NoError(t, err)
 	serializedSlashingTx, err := utils.SerializeBtcTransaction(slashingTx)
 	require.NoError(t, err)
 	// Build unbonding related data
-	unbondingFee := btcutil.Amount(1000)
+	unbondingFee := params.UnbondingFee
 	unbondingAmount := btcutil.Amount(testStakingData.StakingAmount) - unbondingFee
 
 	unbondingInfo, err := staking.BuildUnbondingInfo(
@@ -834,7 +866,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 	slashUnbondingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		unbondingTx,
 		0,
-		params.SlashingAddress,
+		params.SlashingPkScript,
 		testStakingData.StakerKey,
 		unbondingTme,
 		int64(params.MinSlashingTxFeeSat)+10,
@@ -843,23 +875,35 @@ func (tm *TestManager) sendWatchedStakingTx(
 	)
 	require.NoError(t, err)
 
-	slashUnbondingSig, err := staking.SignTxWithOneScriptSpendInputFromScript(
-		slashUnbondingTx,
-		unbondingTx.TxOut[0],
-		tm.WalletPrivKey,
-		unbondingSlashingPathInfo.RevealedLeaf.Script,
+	slashingUnbondingSigResult, err := tm.Sa.Wallet().SignOneInputTaprootSpendingTransaction(
+		&walletcontroller.TaprootSigningRequest{
+			FundingOutput: unbondingTx.TxOut[0],
+			TxToSign:      slashUnbondingTx,
+			SignerAddress: tm.MinerAddr,
+			SpendDescription: &walletcontroller.SpendPathDescription{
+				ControlBlock: &unbondingSlashingPathInfo.ControlBlock,
+				ScriptLeaf:   &unbondingSlashingPathInfo.RevealedLeaf,
+			},
+		},
 	)
+
+	require.NoError(t, err)
+	require.NotNil(t, slashingUnbondingSigResult.Signature)
 
 	serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
 	require.NoError(t, err)
 	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
 	require.NoError(t, err)
 
-	// TODO: Update pop when new version will be ready, for now using schnorr as we don't have
-	// easy way to generate bip322 sig on backend side
-	pop, err := btcstypes.NewPoPBTC(
-		testStakingData.StakerBabylonAddr,
-		tm.WalletPrivKey,
+	babylonAddrHash := tmhash.Sum(testStakingData.StakerBabylonAddr.Bytes())
+
+	sig, err := tm.Sa.Wallet().SignBip322NativeSegwit(babylonAddrHash, tm.MinerAddr)
+	require.NoError(t, err)
+
+	pop, err := babylonclient.NewBabylonBip322Pop(
+		babylonAddrHash,
+		sig,
+		tm.MinerAddr,
 	)
 	require.NoError(t, err)
 
@@ -876,16 +920,16 @@ func (tm *TestManager) sendWatchedStakingTx(
 		hex.EncodeToString(schnorr.SerializePubKey(testStakingData.StakerKey)),
 		fpBTCPKs,
 		hex.EncodeToString(serializedSlashingTx),
-		hex.EncodeToString(slashSig.Serialize()),
+		hex.EncodeToString(slashingSigResult.Signature.Serialize()),
 		testStakingData.StakerBabylonAddr.String(),
 		tm.MinerAddr.String(),
 		hex.EncodeToString(pop.BtcSig),
 		hex.EncodeToString(serializedUnbondingTx),
 		hex.EncodeToString(serializedSlashUnbondingTx),
-		hex.EncodeToString(slashUnbondingSig.Serialize()),
+		hex.EncodeToString(slashingUnbondingSigResult.Signature.Serialize()),
 		int(unbondingTme),
 		// Use schnor verification
-		int(btcstypes.BTCSigType_BIP340),
+		int(btcstypes.BTCSigType_BIP322),
 	)
 	require.NoError(t, err)
 
@@ -1063,9 +1107,8 @@ func TestStakingFailures(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
 
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 	fpKey := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[0]))
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
@@ -1103,9 +1146,8 @@ func TestSendingStakingTransaction(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
 
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)
@@ -1178,14 +1220,14 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	minStakingTime := uint16(staker.GetMinStakingTime(params))
+	minStakingTime := params.MinStakingTime
 	stakingTime1 := minStakingTime
 	stakingTime2 := minStakingTime + 4
 	stakingTime3 := minStakingTime + 1
 	stakingTime4 := minStakingTime + 2
 	stakingTime5 := minStakingTime + 3
 
-	testStakingData1 := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime1, 10000, 1)
+	testStakingData1 := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime1, 10000, 1)
 	testStakingData2 := testStakingData1.withStakingTime(stakingTime2)
 	testStakingData3 := testStakingData1.withStakingTime(stakingTime3)
 	testStakingData4 := testStakingData1.withStakingTime(stakingTime4)
@@ -1244,8 +1286,8 @@ func TestSendingWatchedStakingTransaction(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
@@ -1266,8 +1308,8 @@ func TestRestartingTxNotDeepEnough(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 	txHash := tm.sendStakingTxBTC(t, testStakingData)
@@ -1291,9 +1333,8 @@ func TestRestartingTxNotOnBabylon(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
 
-	testStakingData1 := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 1)
+	testStakingData1 := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 	testStakingData2 := testStakingData1.withStakingAmout(11000)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData1)
@@ -1335,7 +1376,7 @@ func TestStakingUnbonding(t *testing.T) {
 	require.NoError(t, err)
 	// large staking time
 	stakingTime := uint16(1000)
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 50000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, 50000, 1)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
@@ -1406,7 +1447,7 @@ func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 	require.NoError(t, err)
 	// large staking time
 	stakingTime := uint16(1000)
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 50000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, 50000, 1)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
@@ -1469,7 +1510,8 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	h.Start()
 	passphrase := "pass"
 	numMatureOutputs := 1
-	_ = h.CreateWallet("test-wallet", passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
 	_ = h.GenerateBlocks(numMatureOutputs + 100)
 
@@ -1480,6 +1522,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.WalletRpcConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
 	scfg.WalletConfig.WalletPass = passphrase
+	scfg.WalletConfig.WalletName = walletName
 	scfg.BtcNodeBackendConfig.ActiveWalletBackend = types.BitcoindWalletBackend
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
@@ -1539,9 +1582,9 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	h := NewBitcoindHandler(t)
 	h.Start()
 	passphrase := "pass"
-
-	_ = h.CreateWallet("test-wallet", passphrase)
-	cfg, c := defaultStakerConfig(t, passphrase)
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
+	cfg, c := defaultStakerConfig(t, walletName, passphrase)
 
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
@@ -1573,10 +1616,9 @@ func TestSendingStakingTransaction_Restaking(t *testing.T) {
 	cl := tm.Sa.BabylonController()
 	params, err := cl.Params()
 	require.NoError(t, err)
-	stakingTime := uint16(staker.GetMinStakingTime(params))
 
 	// restaked to 5 finality providers
-	testStakingData := tm.getTestStakingData(t, tm.WalletPrivKey.PubKey(), stakingTime, 10000, 5)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 5)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)
@@ -1600,4 +1642,73 @@ func TestSendingStakingTransaction_Restaking(t *testing.T) {
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+}
+
+func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
+	// need to have at least 300 block on testnet as only then segwit is activated.
+	// Mature output is out which has 100 confirmations, which means 200mature outputs
+	// will generate 300 blocks
+	numMatureOutputs := uint32(200)
+	tm := StartManager(t, numMatureOutputs)
+	defer tm.Stop(t)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
+
+	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
+	require.NoError(t, err)
+	scr, err := txscript.PayToTaprootScript(tm.CovenantPrivKeys[0].PubKey())
+	require.NoError(t, err)
+	_, st, erro := tm.Sa.Wallet().TxDetails(hashed, scr)
+	// query for exsisting tx is not an error, proper state should be returned
+	require.NoError(t, erro)
+	require.Equal(t, st, walletcontroller.TxNotFound)
+
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendStakingTxBTC(t, testStakingData)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	// must wait for all covenant signatures to be received, to be able to unbond
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	// need to activate delegation to unbond
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+
+	// Unbond staking transaction and wait for it to be included in mempool
+	feeRate := 2000
+	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String(), &feeRate)
+	require.NoError(t, err)
+	unbondingTxHash, err := chainhash.NewHashFromStr(unbondResponse.UnbondingTxHash)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		tx, err := tm.TestRpcClient.GetRawTransaction(unbondingTxHash)
+		if err != nil {
+			return false
+		}
+
+		if tx == nil {
+			return false
+
+		}
+
+		return true
+	}, 1*time.Minute, eventuallyPollTime)
+
+	tm.RestartAppWithAction(t, func(t *testing.T) {
+		// unbodning tx got confirmed during the stop period
+		_ = tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations+1, false)
+	})
+
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC)
+	// it should be possible ot spend from unbonding tx
+	tm.spendStakingTxWithHash(t, txHash)
 }

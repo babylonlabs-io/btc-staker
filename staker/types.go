@@ -111,7 +111,7 @@ func slashingTxForStakingTx(
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
 		storedTx.StakingOutputIndex,
-		delegationData.babylonParams.SlashingAddress,
+		delegationData.babylonParams.SlashingPkScript,
 		stakerPubKey,
 		lockSlashTxLockTime,
 		int64(slashingFee),
@@ -328,8 +328,8 @@ func createUndelegationData(
 	stakerPubKey *btcec.PublicKey,
 	covenantPubKeys []*btcec.PublicKey,
 	covenantThreshold uint32,
-	slashingAddress btcutil.Address,
-	feeRatePerKb btcutil.Amount,
+	slashingPkScript []byte,
+	unbondingTxFee btcutil.Amount,
 	unbondingTime uint16,
 	slashingFee btcutil.Amount,
 	slashingRate sdkmath.LegacyDec,
@@ -339,19 +339,17 @@ func createUndelegationData(
 
 	stakingOutpout := storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex]
 
-	unbondingTxFee := txrules.FeeForSerializeSize(feeRatePerKb, slashingPathSpendTxVSize)
-
 	unbondingOutputValue := stakingOutpout.Value - int64(unbondingTxFee)
 
 	if unbondingOutputValue <= 0 {
 		return nil, fmt.Errorf(
-			"too large fee rate %d sats/kb. Staking output value:%d sats. Unbonding tx fee:%d sats", int64(feeRatePerKb), stakingOutpout.Value, int64(unbondingTxFee),
+			"staking output value:%d sats. Unbonding tx fee:%d sats", stakingOutpout.Value, int64(unbondingTxFee),
 		)
 	}
 
 	if unbondingOutputValue <= int64(slashingFee) {
 		return nil, fmt.Errorf(
-			"too large fee rate %d sats/kb. Unbonding output value %d sats. Slashing tx fee: %d sats", int64(feeRatePerKb), unbondingOutputValue, int64(slashingFee),
+			"unbonding output value %d sats. Slashing tx fee: %d sats", unbondingOutputValue, int64(slashingFee),
 		)
 	}
 
@@ -376,7 +374,7 @@ func createUndelegationData(
 	slashUnbondingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		unbondingTx,
 		0,
-		slashingAddress,
+		slashingPkScript,
 		stakerPubKey,
 		unbondingTime,
 		int64(slashingFee),
@@ -464,6 +462,19 @@ func parseWatchStakingRequest(
 	currentParams *cl.StakingParams,
 	network *chaincfg.Params,
 ) (*stakingRequestedEvent, error) {
+	// TODO(https://github.com/babylonlabs-io/btc-staker/issues/32):
+	// This check re-implements whole babylon validation logic. We should
+	// refactor this to use babylon validation utilities.
+	if stakingTime < currentParams.MinStakingTime || stakingTime > currentParams.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTime, currentParams.MinStakingTime, currentParams.MaxStakingTime)
+	}
+
+	if stakingValue < currentParams.MinStakingValue || stakingValue > currentParams.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingValue, currentParams.MinStakingValue, currentParams.MaxStakingValue)
+	}
+
 	stakingInfo, err := staking.BuildStakingInfo(
 		stakerBtcPk,
 		fpBtcPks,
@@ -494,7 +505,7 @@ func parseWatchStakingRequest(
 		stakingOutputIdx,
 		int64(currentParams.MinSlashingTxFeeSat),
 		currentParams.SlashingRate,
-		currentParams.SlashingAddress,
+		currentParams.SlashingPkScript,
 		stakerBtcPk,
 		unbondingTime,
 		network,
@@ -561,7 +572,7 @@ func parseWatchStakingRequest(
 		0,
 		int64(currentParams.MinSlashingTxFeeSat),
 		currentParams.SlashingRate,
-		currentParams.SlashingAddress,
+		currentParams.SlashingPkScript,
 		stakerBtcPk,
 		unbondingTime,
 		network,
@@ -589,6 +600,12 @@ func parseWatchStakingRequest(
 
 	if unbondingTx.TxOut[0].Value >= stakingTx.TxOut[stakingOutputIdx].Value {
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding tx value must be less than staking output value")
+	}
+
+	if stakingTx.TxOut[stakingOutputIdx].Value-unbondingTx.TxOut[0].Value != int64(currentParams.UnbondingFee) {
+		return nil, fmt.Errorf("failed to watch staking tx. unbonding tx fee must be equal to %d, and it is equal to %d",
+			currentParams.UnbondingFee,
+			unbondingTx.TxOut[0].Value-stakingTx.TxOut[stakingOutputIdx].Value)
 	}
 
 	stakingTxHash := stakingTx.TxHash()

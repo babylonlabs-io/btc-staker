@@ -56,17 +56,13 @@ func (app *StakerApp) buildOwnedDelegation(
 		}).Fatalf("Failed to build delegation data for already confirmed staking transaction")
 	}
 
-	// TODO: Option to use custom fee rate, as estimator uses pretty big value for fee
-	// in case of estimation failure (25 sat/byte)
-	unbondingTxFeeRatePerKb := btcutil.Amount(app.feeEstimator.EstimateFeePerKb())
-
 	undelegationDesc, err := createUndelegationData(
 		storedTx,
 		externalData.stakerPublicKey,
 		externalData.babylonParams.CovenantPks,
 		externalData.babylonParams.CovenantQuruomThreshold,
-		externalData.babylonParams.SlashingAddress,
-		unbondingTxFeeRatePerKb,
+		externalData.babylonParams.SlashingPkScript,
+		externalData.babylonParams.UnbondingFee,
 		// TODO: Possiblity to customize finalization time
 		uint16(externalData.babylonParams.MinUnbondingTime)+1,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
@@ -91,6 +87,10 @@ func (app *StakerApp) buildOwnedDelegation(
 		return nil, fmt.Errorf("error signing slashing transaction for staking transaction: %w", err)
 	}
 
+	if stakingSlashingSig.Signature == nil {
+		return nil, fmt.Errorf("failed to receive stakingSlashingSig.Signature ")
+	}
+
 	unbondingSlashingSig, err := app.signTaprootScriptSpendUsingWallet(
 		undelegationDesc.SlashUnbondingTransaction,
 		undelegationDesc.UnbondingTransaction.TxOut[0],
@@ -103,13 +103,17 @@ func (app *StakerApp) buildOwnedDelegation(
 		return nil, fmt.Errorf("error signing slashing transaction for unbonding transaction: %w", err)
 	}
 
+	if unbondingSlashingSig.Signature == nil {
+		return nil, fmt.Errorf("failed to receive unbondingSlashingSig.Signature ")
+	}
+
 	dg := createDelegationData(
 		externalData.stakerPublicKey,
 		req.inclusionBlock,
 		req.txIndex,
 		storedTx,
 		stakingSlashingTx,
-		stakingSlashingSig,
+		stakingSlashingSig.Signature,
 		externalData.babylonStakerAddr,
 		stakingTxInclusionProof,
 		&cl.UndelegationData{
@@ -117,7 +121,7 @@ func (app *StakerApp) buildOwnedDelegation(
 			UnbondingTxValue:             undelegationDesc.UnbondingTxValue,
 			UnbondingTxUnbondingTime:     undelegationDesc.UnbondingTxUnbondingTime,
 			SlashUnbondingTransaction:    undelegationDesc.SlashUnbondingTransaction,
-			SlashUnbondingTransactionSig: unbondingSlashingSig,
+			SlashUnbondingTransactionSig: unbondingSlashingSig.Signature,
 		},
 	)
 
