@@ -79,7 +79,7 @@ func keyToAddr(key *btcec.PrivateKey, net *chaincfg.Params) (btcutil.Address, er
 	return pubKeyAddr.AddressPubKeyHash(), nil
 }
 
-func defaultStakerConfig(t *testing.T, walletName, passphrase, host string) (*stakercfg.Config, *rpcclient.Client) {
+func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost string) (*stakercfg.Config, *rpcclient.Client) {
 	defaultConfig := stakercfg.DefaultConfig()
 
 	// both wallet and node are bicoind
@@ -91,13 +91,8 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, host string) (*st
 	defaultConfig.BtcNodeBackendConfig.FeeMode = "dynamic"
 	defaultConfig.BtcNodeBackendConfig.EstimationMode = types.DynamicFeeEstimation
 
-	bitcoindHost := "127.0.0.1:18443"
 	bitcoindUser := "user"
 	bitcoindPass := "pass"
-
-	if host != "" {
-		bitcoindHost = host
-	}
 
 	// Wallet configuration
 	defaultConfig.WalletRpcConfig.Host = bitcoindHost
