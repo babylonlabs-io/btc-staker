@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime/pprof"
+	"syscall"
 
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	staker "github.com/babylonlabs-io/btc-staker/staker"
@@ -12,16 +15,12 @@ import (
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lightningnetwork/lnd/signal"
 )
 
 func main() {
 	// Hook interceptor for os signals.
-	shutdownInterceptor, err := signal.Intercept()
-	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	cfg, cfgLogger, zapLogger, err := scfg.LoadConfig()
 
@@ -89,15 +88,13 @@ func main() {
 		cfg,
 		staker,
 		cfgLogger,
-		shutdownInterceptor,
 		dbBackend,
 	)
 
 	addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
 	metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
 
-	err = service.RunUntilShutdown()
-	if err != nil {
+	if err = service.RunUntilShutdown(ctx); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
