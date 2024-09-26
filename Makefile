@@ -1,6 +1,5 @@
 DOCKER = $(shell which docker)
 BUILDDIR ?= $(CURDIR)/build
-TOOLS_DIR := tools
 
 BABYLON_PKG := github.com/babylonlabs-io/babylon/cmd/babylond
 
