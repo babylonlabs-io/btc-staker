@@ -54,7 +54,6 @@ import (
 	sdkquerytypes "github.com/cosmos/cosmos-sdk/types/query"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/lightningnetwork/lnd/kvdb"
-	"github.com/lightningnetwork/lnd/signal"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -144,7 +143,6 @@ type TestManager struct {
 	BabylonClient    *babylonclient.BabylonController
 	WalletPubKey     *btcec.PublicKey
 	MinerAddr        btcutil.Address
-	serverStopper    *signal.Interceptor
 	wg               *sync.WaitGroup
 	serviceAddress   string
 	StakerClient     *dc.StakerServiceJsonRpcClient
@@ -322,9 +320,6 @@ func StartManager(
 	walletPubKey, err := btcec.ParsePubKey(pubKeyBytes)
 	require.NoError(t, err)
 
-	//interceptor, err := signal.Intercept()
-	//require.NoError(t, err)
-
 	addressString := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	addrPort := netip.MustParseAddrPort(addressString)
 	address := net.TCPAddrFromAddrPort(addrPort)
@@ -354,13 +349,12 @@ func StartManager(
 	require.NoError(t, err)
 
 	return &TestManager{
-		Config:        cfg,
-		Db:            dbbackend,
-		Sa:            stakerApp,
-		BabylonClient: bl,
-		WalletPubKey:  walletPubKey,
-		MinerAddr:     minerAddressDecoded,
-		//serverStopper:    &interceptor,
+		Config:           cfg,
+		Db:               dbbackend,
+		Sa:               stakerApp,
+		BabylonClient:    bl,
+		WalletPubKey:     walletPubKey,
+		MinerAddr:        minerAddressDecoded,
 		wg:               &wg,
 		serviceAddress:   addressString,
 		StakerClient:     stakerClient,
@@ -409,9 +403,6 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zapLogger, dbbackend, m)
 	require.NoError(t, err)
 
-	//interceptor, err := signal.Intercept()
-	//require.NoError(t, err)
-
 	service := service.NewStakerService(
 		tm.Config,
 		stakerApp,
@@ -432,7 +423,6 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	//tm.serverStopper = &interceptor
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
