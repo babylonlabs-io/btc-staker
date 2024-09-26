@@ -143,7 +143,6 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, host string) (*st
 }
 
 type TestManager struct {
-	BabylonHandler   *BabylonNodeHandler
 	Config           *stakercfg.Config
 	Db               kvdb.Backend
 	Sa               *staker.StakerApp
