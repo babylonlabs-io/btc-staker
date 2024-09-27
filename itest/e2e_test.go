@@ -329,7 +329,6 @@ func StartManager(
 		cfg,
 		stakerApp,
 		logger,
-		//interceptor,
 		dbbackend,
 	)
 
@@ -407,7 +406,6 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 		tm.Config,
 		stakerApp,
 		logger,
-		//interceptor,
 		dbbackend,
 	)
 
