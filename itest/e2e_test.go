@@ -8,6 +8,9 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"github.com/babylonlabs-io/btc-staker/itest/containers"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -51,7 +54,6 @@ import (
 	sdkquerytypes "github.com/cosmos/cosmos-sdk/types/query"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/lightningnetwork/lnd/kvdb"
-	"github.com/lightningnetwork/lnd/signal"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +78,7 @@ func keyToAddr(key *btcec.PrivateKey, net *chaincfg.Params) (btcutil.Address, er
 	return pubKeyAddr.AddressPubKeyHash(), nil
 }
 
-func defaultStakerConfig(t *testing.T, walletName, passphrase string) (*stakercfg.Config, *rpcclient.Client) {
+func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost string) (*stakercfg.Config, *rpcclient.Client) {
 	defaultConfig := stakercfg.DefaultConfig()
 
 	// both wallet and node are bicoind
@@ -88,7 +90,6 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase string) (*stakercf
 	defaultConfig.BtcNodeBackendConfig.FeeMode = "dynamic"
 	defaultConfig.BtcNodeBackendConfig.EstimationMode = types.DynamicFeeEstimation
 
-	bitcoindHost := "127.0.0.1:18443"
 	bitcoindUser := "user"
 	bitcoindPass := "pass"
 
@@ -136,20 +137,19 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase string) (*stakercf
 }
 
 type TestManager struct {
-	BabylonHandler   *BabylonNodeHandler
 	Config           *stakercfg.Config
 	Db               kvdb.Backend
 	Sa               *staker.StakerApp
 	BabylonClient    *babylonclient.BabylonController
 	WalletPubKey     *btcec.PublicKey
 	MinerAddr        btcutil.Address
-	serverStopper    *signal.Interceptor
 	wg               *sync.WaitGroup
 	serviceAddress   string
 	StakerClient     *dc.StakerServiceJsonRpcClient
 	CovenantPrivKeys []*btcec.PrivateKey
 	BitcoindHandler  *BitcoindTestHandler
 	TestRpcClient    *rpcclient.Client
+	manger           *containers.Manager
 }
 
 type testStakingData struct {
@@ -188,7 +188,7 @@ func (tm *TestManager) getTestStakingData(
 		strAddrs[i] = fpAddr.String()
 	}
 
-	err = tm.BabylonHandler.BabylonNode.TxBankMultiSend("1000000ubbn", strAddrs...)
+	_, _, err = tm.manger.BabylondTxBankMultiSend(t, "node0", "1000000ubbn", strAddrs...)
 	require.NoError(t, err)
 
 	return &testStakingData{
@@ -219,15 +219,19 @@ func (td *testStakingData) withStakingAmout(amout int64) *testStakingData {
 
 func StartManager(
 	t *testing.T,
+	ctx context.Context,
 	numMatureOutputsInWallet uint32,
 ) *TestManager {
-	h := NewBitcoindHandler(t)
-	h.Start()
+	manager, err := containers.NewManager(t)
+	require.NoError(t, err)
+
+	bitcoindHandler := NewBitcoindHandler(t, manager)
+	bitcoind := bitcoindHandler.Start()
 	passphrase := "pass"
 	walletName := "test-wallet"
-	_ = h.CreateWallet(walletName, passphrase)
+	_ = bitcoindHandler.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
-	br := h.GenerateBlocks(int(numMatureOutputsInWallet) + 100)
+	br := bitcoindHandler.GenerateBlocks(int(numMatureOutputsInWallet) + 100)
 
 	minerAddressDecoded, err := btcutil.DecodeAddress(br.Address, regtestParams)
 	require.NoError(t, err)
@@ -249,28 +253,35 @@ func StartManager(
 	pkScript, err := txscript.PayToAddrScript(minerAddressDecoded)
 	require.NoError(t, err)
 
-	bh, err := NewBabylonNodeHandler(
+	tmpDir, err := testutil.TempDir(t)
+	require.NoError(t, err)
+	babylond, err := manager.RunBabylondResource(
+		t,
+		tmpDir,
 		quorum,
+		baseHeaderHex,
+		hex.EncodeToString(pkScript), // all slashing will be sent back to wallet
 		coventantPrivKeys[0].PubKey(),
 		coventantPrivKeys[1].PubKey(),
 		coventantPrivKeys[2].PubKey(),
-		// all slashings will be sent back to wallet
-		hex.EncodeToString(pkScript),
-		baseHeaderHex,
 	)
 	require.NoError(t, err)
 
-	err = bh.Start()
-	require.NoError(t, err)
+	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	cfg, c := defaultStakerConfig(t, walletName, passphrase, rpcHost)
+	cfg.BtcNodeBackendConfig.Bitcoind.RPCHost = rpcHost
+	cfg.WalletRpcConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 
-	cfg, c := defaultStakerConfig(t, walletName, passphrase)
+	// update port with the dynamically allocated one from docker
+	cfg.BabylonConfig.RPCAddr = fmt.Sprintf("http://localhost:%s", babylond.GetPort("26657/tcp"))
+	cfg.BabylonConfig.GRPCAddr = fmt.Sprintf("https://localhost:%s", babylond.GetPort("9090/tcp"))
 
 	logger := logrus.New()
 	logger.SetLevel(logrus.DebugLevel)
 	logger.Out = os.Stdout
 
 	// babylon configs for sending transactions
-	cfg.BabylonConfig.KeyDirectory = bh.GetNodeDataDir()
+	cfg.BabylonConfig.KeyDirectory = filepath.Join(tmpDir, "node0", "babylond")
 	// need to use this one to send otherwise we will have account sequence mismatch
 	// errors
 	cfg.BabylonConfig.Key = "test-spending-key"
@@ -309,19 +320,15 @@ func StartManager(
 	walletPubKey, err := btcec.ParsePubKey(pubKeyBytes)
 	require.NoError(t, err)
 
-	interceptor, err := signal.Intercept()
-	require.NoError(t, err)
-
-	addressString := "127.0.0.1:15001"
+	addressString := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	addrPort := netip.MustParseAddrPort(addressString)
 	address := net.TCPAddrFromAddrPort(addrPort)
-	cfg.RpcListeners = append(cfg.RpcListeners, address)
+	cfg.RpcListeners = append(cfg.RpcListeners, address) // todo(lazar): check with konrad who uses this
 
-	service := service.NewStakerService(
+	stakerService := service.NewStakerService(
 		cfg,
 		stakerApp,
 		logger,
-		interceptor,
 		dbbackend,
 	)
 
@@ -329,7 +336,7 @@ func StartManager(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := service.RunUntilShutdown()
+		err := stakerService.RunUntilShutdown(ctx)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
@@ -341,35 +348,34 @@ func StartManager(
 	require.NoError(t, err)
 
 	return &TestManager{
-		BabylonHandler:   bh,
 		Config:           cfg,
 		Db:               dbbackend,
 		Sa:               stakerApp,
 		BabylonClient:    bl,
 		WalletPubKey:     walletPubKey,
 		MinerAddr:        minerAddressDecoded,
-		serverStopper:    &interceptor,
 		wg:               &wg,
 		serviceAddress:   addressString,
 		StakerClient:     stakerClient,
 		CovenantPrivKeys: coventantPrivKeys,
-		BitcoindHandler:  h,
+		BitcoindHandler:  bitcoindHandler,
 		TestRpcClient:    c,
+		manger:           manager,
 	}
 }
 
-func (tm *TestManager) Stop(t *testing.T) {
-	tm.serverStopper.RequestShutdown()
+func (tm *TestManager) Stop(t *testing.T, cancelFunc context.CancelFunc) {
+	cancelFunc()
 	tm.wg.Wait()
-	err := tm.BabylonHandler.Stop()
+	err := tm.manger.ClearResources()
 	require.NoError(t, err)
 	err = os.RemoveAll(tm.Config.DBConfig.DBPath)
 	require.NoError(t, err)
 }
 
-func (tm *TestManager) RestartApp(t *testing.T) {
+func (tm *TestManager) RestartApp(t *testing.T, newCtx context.Context, cancelFunc context.CancelFunc) {
 	// Restart the app with no-op action
-	tm.RestartAppWithAction(t, func(t *testing.T) {})
+	tm.RestartAppWithAction(t, newCtx, cancelFunc, func(t *testing.T) {})
 }
 
 // RestartAppWithAction:
@@ -377,9 +383,9 @@ func (tm *TestManager) RestartApp(t *testing.T) {
 // 2. Perform provided action. Warning:this action must not use staker app as
 // app is stopped at this point
 // 3. Start the staker app
-func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing.T)) {
+func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, cancelFunc context.CancelFunc, action func(t *testing.T)) {
 	// First stop the app
-	tm.serverStopper.RequestShutdown()
+	cancelFunc()
 	tm.wg.Wait()
 
 	// Perform the action
@@ -396,14 +402,10 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing
 	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zapLogger, dbbackend, m)
 	require.NoError(t, err)
 
-	interceptor, err := signal.Intercept()
-	require.NoError(t, err)
-
 	service := service.NewStakerService(
 		tm.Config,
 		stakerApp,
 		logger,
-		interceptor,
 		dbbackend,
 	)
 
@@ -411,7 +413,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := service.RunUntilShutdown()
+		err := service.RunUntilShutdown(ctx)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
@@ -419,7 +421,6 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, action func(t *testing
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	tm.serverStopper = &interceptor
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
@@ -1098,9 +1099,11 @@ func (tm *TestManager) insertCovenantSigForDelegation(t *testing.T, btcDel *btcs
 }
 
 func TestStakingFailures(t *testing.T) {
+	t.Parallel()
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1134,12 +1137,14 @@ func TestStakingFailures(t *testing.T) {
 }
 
 func TestSendingStakingTransaction(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1208,12 +1213,14 @@ func TestSendingStakingTransaction(t *testing.T) {
 }
 
 func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1274,12 +1281,14 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 }
 
 func TestSendingWatchedStakingTransaction(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1296,12 +1305,14 @@ func TestSendingWatchedStakingTransaction(t *testing.T) {
 }
 
 func TestRestartingTxNotDeepEnough(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1313,20 +1324,24 @@ func TestRestartingTxNotDeepEnough(t *testing.T) {
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 	txHash := tm.sendStakingTxBTC(t, testStakingData)
 
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
 	// restart app when tx is not deep enough
-	tm.RestartApp(t)
+	tm.RestartApp(t, newCtx, cancel)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
 }
 
 func TestRestartingTxNotOnBabylon(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1350,8 +1365,10 @@ func TestRestartingTxNotOnBabylon(t *testing.T) {
 		tm.waitForStakingTxState(t, txHash, proto.TransactionState_CONFIRMED_ON_BTC)
 	}
 
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
 	// restart app, tx is confirmed but not delivered to babylon
-	tm.RestartApp(t)
+	tm.RestartApp(t, newCtx, cancel)
 
 	// send headers to babylon, so that we can send delegation tx
 	go tm.sendHeadersToBabylon(t, minedBlocks)
@@ -1362,12 +1379,14 @@ func TestRestartingTxNotOnBabylon(t *testing.T) {
 }
 
 func TestStakingUnbonding(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1433,12 +1452,14 @@ func TestStakingUnbonding(t *testing.T) {
 }
 
 func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1456,8 +1477,10 @@ func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
 	require.NoError(t, err)
 
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
 	// restart app, tx was sent to babylon but we did not receive covenant signatures yet
-	tm.RestartApp(t)
+	tm.RestartApp(t, newCtx, cancel)
 
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
 	require.NoError(t, err)
@@ -1505,8 +1528,11 @@ func containsOutput(outputs []walletcontroller.Utxo, address string, amount btcu
 }
 
 func TestBitcoindWalletRpcApi(t *testing.T) {
-	h := NewBitcoindHandler(t)
-	h.Start()
+	t.Parallel()
+	manager, err := containers.NewManager(t)
+	require.NoError(t, err)
+	h := NewBitcoindHandler(t, manager)
+	bitcoind := h.Start()
 	passphrase := "pass"
 	numMatureOutputs := 1
 	walletName := "test-wallet"
@@ -1516,7 +1542,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 
 	// hardcoded config
 	scfg := stakercfg.DefaultConfig()
-	scfg.WalletRpcConfig.Host = "127.0.0.1:18443"
+	scfg.WalletRpcConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 	scfg.WalletRpcConfig.User = "user"
 	scfg.WalletRpcConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
@@ -1578,12 +1604,17 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 }
 
 func TestBitcoindWalletBip322Signing(t *testing.T) {
-	h := NewBitcoindHandler(t)
-	h.Start()
+	t.Parallel()
+	manager, err := containers.NewManager(t)
+	require.NoError(t, err)
+	h := NewBitcoindHandler(t, manager)
+	bitcoind := h.Start()
 	passphrase := "pass"
 	walletName := "test-wallet"
 	_ = h.CreateWallet(walletName, passphrase)
-	cfg, c := defaultStakerConfig(t, walletName, passphrase)
+
+	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	cfg, c := defaultStakerConfig(t, walletName, passphrase, rpcHost)
 
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
@@ -1604,12 +1635,14 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 }
 
 func TestSendingStakingTransaction_Restaking(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1644,12 +1677,14 @@ func TestSendingStakingTransaction_Restaking(t *testing.T) {
 }
 
 func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
+	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()
@@ -1702,7 +1737,10 @@ func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 		return true
 	}, 1*time.Minute, eventuallyPollTime)
 
-	tm.RestartAppWithAction(t, func(t *testing.T) {
+	ctxAfter, cancelAfter := context.WithCancel(context.Background())
+	defer cancelAfter()
+
+	tm.RestartAppWithAction(t, ctxAfter, cancel, func(t *testing.T) {
 		// unbodning tx got confirmed during the stop period
 		_ = tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations+1, false)
 	})
