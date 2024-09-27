@@ -2,6 +2,7 @@ package stakerservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -26,7 +27,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/lightningnetwork/lnd/kvdb"
-	"github.com/lightningnetwork/lnd/signal"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,26 +41,23 @@ type RoutesMap map[string]*rpc.RPCFunc
 type StakerService struct {
 	started int32
 
-	config      *scfg.Config
-	staker      *str.StakerApp
-	logger      *logrus.Logger
-	db          kvdb.Backend
-	interceptor signal.Interceptor
+	config *scfg.Config
+	staker *str.StakerApp
+	logger *logrus.Logger
+	db     kvdb.Backend
 }
 
 func NewStakerService(
 	c *scfg.Config,
 	s *str.StakerApp,
 	l *logrus.Logger,
-	sig signal.Interceptor,
 	db kvdb.Backend,
 ) *StakerService {
 	return &StakerService{
-		config:      c,
-		staker:      s,
-		logger:      l,
-		interceptor: sig,
-		db:          db,
+		config: c,
+		staker: s,
+		logger: l,
+		db:     db,
 	}
 }
 
@@ -563,7 +560,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 	}
 }
 
-func (s *StakerService) RunUntilShutdown() error {
+func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	if atomic.AddInt32(&s.started, 1) != 1 {
 		return nil
 	}
@@ -646,9 +643,8 @@ func (s *StakerService) RunUntilShutdown() error {
 
 	s.logger.Info("Staker Service fully started")
 
-	// Wait for shutdown signal from either a graceful service stop or from
-	// the interrupt handler.
-	<-s.interceptor.ShutdownChannel()
+	// Wait for shutdown signal from either a graceful service stop or from cancel()
+	<-ctx.Done()
 
 	s.logger.Info("Received shutdown signal. Stopping...")
 
