@@ -374,6 +374,11 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 	slashUnbondingTxSig := bbntypes.NewBIP340SignatureFromBTCSig(dg.Ud.SlashUnbondingTransactionSig)
 
+	txKey := &bcctypes.TransactionKey{
+		Index: dg.StakingTransactionIdx,
+		Hash:  &inclusionBlockHash,
+	}
+
 	return &btcstypes.MsgCreateBTCDelegation{
 		// Note: this should be always safe conversion as we received data from our db
 		StakerAddr: dg.BabylonStakerAddr.String(),
@@ -387,15 +392,9 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		StakingValue: int64(dg.StakingValue),
 		// TODO: It is super bad that this thing (TransactionInfo) spread over whole babylon codebase, and it
 		// is used in all modules, rpc, database etc.
-		StakingTx: &bcctypes.TransactionInfo{
-			Key: &bcctypes.TransactionKey{
-				Index: dg.StakingTransactionIdx,
-				Hash:  &inclusionBlockHash,
-			},
-			Transaction: serizalizedStakingTransaction,
-			Proof:       dg.StakingTransactionInclusionProof,
-		},
-		SlashingTx: slashingTx,
+		StakingTx:               serizalizedStakingTransaction,
+		StakingTxInclusionProof: btcstypes.NewInclusionProof(txKey, dg.StakingTransactionInclusionProof),
+		SlashingTx:              slashingTx,
 		// Data related to unbonding
 		DelegatorSlashingSig:          slashingTxSig,
 		UnbondingTx:                   serializedUnbondingTransaction,
