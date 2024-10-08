@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/babylonlabs-io/btc-staker/itest/containers"
-	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -20,6 +18,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/babylonlabs-io/btc-staker/itest/containers"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"

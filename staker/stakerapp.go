@@ -128,6 +128,7 @@ type StakerApp struct {
 	m                *metrics.StakerMetrics
 
 	stakingRequestedEvChan                        chan *stakingRequestedEvent
+	sendStakingTxToBTCRequestedEvChan             chan *sendStakingTxToBTCRequestedEvent
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
@@ -232,6 +233,9 @@ func NewStakerAppFromDeps(
 		logger:                 logger,
 		quit:                   make(chan struct{}),
 		stakingRequestedEvChan: make(chan *stakingRequestedEvent),
+
+		sendStakingTxToBTCRequestedEvChan: make(chan *sendStakingTxToBTCRequestedEvent),
+
 		// event for when transaction is confirmed on BTC
 		stakingTxBtcConfirmedEvChan: make(chan *stakingTxBtcConfirmedEvent),
 
@@ -1198,9 +1202,9 @@ func (app *StakerApp) handleStakingEvents() {
 		case ev := <-app.stakingRequestedEvChan:
 			app.logStakingEventReceived(ev)
 
-			bestBlockHeight := app.currentBestBlockHeight.Load()
-
 			if ev.isWatched() {
+				bestBlockHeight := app.currentBestBlockHeight.Load()
+
 				err := app.txTracker.AddWatchedTransaction(
 					ev.stakingTx,
 					ev.stakingOutputIdx,
@@ -1222,15 +1226,23 @@ func (app *StakerApp) handleStakingEvents() {
 					ev.errChan <- err
 					continue
 				}
-			} else {
-				// in case of owend transaction we need to send it, and then add to our tracking db.
-				_, err := app.wc.SendRawTransaction(ev.stakingTx, true)
-				if err != nil {
+
+				// we assume tx is already on btc chain, so we need to wait for confirmation
+				if err := app.waitForStakingTransactionConfirmation(
+					&ev.stakingTxHash,
+					ev.stakingTx.TxOut[ev.stakingOutputIdx].PkScript,
+					ev.requiredDepthOnBtcChain,
+					uint32(bestBlockHeight),
+				); err != nil {
 					ev.errChan <- err
 					continue
 				}
 
-				err = app.txTracker.AddTransaction(
+				app.m.ValidReceivedDelegationRequests.Inc()
+				ev.successChan <- &ev.stakingTxHash
+			} else {
+				stakingTxHash := ev.stakingTx.TxHash()
+				err := app.txTracker.AddTransaction(
 					ev.stakingTx,
 					ev.stakingOutputIdx,
 					ev.stakingTime,
@@ -1243,20 +1255,87 @@ func (app *StakerApp) handleStakingEvents() {
 					ev.errChan <- err
 					continue
 				}
+
+				if ev.usePreApprovalFlow {
+
+				} else {
+					// old flow, send to BTC first, end expect response to the caller
+					app.wg.Add(1)
+					go func() {
+						defer app.wg.Done()
+						utils.PushOrQuit(
+							app.sendStakingTxToBTCRequestedEvChan,
+							&sendStakingTxToBTCRequestedEvent{
+								stakingTxHash:           stakingTxHash,
+								requiredDepthOnBtcChain: ev.requiredDepthOnBtcChain,
+								responseExpected: &responseExpectedChan{
+									errChan:     ev.errChan,
+									successChan: ev.successChan,
+								},
+							},
+							app.quit,
+						)
+					}()
+				}
+				app.logStakingEventProcessed(ev)
 			}
 
-			if err := app.waitForStakingTransactionConfirmation(
-				&ev.stakingTxHash,
-				ev.stakingOutputPkScript,
-				ev.requiredDepthOnBtcChain,
-				uint32(bestBlockHeight),
-			); err != nil {
-				ev.errChan <- err
+		case ev := <-app.sendStakingTxToBTCRequestedEvChan:
+			app.logStakingEventReceived(ev)
+
+			bestBlockHeight := app.currentBestBlockHeight.Load()
+
+			storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+
+			_, err := app.wc.SendRawTransaction(storedTx.StakingTx, true)
+
+			if err != nil {
+				if ev.responseExpected != nil {
+					utils.PushOrQuit(
+						ev.responseExpected.errChan,
+						err,
+						app.quit,
+					)
+				}
+				app.logStakingEventProcessed(ev)
 				continue
 			}
 
-			app.m.ValidReceivedDelegationRequests.Inc()
-			ev.successChan <- &ev.stakingTxHash
+			if err := app.txTracker.SetTxSentToBtc(
+				&ev.stakingTxHash,
+			); err != nil {
+				// TODO: handle this error somehow, it means we received confirmation for tx which we do not store
+				// which is seems like programming error. Maybe panic?
+				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
+			}
+
+			stakingOutputPkScript := storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].PkScript
+
+			if err := app.waitForStakingTransactionConfirmation(
+				&ev.stakingTxHash,
+				stakingOutputPkScript,
+				ev.requiredDepthOnBtcChain,
+				uint32(bestBlockHeight),
+			); err != nil {
+				if ev.responseExpected != nil {
+					utils.PushOrQuit(
+						ev.responseExpected.errChan,
+						err,
+						app.quit,
+					)
+				}
+				app.logStakingEventProcessed(ev)
+				continue
+			}
+
+			if ev.responseExpected != nil {
+				utils.PushOrQuit(
+					ev.responseExpected.successChan,
+					&ev.stakingTxHash,
+					app.quit,
+				)
+			}
+
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.stakingTxBtcConfirmedEvChan:
@@ -1597,6 +1676,7 @@ func (app *StakerApp) StakeFunds(
 		fpPks,
 		params.ConfirmationTimeBlocks,
 		pop,
+		false,
 	)
 
 	utils.PushOrQuit[*stakingRequestedEvent](

@@ -11,6 +11,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type responseExpectedChan struct {
+	errChan     chan error
+	successChan chan *chainhash.Hash
+}
+
 type StakingEvent interface {
 	// Each staking event is identified by initial staking transaction hash
 	EventId() chainhash.Hash
@@ -23,6 +28,7 @@ var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
+var _ StakingEvent = (*sendStakingTxToBTCRequestedEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
 
 type stakingRequestedEvent struct {
@@ -37,6 +43,7 @@ type stakingRequestedEvent struct {
 	requiredDepthOnBtcChain uint32
 	pop                     *cl.BabylonPop
 	watchTxData             *watchTxData
+	usePreApprovalFlow      bool
 	errChan                 chan error
 	successChan             chan *chainhash.Hash
 }
@@ -55,6 +62,7 @@ func newOwnedStakingRequest(
 	fpBtcPks []*btcec.PublicKey,
 	confirmationTimeBlocks uint32,
 	pop *cl.BabylonPop,
+	usePreApprovalFlow bool,
 ) *stakingRequestedEvent {
 	return &stakingRequestedEvent{
 		stakerAddress:           stakerAddress,
@@ -68,6 +76,7 @@ func newOwnedStakingRequest(
 		requiredDepthOnBtcChain: confirmationTimeBlocks,
 		pop:                     pop,
 		watchTxData:             nil,
+		usePreApprovalFlow:      usePreApprovalFlow,
 		errChan:                 make(chan error, 1),
 		successChan:             make(chan *chainhash.Hash, 1),
 	}
@@ -235,4 +244,18 @@ func (app *StakerApp) logStakingEventProcessed(event StakingEvent) {
 		"eventId": event.EventId(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
+}
+
+type sendStakingTxToBTCRequestedEvent struct {
+	stakingTxHash           chainhash.Hash
+	requiredDepthOnBtcChain uint32
+	responseExpected        *responseExpectedChan
+}
+
+func (event *sendStakingTxToBTCRequestedEvent) EventId() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *sendStakingTxToBTCRequestedEvent) EventDesc() string {
+	return "SEND_STAKING_TX_TO_BTC_REQUESTED"
 }
