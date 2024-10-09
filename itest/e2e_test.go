@@ -1535,7 +1535,7 @@ func TestStakingUnbonding(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SPENT_ON_BTC)
 }
 
-func AestUnbondingRestartWaitingForSignatures(t *testing.T) {
+func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs

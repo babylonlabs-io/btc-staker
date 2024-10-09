@@ -138,8 +138,6 @@ func (app *StakerApp) buildDelegation(
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
 
-	// stakingTxInclusionProof := app.mustBuildInclusionProof(req)
-
 	if storedTx.Watched {
 		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.txHash)
 
@@ -304,7 +302,6 @@ func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
 // - delegation is on babylon
 // - delegation has received enough covenant signatures
 func (app *StakerApp) activateVerifiedDelegation(
-	stakerAddress btcutil.Address,
 	stakingTransaction *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTxHash *chainhash.Hash) {

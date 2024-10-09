@@ -128,7 +128,7 @@ var stakeCmd = cli.Command{
 		},
 		cli.BoolFlag{
 			Name:  helpers.SendToBabylonFirstFlag,
-			Usage: "Wheter staking transaction should be first to Babylon or BTC",
+			Usage: "Whether staking transaction should be first to Babylon or BTC",
 		},
 	},
 	Action: stake,

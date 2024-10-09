@@ -622,7 +622,6 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		if alreadyDelegated {
 			app.wg.Add(1)
 			app.activateVerifiedDelegation(
-				stakerAddress,
 				tx.StakingTx,
 				tx.StakingOutputIndex,
 				txHashCopy,
@@ -858,10 +857,9 @@ func (app *StakerApp) checkTransactionsStatus() error {
 
 	for _, txHash := range transactionsVerifiedOnBabylon {
 		txHashCopy := *txHash
-		storedTx, address := app.mustGetTransactionAndStakerAddress(&txHashCopy)
+		storedTx, _ := app.mustGetTransactionAndStakerAddress(&txHashCopy)
 		app.wg.Add(1)
 		go app.activateVerifiedDelegation(
-			address,
 			storedTx.StakingTx,
 			storedTx.StakingOutputIndex,
 			&txHashCopy,
@@ -1560,13 +1558,12 @@ func (app *StakerApp) handleStakingEvents() {
 			}
 
 			if !ev.delegationActive {
-				storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+				storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
 				// if the delegation is not active here, it can only mean that statking
 				// is going through pre-approvel flow. Fire up task to send staking tx
 				// to btc chain
 				app.wg.Add(1)
 				go app.activateVerifiedDelegation(
-					stakerAddress,
 					storedTx.StakingTx,
 					storedTx.StakingOutputIndex,
 					&ev.stakingTxHash,
