@@ -707,22 +707,29 @@ func (tm *TestManager) sendStakingTxBTC(
 	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
 	require.NoError(t, err)
 	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
 
+	if sendToBabylonFirst {
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_TRANSACTION_CREATED.String())
+	} else {
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
+	}
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
-		return len(txFromMempool) == 1
-	}, eventuallyWaitTimeOut, eventuallyPollTime)
+	// only wait for blocks if we are using the old flow, and send staking tx to BTC
+	// first
+	if !sendToBabylonFirst {
+		require.Eventually(t, func() bool {
+			txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
+			return len(txFromMempool) == 1
+		}, eventuallyWaitTimeOut, eventuallyPollTime)
 
-	mBlock := tm.mineBlock(t)
-	require.Equal(t, 2, len(mBlock.Transactions))
+		mBlock := tm.mineBlock(t)
+		require.Equal(t, 2, len(mBlock.Transactions))
 
-	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
-	require.NoError(t, err)
-
+		_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+		require.NoError(t, err)
+	}
 	return hashFromString
 }
 
@@ -1252,7 +1259,14 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	txHash := tm.sendStakingTxBTC(t, testStakingData, true)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_CONFIRMED_ON_BTC)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	// need to activate delegation to unbond
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 }
 
 func ATestMultipleWithdrawableStakingTransactions(t *testing.T) {

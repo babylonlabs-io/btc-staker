@@ -1251,7 +1251,6 @@ func (app *StakerApp) handleStakingEvents() {
 				app.m.ValidReceivedDelegationRequests.Inc()
 				ev.successChan <- &ev.stakingTxHash
 			} else {
-				stakingTxHash := ev.stakingTx.TxHash()
 				err := app.txTracker.AddTransaction(
 					ev.stakingTx,
 					ev.stakingOutputIdx,
@@ -1269,14 +1268,57 @@ func (app *StakerApp) handleStakingEvents() {
 				app.logger.Info("Recieved staking event", "ususePreApprovalFlowe", ev.usePreApprovalFlow)
 
 				if ev.usePreApprovalFlow {
-					// req := &sendDelegationRequest{
-					// 	txHash:                      ev.stakingTxHash,
-					// 	txIndex:                     ev.txIndex,
-					// 	inclusionBlock:              ev.inlusionBlock,
-					// 	requiredInclusionBlockDepth: uint64(ev.blockDepth),
-					// }
+					req := &sendDelegationRequest{
+						txHash:                      ev.stakingTxHash,
+						inclusionInfo:               nil,
+						requiredInclusionBlockDepth: uint64(ev.requiredDepthOnBtcChain),
+					}
 
-					fmt.Println("Pre-approval flow")
+					storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+
+					app.wg.Add(1)
+					go func(
+						req *sendDelegationRequest,
+						stakerAddress btcutil.Address,
+						storedTx *stakerdb.StoredTransaction,
+						ev *stakingRequestedEvent,
+					) {
+						defer app.wg.Done()
+						_, delegationData, err := app.buildAndSendDelegation(
+							req,
+							stakerAddress,
+							storedTx,
+						)
+
+						if err != nil {
+							utils.PushOrQuit(
+								ev.errChan,
+								err,
+								app.quit,
+							)
+							return
+						}
+
+						submittedEv := &delegationSubmittedToBabylonEvent{
+							stakingTxHash: req.txHash,
+							unbondingTx:   delegationData.Ud.UnbondingTransaction,
+							unbondingTime: delegationData.Ud.UnbondingTxUnbondingTime,
+						}
+
+						// push event to channel to start waiting for covenant signatures
+						utils.PushOrQuit[*delegationSubmittedToBabylonEvent](
+							app.delegationSubmittedToBabylonEvChan,
+							submittedEv,
+							app.quit,
+						)
+
+						// send success to caller
+						utils.PushOrQuit(
+							ev.successChan,
+							&ev.stakingTxHash,
+							app.quit,
+						)
+					}(req, stakerAddress, storedTx, ev)
 				} else {
 					// old flow, send to BTC first, end expect response to the caller
 					app.wg.Add(1)
@@ -1285,7 +1327,7 @@ func (app *StakerApp) handleStakingEvents() {
 						utils.PushOrQuit(
 							app.sendStakingTxToBTCRequestedEvChan,
 							&sendStakingTxToBTCRequestedEvent{
-								stakingTxHash:           stakingTxHash,
+								stakingTxHash:           ev.stakingTxHash,
 								requiredDepthOnBtcChain: ev.requiredDepthOnBtcChain,
 								responseExpected: &responseExpectedChan{
 									errChan:     ev.errChan,
