@@ -526,14 +526,18 @@ func (app *StakerApp) checkTransactionsStatus() error {
 
 	// Keep track of all staking transactions which need checking. chainhash.Hash objects are not relativly small
 	// so it should not OOM even for larage database
+	var transactionCreated []*chainhash.Hash
 	var transactionsSentToBtc []*chainhash.Hash
 	var transactionConfirmedOnBtc []*chainhash.Hash
 	var transactionsOnBabylon []*stakingDbInfo
+	var transactionsVerifiedOnBabylon []*chainhash.Hash
 
 	reset := func() {
+		transactionCreated = make([]*chainhash.Hash, 0)
 		transactionsSentToBtc = make([]*chainhash.Hash, 0)
 		transactionConfirmedOnBtc = make([]*chainhash.Hash, 0)
 		transactionsOnBabylon = make([]*stakingDbInfo, 0)
+		transactionsVerifiedOnBabylon = make([]*chainhash.Hash, 0)
 	}
 
 	// In our scan we only record transactions which state need to be checked, as`ScanTrackedTransactions`
@@ -545,6 +549,9 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		// restarts
 		stakingTxHash := tx.StakingTx.TxHash()
 		switch tx.State {
+		case proto.TransactionState_TRANSACTION_CREATED:
+			transactionCreated = append(transactionCreated, &stakingTxHash)
+			return nil
 		case proto.TransactionState_SENT_TO_BTC:
 			transactionsSentToBtc = append(transactionsSentToBtc, &stakingTxHash)
 			return nil
@@ -561,6 +568,9 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				stakingTxHash:  &stakingTxHash,
 				stakingTxState: tx.State,
 			})
+			return nil
+		case proto.TransactionState_VERIFIED:
+			transactionsVerifiedOnBabylon = append(transactionsVerifiedOnBabylon, &stakingTxHash)
 			return nil
 		case proto.TransactionState_DELEGATION_ACTIVE:
 			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
@@ -584,6 +594,72 @@ func (app *StakerApp) checkTransactionsStatus() error {
 
 	if err != nil {
 		return err
+	}
+
+	for _, txHash := range transactionCreated {
+		txHashCopy := txHash
+		tx, stakerAddress := app.mustGetTransactionAndStakerAddress(txHashCopy)
+
+		alreadyDelegated, err := app.babylonClient.IsTxAlreadyPartOfDelegation(txHashCopy)
+
+		if err != nil {
+			// we got some communication err, return error and kill app startup
+			return err
+		}
+
+		_, status, err := app.wc.TxDetails(txHashCopy, tx.StakingTx.TxOut[tx.StakingOutputIndex].PkScript)
+
+		if err != nil {
+			// we got some communication err, return error and kill app startup
+			return err
+		}
+
+		// transaction:
+		// - in created state
+		// - on babylon
+		// - not on btc chain
+		// resume pre-approval flow
+		if alreadyDelegated {
+			app.wg.Add(1)
+			app.activateVerifiedDelegation(
+				stakerAddress,
+				tx.StakingTx,
+				tx.StakingOutputIndex,
+				txHashCopy,
+			)
+			continue
+		}
+
+		// transaction
+		// - not on babylon
+		// - not on btc chain
+		// - in created state
+		// resume pre-approval flow
+		if status == walletcontroller.TxNotFound {
+			req := &sendDelegationRequest{
+				txHash:                      *txHashCopy,
+				inclusionInfo:               nil,
+				requiredInclusionBlockDepth: uint64(stakingParams.ConfirmationTimeBlocks),
+			}
+
+			app.wg.Add(1)
+			go app.sendDelegationToBabylonTask(req, stakerAddress, tx)
+			continue
+		}
+
+		// transaction
+		// - not on babylon
+		// - on btc chain
+		// - in created state
+		// resume post-approval flow
+		if err := app.waitForStakingTransactionConfirmation(
+			txHashCopy,
+			tx.StakingTx.TxOut[tx.StakingOutputIndex].PkScript,
+			stakingParams.ConfirmationTimeBlocks,
+			app.currentBestBlockHeight.Load(),
+		); err != nil {
+			return err
+		}
 	}
 
 	for _, txHash := range transactionsSentToBtc {
@@ -778,6 +854,18 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			// we should not have any other state here, so kill app
 			return fmt.Errorf("unexpected local transaction state: %s, expected: %s", localInfo.stakingTxState, proto.TransactionState_SENT_TO_BABYLON)
 		}
+	}
+
+	for _, txHash := range transactionsVerifiedOnBabylon {
+		txHashCopy := *txHash
+		storedTx, address := app.mustGetTransactionAndStakerAddress(&txHashCopy)
+		app.wg.Add(1)
+		go app.activateVerifiedDelegation(
+			address,
+			storedTx.StakingTx,
+			storedTx.StakingOutputIndex,
+			&txHashCopy,
+		)
 	}
 
 	return nil

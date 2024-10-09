@@ -308,8 +308,7 @@ func (app *StakerApp) activateVerifiedDelegation(
 	stakingTransaction *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTxHash *chainhash.Hash) {
-	// TODO configure ticker interval
-	checkSigTicker := time.NewTicker(2 * time.Second)
+	checkSigTicker := time.NewTicker(app.config.StakerConfig.CheckActiveInterval)
 	defer checkSigTicker.Stop()
 	defer app.wg.Done()
 
@@ -337,6 +336,18 @@ func (app *StakerApp) activateVerifiedDelegation(
 				continue
 			}
 
+			params, err := app.babylonClient.Params()
+
+			if err != nil {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+					"err":           err,
+				}).Error("Error getting babylon params")
+				// Failed to get params, we cannont do anything, most probably connection error to babylon node
+				// we will try again in next iteration
+				continue
+			}
+
 			// check if check is active
 			// this loop assume there is at least one active vigiliante to activate delegation
 			if di.Active {
@@ -352,6 +363,15 @@ func (app *StakerApp) activateVerifiedDelegation(
 					app.quit,
 				)
 				return
+			}
+
+			if len(di.UndelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
+					"required":      params.CovenantQuruomThreshold,
+				}).Debug("Received not enough covenant unbonding signatures on babylon to wait fo activation")
+				continue
 			}
 
 			// check if staking tx is already on BTC chain
@@ -402,6 +422,16 @@ func (app *StakerApp) activateVerifiedDelegation(
 				continue
 			}
 
+			err = app.wc.UnlockWallet(defaultWalletUnlockTimeout)
+
+			if err != nil {
+				app.logger.WithFields(logrus.Fields{
+					"err":           err,
+					"stakingTxHash": stakingTxHash,
+				}).Error("failed to unlock wallet to sign staking transaction")
+				continue
+			}
+
 			// staking transaction is not signed, we must sign it before sending to btc chain
 			signedTx, fullySigned, err := app.wc.SignRawTransaction(stakingTransaction)
 
@@ -427,9 +457,7 @@ func (app *StakerApp) activateVerifiedDelegation(
 					"err":           err,
 					"stakingTxHash": stakingTxHash,
 				}).Error("failed to send staking transaction to btc chain to activate verified delegation")
-				continue
 			}
-
 			// at this point we send signed staking transaciton to BTC chain, we will
 			// still wait for its activation
 
