@@ -1152,7 +1152,7 @@ func ATestStakingFailures(t *testing.T) {
 	require.Error(t, err)
 }
 
-func ATestSendingStakingTransaction(t *testing.T) {
+func TestSendingStakingTransaction(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1266,7 +1266,7 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	require.Len(t, pend, 1)
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_VERIFIED)
 }
 
 func ATestMultipleWithdrawableStakingTransactions(t *testing.T) {

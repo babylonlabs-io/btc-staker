@@ -8,6 +8,7 @@ import (
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/babylonlabs-io/btc-staker/utils"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -242,6 +243,7 @@ func (app *StakerApp) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chai
 
 				req := &unbondingTxSignaturesConfirmedOnBabylonEvent{
 					stakingTxHash:               *stakingTxHash,
+					delegationActive:            di.Active,
 					covenantUnbondingSignatures: di.UndelegationInfo.CovenantUnbondingSignatures,
 				}
 
@@ -278,4 +280,159 @@ func (app *StakerApp) finalityProviderExists(fpPk *btcec.PublicKey) error {
 	}
 
 	return nil
+}
+
+func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
+	if len(tx.TxIn) == 0 {
+		return false, fmt.Errorf("transaction has no inputs")
+	}
+
+	signed := true
+
+	for _, in := range tx.TxIn {
+		if len(in.Witness) == 0 {
+			signed = false
+			break
+		}
+	}
+
+	return signed, nil
+}
+
+// activateVerifiedDelegation must be run in separate goroutine whenever delegation
+// reaches verified state. i.e
+// - delegation is on babylon
+// - delegation has received enough covenant signatures
+func (app *StakerApp) activateVerifiedDelegation(
+	stakerAddress btcutil.Address,
+	stakingTransaction *wire.MsgTx,
+	stakingOutputIndex uint32,
+	stakingTxHash *chainhash.Hash) {
+	// TODO configure ticker interval
+	checkSigTicker := time.NewTicker(5 * time.Second)
+	defer checkSigTicker.Stop()
+	defer app.wg.Done()
+
+	for {
+		select {
+		case <-checkSigTicker.C:
+			di, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
+
+			if err != nil {
+				if errors.Is(err, cl.ErrDelegationNotFound) {
+					// As we only start this handler when we are sure delegation is already on babylon
+					// this can only that:
+					// - either we are connected to wrong babylon network
+					// - or babylon node lost data and is still syncing
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+					}).Error("Delegation for given staking tx hash does not exsist on babylon. Check your babylon node.")
+				} else {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+						"err":           err,
+					}).Error("Error getting delegation info from babylon")
+				}
+
+				continue
+			}
+
+			// check if check is active
+			// this loop assume there is at least one active vigiliante to activate delegation
+			if di.Active {
+				utils.PushOrQuit[*delegationActiveOnBabylonEvent](
+					app.delegationActiveOnBabylonEvChan,
+					&delegationActiveOnBabylonEvent{
+						stakingTxHash: *stakingTxHash,
+					},
+					app.quit,
+				)
+				return
+			}
+
+			// check if staking tx is already on BTC chain
+			_, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
+
+			if err != nil {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+					"err":           err,
+				}).Error("Error checking existence of staking transaction on btc chain")
+				continue
+			}
+
+			if status != walletcontroller.TxNotFound {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+				}).Error("Staking transaction found on btc chain, waiting for activation on Babylon")
+				continue
+			}
+
+			// at this point we know that:
+			// - delegation is not active and already have quorum of covenant signatures
+			// - staking transaction is not on btc chain
+
+			// check if staking transaction is fully signed
+			isSigned, err := isTransacionFullySigned(stakingTransaction)
+
+			if err != nil {
+				app.reportCriticialError(
+					*stakingTxHash,
+					err,
+					"Error checking if staking transaction is fully signed",
+				)
+				return
+			}
+
+			if isSigned {
+				_, err := app.wc.SendRawTransaction(stakingTransaction, true)
+
+				if err != nil {
+					if err != nil {
+						app.logger.WithFields(logrus.Fields{
+							"err":           err,
+							"stakingTxHash": stakingTxHash,
+						}).Error("failed to send staking transaction to btc chain to activate verified delegation")
+						continue
+					}
+				}
+			}
+
+			// staking transaction is not signed, we must sign it before sending to btc chain
+			signedTx, fullySigned, err := app.wc.SignRawTransaction(stakingTransaction)
+
+			if err != nil {
+				app.logger.WithFields(logrus.Fields{
+					"err":           err,
+					"stakingTxHash": stakingTxHash,
+				}).Error("failed to sign staking transaction")
+				continue
+			}
+
+			if !fullySigned {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+				}).Debug("cannot sign staking transction with configured wallet")
+				continue
+			}
+
+			_, err = app.wc.SendRawTransaction(signedTx, true)
+
+			if err != nil {
+				if err != nil {
+					app.logger.WithFields(logrus.Fields{
+						"err":           err,
+						"stakingTxHash": stakingTxHash,
+					}).Error("failed to send staking transaction to btc chain to activate verified delegation")
+					continue
+				}
+			}
+
+			// at this point we send signed staking transaciton to BTC chain, we will
+			// still wait for its activation
+
+		case <-app.quit:
+			return
+		}
+	}
 }

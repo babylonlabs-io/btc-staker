@@ -131,6 +131,7 @@ type StakerApp struct {
 	sendStakingTxToBTCRequestedEvChan             chan *sendStakingTxToBTCRequestedEvent
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
+	delegationActiveOnBabylonEvChan               chan *delegationActiveOnBabylonEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
 	unbondingTxConfirmedOnBtcEvChan               chan *unbondingTxConfirmedOnBtcEvent
 	spendStakeTxConfirmedOnBtcEvChan              chan *spendStakeTxConfirmedOnBtcEvent
@@ -403,6 +404,7 @@ func (app *StakerApp) waitForStakingTransactionConfirmation(
 		return err
 	}
 
+	app.wg.Add(1)
 	go app.waitForStakingTxConfirmation(*stakingTxHash, requiredBlockDepth, confEvent)
 	return nil
 }
@@ -780,10 +782,13 @@ func (app *StakerApp) checkTransactionsStatus() error {
 	return nil
 }
 
+// waitForStakingTxConfirmation should be run in separate goroutine
 func (app *StakerApp) waitForStakingTxConfirmation(
 	txHash chainhash.Hash,
 	depthOnBtcChain uint32,
 	ev *notifier.ConfirmationEvent) {
+	defer app.wg.Done()
+
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1458,10 +1463,25 @@ func (app *StakerApp) handleStakingEvents() {
 
 			if err := app.txTracker.SetTxUnbondingSignaturesReceived(
 				&ev.stakingTxHash,
+				ev.delegationActive,
 				babylonCovSigsToDbSigSigs(ev.covenantUnbondingSignatures),
 			); err != nil {
 				// TODO: handle this error somehow, it means we possilbly make invalid state transition
 				app.logger.Fatalf("Error setting state for tx %s: %s", &ev.stakingTxHash, err)
+			}
+
+			if !ev.delegationActive {
+				storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+				// if the delegation is not active here, it can only mean that statking
+				// is going through pre-approvel flow. Fire up task to send staking tx
+				// to btc chain
+				app.wg.Add(1)
+				go app.activateVerifiedDelegation(
+					stakerAddress,
+					storedTx.StakingTx,
+					storedTx.StakingOutputIndex,
+					&ev.stakingTxHash,
+				)
 			}
 
 			app.m.DelegationsActivatedOnBabylon.Inc()
@@ -1483,6 +1503,15 @@ func (app *StakerApp) handleStakingEvents() {
 		case ev := <-app.spendStakeTxConfirmedOnBtcEvChan:
 			app.logStakingEventReceived(ev)
 			if err := app.txTracker.SetTxSpentOnBtc(&ev.stakingTxHash); err != nil {
+				// TODO: handle this error somehow, it means we received spend stake confirmation for tx which we do not store
+				// which is seems like programming error. Maybe panic?
+				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
+			}
+			app.logStakingEventProcessed(ev)
+
+		case ev := <-app.delegationActiveOnBabylonEvChan:
+			app.logStakingEventReceived(ev)
+			if err := app.txTracker.SetDelegationActiveOnBabylon(&ev.stakingTxHash); err != nil {
 				// TODO: handle this error somehow, it means we received spend stake confirmation for tx which we do not store
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)

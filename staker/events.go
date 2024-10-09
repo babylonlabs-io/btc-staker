@@ -25,6 +25,7 @@ type StakingEvent interface {
 var _ StakingEvent = (*stakingRequestedEvent)(nil)
 var _ StakingEvent = (*stakingTxBtcConfirmedEvent)(nil)
 var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
+var _ StakingEvent = (*delegationActiveOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
@@ -181,6 +182,7 @@ func (event *delegationSubmittedToBabylonEvent) EventDesc() string {
 
 type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
 	stakingTxHash               chainhash.Hash
+	delegationActive            bool
 	covenantUnbondingSignatures []cl.CovenantSignatureInfo
 }
 
@@ -258,4 +260,16 @@ func (event *sendStakingTxToBTCRequestedEvent) EventId() chainhash.Hash {
 
 func (event *sendStakingTxToBTCRequestedEvent) EventDesc() string {
 	return "SEND_STAKING_TX_TO_BTC_REQUESTED"
+}
+
+type delegationActiveOnBabylonEvent struct {
+	stakingTxHash chainhash.Hash
+}
+
+func (event *delegationActiveOnBabylonEvent) EventId() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *delegationActiveOnBabylonEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON_EVENT"
 }
