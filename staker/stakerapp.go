@@ -652,10 +652,18 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				"btcTxConfirmationBlockHeight": details.BlockHeight,
 			}).Debug("Already confirmed transaction not sent to babylon yet. Initiate sending")
 
+			iclusionProof := app.mustBuildInclusionProof(
+				details.Block,
+				details.TxIndex,
+			)
+
 			req := &sendDelegationRequest{
-				txHash:                      *stakingTxHash,
-				txIndex:                     details.TxIndex,
-				inclusionBlock:              details.Block,
+				txHash: *stakingTxHash,
+				inclusionInfo: &inclusionInfo{
+					txIndex:        details.TxIndex,
+					inclusionBlock: details.Block,
+					inclusionProof: iclusionProof,
+				},
 				requiredInclusionBlockDepth: uint64(stakingParams.ConfirmationTimeBlocks),
 			}
 
@@ -849,13 +857,15 @@ func (app *StakerApp) mustGetTransactionAndStakerAddress(txHash *chainhash.Hash)
 	return ts, stakerAddress
 }
 
-func (app *StakerApp) mustBuildInclusionProof(req *sendDelegationRequest) []byte {
-	proof, err := cl.GenerateProof(req.inclusionBlock, req.txIndex)
+func (app *StakerApp) mustBuildInclusionProof(
+	inclusionBlock *wire.MsgBlock,
+	txIndex uint32,
+) []byte {
+	proof, err := cl.GenerateProof(inclusionBlock, txIndex)
 
 	if err != nil {
 		app.logger.WithFields(logrus.Fields{
-			"btcTxHash": req.txHash,
-			"err":       err,
+			"err": err,
 		}).Fatalf("Failed to build inclusion proof for already confirmed transaction")
 	}
 
@@ -1256,8 +1266,17 @@ func (app *StakerApp) handleStakingEvents() {
 					continue
 				}
 
-				if ev.usePreApprovalFlow {
+				app.logger.Info("Recieved staking event", "ususePreApprovalFlowe", ev.usePreApprovalFlow)
 
+				if ev.usePreApprovalFlow {
+					// req := &sendDelegationRequest{
+					// 	txHash:                      ev.stakingTxHash,
+					// 	txIndex:                     ev.txIndex,
+					// 	inclusionBlock:              ev.inlusionBlock,
+					// 	requiredInclusionBlockDepth: uint64(ev.blockDepth),
+					// }
+
+					fmt.Println("Pre-approval flow")
 				} else {
 					// old flow, send to BTC first, end expect response to the caller
 					app.wg.Add(1)
@@ -1351,10 +1370,18 @@ func (app *StakerApp) handleStakingEvents() {
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
 
+			proof := app.mustBuildInclusionProof(
+				ev.inlusionBlock,
+				ev.txIndex,
+			)
+
 			req := &sendDelegationRequest{
-				txHash:                      ev.stakingTxHash,
-				txIndex:                     ev.txIndex,
-				inclusionBlock:              ev.inlusionBlock,
+				txHash: ev.stakingTxHash,
+				inclusionInfo: &inclusionInfo{
+					txIndex:        ev.txIndex,
+					inclusionBlock: ev.inlusionBlock,
+					inclusionProof: proof,
+				},
 				requiredInclusionBlockDepth: uint64(ev.blockDepth),
 			}
 
@@ -1557,6 +1584,7 @@ func (app *StakerApp) StakeFunds(
 	stakingAmount btcutil.Amount,
 	fpPks []*btcec.PublicKey,
 	stakingTimeBlocks uint16,
+	sendToBabylonFirst bool,
 ) (*chainhash.Hash, error) {
 
 	// check we are not shutting down
@@ -1676,7 +1704,7 @@ func (app *StakerApp) StakeFunds(
 		fpPks,
 		params.ConfirmationTimeBlocks,
 		pop,
-		false,
+		sendToBabylonFirst,
 	)
 
 	utils.PushOrQuit[*stakingRequestedEvent](

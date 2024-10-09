@@ -147,32 +147,39 @@ func slashingTxForStakingTx(
 }
 
 func createDelegationData(
-	StakerBtcPk *btcec.PublicKey,
-	inclusionBlock *wire.MsgBlock,
-	stakingTxIdx uint32,
+	stakerBtcPk *btcec.PublicKey,
+	inclusionInfo *inclusionInfo,
 	storedTx *stakerdb.StoredTransaction,
 	slashingTx *wire.MsgTx,
 	slashingTxSignature *schnorr.Signature,
 	babylonStakerAddr sdk.AccAddress,
-	stakingTxInclusionProof []byte,
 	undelegationData *cl.UndelegationData,
 ) *cl.DelegationData {
-	inclusionBlockHash := inclusionBlock.BlockHash()
+
+	var incInfo *cl.StakingTransactionInclusionInfo = nil
+
+	if inclusionInfo != nil {
+		inclusionBlockHash := inclusionInfo.inclusionBlock.BlockHash()
+
+		incInfo = &cl.StakingTransactionInclusionInfo{
+			StakingTransactionIdx:                inclusionInfo.txIndex,
+			StakingTransactionInclusionProof:     inclusionInfo.inclusionProof,
+			StakingTransactionInclusionBlockHash: &inclusionBlockHash,
+		}
+	}
 
 	dg := cl.DelegationData{
-		StakingTransaction:                   storedTx.StakingTx,
-		StakingTransactionIdx:                stakingTxIdx,
-		StakingTransactionInclusionProof:     stakingTxInclusionProof,
-		StakingTransactionInclusionBlockHash: &inclusionBlockHash,
-		StakingTime:                          storedTx.StakingTime,
-		StakingValue:                         btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
-		FinalityProvidersBtcPks:              storedTx.FinalityProvidersBtcPks,
-		StakerBtcPk:                          StakerBtcPk,
-		SlashingTransaction:                  slashingTx,
-		SlashingTransactionSig:               slashingTxSignature,
-		BabylonStakerAddr:                    babylonStakerAddr,
-		BabylonPop:                           storedTx.Pop,
-		Ud:                                   undelegationData,
+		StakingTransaction:              storedTx.StakingTx,
+		StakingTransactionInclusionInfo: incInfo,
+		StakingTime:                     storedTx.StakingTime,
+		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
+		FinalityProvidersBtcPks:         storedTx.FinalityProvidersBtcPks,
+		StakerBtcPk:                     stakerBtcPk,
+		SlashingTransaction:             slashingTx,
+		SlashingTransactionSig:          slashingTxSignature,
+		BabylonStakerAddr:               babylonStakerAddr,
+		BabylonPop:                      storedTx.Pop,
+		Ud:                              undelegationData,
 	}
 
 	return &dg

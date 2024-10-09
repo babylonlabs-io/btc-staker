@@ -19,10 +19,17 @@ import (
 // and be part of new module which will be responsible for communication with babylon chain i.e
 // retrieving data from babylon chain, sending data to babylon chain, queuing data to be send etc.
 
+type inclusionInfo struct {
+	txIndex        uint32
+	inclusionBlock *wire.MsgBlock
+	inclusionProof []byte
+}
+
 type sendDelegationRequest struct {
-	txHash                      chainhash.Hash
-	txIndex                     uint32
-	inclusionBlock              *wire.MsgBlock
+	txHash chainhash.Hash
+	// optional field, if not provided, delegation will be send to Babylon without
+	// the inclusion proof
+	inclusionInfo               *inclusionInfo
 	requiredInclusionBlockDepth uint64
 }
 
@@ -30,7 +37,6 @@ func (app *StakerApp) buildOwnedDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
-	stakingTxInclusionProof []byte,
 ) (*cl.DelegationData, error) {
 	externalData, err := app.retrieveExternalDelegationData(stakerAddress)
 	if err != nil {
@@ -109,13 +115,11 @@ func (app *StakerApp) buildOwnedDelegation(
 
 	dg := createDelegationData(
 		externalData.stakerPublicKey,
-		req.inclusionBlock,
-		req.txIndex,
+		req.inclusionInfo,
 		storedTx,
 		stakingSlashingTx,
 		stakingSlashingSig.Signature,
 		externalData.babylonStakerAddr,
-		stakingTxInclusionProof,
 		&cl.UndelegationData{
 			UnbondingTransaction:         undelegationDesc.UnbondingTransaction,
 			UnbondingTxValue:             undelegationDesc.UnbondingTxValue,
@@ -133,7 +137,7 @@ func (app *StakerApp) buildDelegation(
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
 
-	stakingTxInclusionProof := app.mustBuildInclusionProof(req)
+	// stakingTxInclusionProof := app.mustBuildInclusionProof(req)
 
 	if storedTx.Watched {
 		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.txHash)
@@ -158,13 +162,11 @@ func (app *StakerApp) buildDelegation(
 
 		dg := createDelegationData(
 			watchedData.StakerBtcPubKey,
-			req.inclusionBlock,
-			req.txIndex,
+			req.inclusionInfo,
 			storedTx,
 			watchedData.SlashingTx,
 			watchedData.SlashingTxSig,
 			watchedData.StakerBabylonAddr,
-			stakingTxInclusionProof,
 			&undelegationData,
 		)
 		return dg, nil
@@ -173,7 +175,6 @@ func (app *StakerApp) buildDelegation(
 			req,
 			stakerAddress,
 			storedTx,
-			stakingTxInclusionProof,
 		)
 	}
 }
