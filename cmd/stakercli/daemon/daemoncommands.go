@@ -126,6 +126,10 @@ var stakeCmd = cli.Command{
 			Usage:    "Staking time in BTC blocks",
 			Required: true,
 		},
+		cli.BoolFlag{
+			Name:  helpers.SendToBabylonFirstFlag,
+			Usage: "Whether staking transaction should be first to Babylon or BTC",
+		},
 	},
 	Action: stake,
 }
@@ -324,8 +328,9 @@ func stake(ctx *cli.Context) error {
 	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
 	fpPks := ctx.StringSlice(fpPksFlag)
 	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+	sendToBabylonFirst := ctx.Bool(helpers.SendToBabylonFirstFlag)
 
-	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
 	if err != nil {
 		return err
 	}

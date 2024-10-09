@@ -80,6 +80,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	stakingAmount int64,
 	fpBtcPks []string,
 	stakingTimeBlocks int64,
+	sendToBabylonFirst bool,
 ) (*ResultStake, error) {
 
 	if stakingAmount <= 0 {
@@ -115,7 +116,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 
 	stakingTimeUint16 := uint16(stakingTimeBlocks)
 
-	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16)
+	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16, sendToBabylonFirst)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +544,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		// info AP
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                     rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
+		"stake":                     rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
 		"staking_details":           rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":               rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions": rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),

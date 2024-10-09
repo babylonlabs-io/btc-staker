@@ -67,6 +67,7 @@ func (c *StakerServiceJsonRpcClient) Stake(
 	stakingAmount int64,
 	fpPks []string,
 	stakingTimeBlocks int64,
+	sendToBabylonFirst bool,
 ) (*service.ResultStake, error) {
 	result := new(service.ResultStake)
 
@@ -75,6 +76,7 @@ func (c *StakerServiceJsonRpcClient) Stake(
 	params["stakingAmount"] = stakingAmount
 	params["fpBtcPks"] = fpPks
 	params["stakingTimeBlocks"] = stakingTimeBlocks
+	params["sendToBabylonFirst"] = sendToBabylonFirst
 
 	_, err := c.client.Call(ctx, "stake", params, result)
 	if err != nil {

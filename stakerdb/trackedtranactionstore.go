@@ -589,7 +589,7 @@ func (c *TrackedTransactionStore) AddTransaction(
 		StakingTxBtcConfirmationInfo: nil,
 		BtcSigType:                   pop.BtcSigType,
 		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
+		State:                        proto.TransactionState_TRANSACTION_CREATED,
 		Watched:                      false,
 		UnbondingTxData:              nil,
 	}
@@ -735,6 +735,15 @@ func (c *TrackedTransactionStore) setTxState(
 	})
 }
 
+func (c *TrackedTransactionStore) SetTxSentToBtc(txHash *chainhash.Hash) error {
+	setTxSentToBtc := func(tx *proto.TrackedTransaction) error {
+		tx.State = proto.TransactionState_SENT_TO_BTC
+		return nil
+	}
+
+	return c.setTxState(txHash, setTxSentToBtc)
+}
+
 func (c *TrackedTransactionStore) SetTxConfirmed(
 	txHash *chainhash.Hash,
 	blockHash *chainhash.Hash,
@@ -785,8 +794,18 @@ func (c *TrackedTransactionStore) SetTxSpentOnBtc(txHash *chainhash.Hash) error 
 	return c.setTxState(txHash, setTxSpentOnBtc)
 }
 
+func (c *TrackedTransactionStore) SetDelegationActiveOnBabylon(txHash *chainhash.Hash) error {
+	setTxSpentOnBtc := func(tx *proto.TrackedTransaction) error {
+		tx.State = proto.TransactionState_DELEGATION_ACTIVE
+		return nil
+	}
+
+	return c.setTxState(txHash, setTxSpentOnBtc)
+}
+
 func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
 	txHash *chainhash.Hash,
+	delegationActive bool,
 	covenantSignatures []PubKeySigPair,
 ) error {
 	setUnbondingSignaturesReceived := func(tx *proto.TrackedTransaction) error {
@@ -798,7 +817,11 @@ func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
 			return fmt.Errorf("cannot set unbonding signatures received, because unbonding signatures already exist: %w", ErrInvalidUnbondingDataUpdate)
 		}
 
-		tx.State = proto.TransactionState_DELEGATION_ACTIVE
+		if delegationActive {
+			tx.State = proto.TransactionState_DELEGATION_ACTIVE
+		} else {
+			tx.State = proto.TransactionState_VERIFIED
+		}
 		tx.UnbondingTxData.CovenantSignatures = covenantSigsToProto(covenantSignatures)
 		return nil
 	}

@@ -103,7 +103,12 @@ func (b *BabylonMsgSender) isBabylonBtcLcReady(
 	requiredInclusionBlockDepth uint64,
 	req *DelegationData,
 ) error {
-	depth, err := b.cl.QueryHeaderDepth(req.StakingTransactionInclusionBlockHash)
+	// no need to consult Babylon if we send delegation without inclusion proof
+	if req.StakingTransactionInclusionInfo == nil {
+		return nil
+	}
+
+	depth, err := b.cl.QueryHeaderDepth(req.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash)
 
 	if err != nil {
 		// If header is not known to babylon, or it is on LCFork, then most probably

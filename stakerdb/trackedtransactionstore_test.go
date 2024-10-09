@@ -195,7 +195,7 @@ func TestStateTransitions(t *testing.T) {
 	// Inital state
 	storedTx, err := s.GetTransaction(&txHash)
 	require.NoError(t, err)
-	require.Equal(t, proto.TransactionState_SENT_TO_BTC, storedTx.State)
+	require.Equal(t, proto.TransactionState_TRANSACTION_CREATED, storedTx.State)
 	require.Equal(t, uint64(1), storedTx.StoredTransactionIdx)
 	// Confirmed
 	hash := datagen.GenRandomBtcdHash(r)

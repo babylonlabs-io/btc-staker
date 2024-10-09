@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/babylonlabs-io/btc-staker/itest/containers"
-	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"math/rand"
 	"net"
 	"net/netip"
@@ -20,6 +18,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/babylonlabs-io/btc-staker/itest/containers"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
@@ -114,6 +115,7 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost stri
 
 	defaultConfig.StakerConfig.BabylonStallingInterval = 1 * time.Second
 	defaultConfig.StakerConfig.UnbondingTxCheckInterval = 1 * time.Second
+	defaultConfig.StakerConfig.CheckActiveInterval = 1 * time.Second
 
 	// TODO: After bumping relayer version sending transactions concurrently fails wih
 	// fatal error: concurrent map writes
@@ -682,7 +684,11 @@ func (tm *TestManager) mineBlock(t *testing.T) *wire.MsgBlock {
 	return header
 }
 
-func (tm *TestManager) sendStakingTxBTC(t *testing.T, testStakingData *testStakingData) *chainhash.Hash {
+func (tm *TestManager) sendStakingTxBTC(
+	t *testing.T,
+	testStakingData *testStakingData,
+	sendToBabylonFirst bool,
+) *chainhash.Hash {
 	fpBTCPKs := []string{}
 	for i := 0; i < testStakingData.GetNumRestakedFPs(); i++ {
 		fpBTCPK := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[i]))
@@ -694,6 +700,7 @@ func (tm *TestManager) sendStakingTxBTC(t *testing.T, testStakingData *testStaki
 		testStakingData.StakingAmount,
 		fpBTCPKs,
 		int64(testStakingData.StakingTime),
+		sendToBabylonFirst,
 	)
 	require.NoError(t, err)
 	txHash := res.TxHash
@@ -701,22 +708,29 @@ func (tm *TestManager) sendStakingTxBTC(t *testing.T, testStakingData *testStaki
 	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
 	require.NoError(t, err)
 	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
 
+	if sendToBabylonFirst {
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_TRANSACTION_CREATED.String())
+	} else {
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
+	}
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
-		return len(txFromMempool) == 1
-	}, eventuallyWaitTimeOut, eventuallyPollTime)
+	// only wait for blocks if we are using the old flow, and send staking tx to BTC
+	// first
+	if !sendToBabylonFirst {
+		require.Eventually(t, func() bool {
+			txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
+			return len(txFromMempool) == 1
+		}, eventuallyWaitTimeOut, eventuallyPollTime)
 
-	mBlock := tm.mineBlock(t)
-	require.Equal(t, 2, len(mBlock.Transactions))
+		mBlock := tm.mineBlock(t)
+		require.Equal(t, 2, len(mBlock.Transactions))
 
-	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
-	require.NoError(t, err)
-
+		_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+		require.NoError(t, err)
+	}
 	return hashFromString
 }
 
@@ -734,6 +748,7 @@ func (tm *TestManager) sendMultipleStakingTx(t *testing.T, testStakingData []*te
 			data.StakingAmount,
 			fpBTCPKs,
 			int64(data.StakingTime),
+			false,
 		)
 		require.NoError(t, err)
 		txHash, err := chainhash.NewHashFromStr(res.TxHash)
@@ -1122,6 +1137,7 @@ func TestStakingFailures(t *testing.T) {
 		testStakingData.StakingAmount,
 		[]string{fpKey, fpKey},
 		int64(testStakingData.StakingTime),
+		false,
 	)
 	require.Error(t, err)
 
@@ -1132,6 +1148,7 @@ func TestStakingFailures(t *testing.T) {
 		testStakingData.StakingAmount,
 		[]string{},
 		int64(testStakingData.StakingTime),
+		false,
 	)
 	require.Error(t, err)
 }
@@ -1164,7 +1181,7 @@ func TestSendingStakingTransaction(t *testing.T) {
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
@@ -1210,6 +1227,73 @@ func TestSendingStakingTransaction(t *testing.T) {
 	require.Len(t, transactionsResult.Transactions, 1)
 	require.Equal(t, transactionsResult.TotalTransactionCount, "1")
 	require.Equal(t, transactionsResult.Transactions[0].StakingTxHash, txHash.String())
+}
+
+func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
+	t.Parallel()
+	// need to have at least 300 block on testnet as only then segwit is activated.
+	// Mature output is out which has 100 confirmations, which means 200mature outputs
+	// will generate 300 blocks
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
+
+	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
+	require.NoError(t, err)
+	scr, err := txscript.PayToTaprootScript(tm.CovenantPrivKeys[0].PubKey())
+	require.NoError(t, err)
+	_, st, erro := tm.Sa.Wallet().TxDetails(hashed, scr)
+	// query for exsisting tx is not an error, proper state should be returned
+	require.NoError(t, erro)
+	require.Equal(t, st, walletcontroller.TxNotFound)
+
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendStakingTxBTC(t, testStakingData, true)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	// need to activate delegation to unbond
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_VERIFIED)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		context.Background(),
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+
 }
 
 func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
@@ -1322,7 +1406,7 @@ func TestRestartingTxNotDeepEnough(t *testing.T) {
 	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	newCtx, newCancel := context.WithCancel(context.Background())
 	defer newCancel()
@@ -1398,7 +1482,7 @@ func TestStakingUnbonding(t *testing.T) {
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
@@ -1471,7 +1555,7 @@ func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
@@ -1663,7 +1747,7 @@ func TestSendingStakingTransaction_Restaking(t *testing.T) {
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
@@ -1704,7 +1788,7 @@ func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	txHash := tm.sendStakingTxBTC(t, testStakingData)
+	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	// must wait for all covenant signatures to be received, to be able to unbond

@@ -273,20 +273,26 @@ func (bc *BabylonController) Sign(msg []byte) ([]byte, error) {
 	}
 }
 
-type DelegationData struct {
-	StakingTransaction                   *wire.MsgTx
+type StakingTransactionInclusionInfo struct {
 	StakingTransactionIdx                uint32
 	StakingTransactionInclusionProof     []byte
 	StakingTransactionInclusionBlockHash *chainhash.Hash
-	StakingTime                          uint16
-	StakingValue                         btcutil.Amount
-	FinalityProvidersBtcPks              []*btcec.PublicKey
-	SlashingTransaction                  *wire.MsgTx
-	SlashingTransactionSig               *schnorr.Signature
-	BabylonStakerAddr                    sdk.AccAddress
-	StakerBtcPk                          *btcec.PublicKey
-	BabylonPop                           *stakerdb.ProofOfPossession
-	Ud                                   *UndelegationData
+}
+
+type DelegationData struct {
+	StakingTransaction *wire.MsgTx
+	// Optional field, if not provided, delegation will be send to Babylon without
+	// the inclusion proof
+	StakingTransactionInclusionInfo *StakingTransactionInclusionInfo
+	StakingTime                     uint16
+	StakingValue                    btcutil.Amount
+	FinalityProvidersBtcPks         []*btcec.PublicKey
+	SlashingTransaction             *wire.MsgTx
+	SlashingTransactionSig          *schnorr.Signature
+	BabylonStakerAddr               sdk.AccAddress
+	StakerBtcPk                     *btcec.PublicKey
+	BabylonPop                      *stakerdb.ProofOfPossession
+	Ud                              *UndelegationData
 }
 
 type UndelegationData struct {
@@ -333,8 +339,6 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		return nil, err
 	}
 
-	inclusionBlockHash := bbntypes.NewBTCHeaderHashBytesFromChainhash(dg.StakingTransactionInclusionBlockHash)
-
 	slashingTx, err := btcstypes.NewBTCSlashingTxFromMsgTx(dg.SlashingTransaction)
 
 	if err != nil {
@@ -374,9 +378,20 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 	slashUnbondingTxSig := bbntypes.NewBIP340SignatureFromBTCSig(dg.Ud.SlashUnbondingTransactionSig)
 
-	txKey := &bcctypes.TransactionKey{
-		Index: dg.StakingTransactionIdx,
-		Hash:  &inclusionBlockHash,
+	var stakingTransactionInclusionProof *btcstypes.InclusionProof = nil
+
+	if dg.StakingTransactionInclusionInfo != nil {
+		inclusionBlockHash := bbntypes.NewBTCHeaderHashBytesFromChainhash(
+			dg.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash,
+		)
+		txKey := &bcctypes.TransactionKey{
+			Index: dg.StakingTransactionInclusionInfo.StakingTransactionIdx,
+			Hash:  &inclusionBlockHash,
+		}
+		stakingTransactionInclusionProof = btcstypes.NewInclusionProof(
+			txKey,
+			dg.StakingTransactionInclusionInfo.StakingTransactionInclusionProof,
+		)
 	}
 
 	return &btcstypes.MsgCreateBTCDelegation{
@@ -393,7 +408,7 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		// TODO: It is super bad that this thing (TransactionInfo) spread over whole babylon codebase, and it
 		// is used in all modules, rpc, database etc.
 		StakingTx:               serizalizedStakingTransaction,
-		StakingTxInclusionProof: btcstypes.NewInclusionProof(txKey, dg.StakingTransactionInclusionProof),
+		StakingTxInclusionProof: stakingTransactionInclusionProof,
 		SlashingTx:              slashingTx,
 		// Data related to unbonding
 		DelegatorSlashingSig:          slashingTxSig,
@@ -892,4 +907,24 @@ func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfo
 	}
 
 	return res.Header, nil
+}
+
+func (bc *BabylonController) ActivateDelegation(
+	ctx context.Context,
+	stakingTxHash chainhash.Hash,
+	proof *btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
+
+	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{
+		Signer:                  bc.getTxSigner(),
+		StakingTxHash:           stakingTxHash.String(),
+		StakingTxInclusionProof: btcstypes.NewInclusionProofFromSpvProof(proof),
+	}
+
+	res, err := bc.reliablySendMsgs([]sdk.Msg{msg})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+
 }
