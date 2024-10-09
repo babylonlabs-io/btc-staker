@@ -908,3 +908,23 @@ func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfo
 
 	return res.Header, nil
 }
+
+func (bc *BabylonController) ActivateDelegation(
+	ctx context.Context,
+	stakingTxHash chainhash.Hash,
+	proof *btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
+
+	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{
+		Signer:                  bc.getTxSigner(),
+		StakingTxHash:           stakingTxHash.String(),
+		StakingTxInclusionProof: btcstypes.NewInclusionProofFromSpvProof(proof),
+	}
+
+	res, err := bc.reliablySendMsgs([]sdk.Msg{msg})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
+
+}

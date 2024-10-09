@@ -242,8 +242,9 @@ func NewStakerAppFromDeps(
 
 		// event for when delegation is sent to babylon and included in babylon
 		delegationSubmittedToBabylonEvChan: make(chan *delegationSubmittedToBabylonEvent),
-
-		// event emitted upon transaction which spends staking transaction is confirmed on BTC
+		// event for when delegation is active on babylon after being verified
+		delegationActiveOnBabylonEvChan: make(chan *delegationActiveOnBabylonEvent),
+		// event emitte	d upon transaction which spends staking transaction is confirmed on BTC
 		spendStakeTxConfirmedOnBtcEvChan: make(chan *spendStakeTxConfirmedOnBtcEvent),
 
 		// channel which receives unbonding signatures from covenant for unbonding

@@ -211,6 +211,7 @@ func (w *RpcWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, b
 }
 
 func (w *RpcWalletController) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
+	fmt.Println("Sending raw transaction")
 	return w.Client.SendRawTransaction(tx, allowHighFees)
 }
 

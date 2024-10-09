@@ -309,7 +309,7 @@ func (app *StakerApp) activateVerifiedDelegation(
 	stakingOutputIndex uint32,
 	stakingTxHash *chainhash.Hash) {
 	// TODO configure ticker interval
-	checkSigTicker := time.NewTicker(5 * time.Second)
+	checkSigTicker := time.NewTicker(2 * time.Second)
 	defer checkSigTicker.Stop()
 	defer app.wg.Done()
 
@@ -340,6 +340,10 @@ func (app *StakerApp) activateVerifiedDelegation(
 			// check if check is active
 			// this loop assume there is at least one active vigiliante to activate delegation
 			if di.Active {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+				}).Debug("Delegation has been activated on the Babylon chain")
+
 				utils.PushOrQuit[*delegationActiveOnBabylonEvent](
 					app.delegationActiveOnBabylonEvChan,
 					&delegationActiveOnBabylonEvent{
@@ -363,6 +367,7 @@ func (app *StakerApp) activateVerifiedDelegation(
 
 			if status != walletcontroller.TxNotFound {
 				app.logger.WithFields(logrus.Fields{
+					"status":        status,
 					"stakingTxHash": stakingTxHash,
 				}).Error("Staking transaction found on btc chain, waiting for activation on Babylon")
 				continue
@@ -388,14 +393,13 @@ func (app *StakerApp) activateVerifiedDelegation(
 				_, err := app.wc.SendRawTransaction(stakingTransaction, true)
 
 				if err != nil {
-					if err != nil {
-						app.logger.WithFields(logrus.Fields{
-							"err":           err,
-							"stakingTxHash": stakingTxHash,
-						}).Error("failed to send staking transaction to btc chain to activate verified delegation")
-						continue
-					}
+					app.logger.WithFields(logrus.Fields{
+						"err":           err,
+						"stakingTxHash": stakingTxHash,
+					}).Error("failed to send staking transaction to btc chain to activate verified delegation")
 				}
+
+				continue
 			}
 
 			// staking transaction is not signed, we must sign it before sending to btc chain
@@ -419,13 +423,11 @@ func (app *StakerApp) activateVerifiedDelegation(
 			_, err = app.wc.SendRawTransaction(signedTx, true)
 
 			if err != nil {
-				if err != nil {
-					app.logger.WithFields(logrus.Fields{
-						"err":           err,
-						"stakingTxHash": stakingTxHash,
-					}).Error("failed to send staking transaction to btc chain to activate verified delegation")
-					continue
-				}
+				app.logger.WithFields(logrus.Fields{
+					"err":           err,
+					"stakingTxHash": stakingTxHash,
+				}).Error("failed to send staking transaction to btc chain to activate verified delegation")
+				continue
 			}
 
 			// at this point we send signed staking transaciton to BTC chain, we will

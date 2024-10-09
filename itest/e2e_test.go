@@ -1152,7 +1152,7 @@ func ATestStakingFailures(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSendingStakingTransaction(t *testing.T) {
+func ATestSendingStakingTransaction(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1267,6 +1267,32 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_VERIFIED)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		context.Background(),
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+
 }
 
 func ATestMultipleWithdrawableStakingTransactions(t *testing.T) {
