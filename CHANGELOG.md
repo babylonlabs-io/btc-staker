@@ -40,6 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * [44](https://github.com/babylonlabs-io/btc-staker/pull/44) Implement
 pre-approval flow support
 
+### Improvements
+
+* [#48](https://github.com/babylonlabs-io/btc-staker/pull/48) Add Github actions
+  for goreleaser, changelog reminder, and backport
+
 ## v0.6.0
 
 ### Bug fixes
