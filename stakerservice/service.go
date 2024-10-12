@@ -192,11 +192,13 @@ type PageParams struct {
 	Limit  uint64
 }
 
-func getPageParams(offsetPtr *int, limitPtr *int) PageParams {
+func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	var limit uint64
 
 	if limitPtr == nil {
 		limit = defaultLimit
+	} else if *limitPtr < 0 {
+		return nil, fmt.Errorf("limit cannot be negative")
 	} else {
 		limit = uint64(*limitPtr)
 	}
@@ -209,19 +211,24 @@ func getPageParams(offsetPtr *int, limitPtr *int) PageParams {
 
 	if offsetPtr == nil {
 		offset = defaultOffset
+	} else if *offsetPtr < 0 {
+		return nil, fmt.Errorf("offset cannot be negative")
 	} else {
 		offset = uint64(*offsetPtr)
 	}
 
-	return PageParams{
+	return &PageParams{
 		Offset: offset,
 		Limit:  limit,
-	}
+	}, nil
 }
 
 func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*FinalityProvidersResponse, error) {
 
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	providersResp, err := s.staker.ListActiveFinalityProviders(pageParams.Limit, pageParams.Offset)
 
@@ -249,7 +256,10 @@ func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*Fin
 }
 
 func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, limit *int) (*ListStakingTransactionsResponse, error) {
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	txResult, err := s.staker.StoredTransactions(pageParams.Limit, pageParams.Offset)
 
@@ -273,7 +283,10 @@ func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, lim
 }
 
 func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, limit *int) (*WithdrawableTransactionsResponse, error) {
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	txResult, err := s.staker.WithdrawableTransactions(pageParams.Limit, pageParams.Offset)
 
@@ -514,21 +527,14 @@ func (s *StakerService) watchStaking(
 	}, nil
 }
 
-func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string, feeRate *int) (*UnbondingResponse, error) {
+func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string) (*UnbondingResponse, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 
 	if err != nil {
 		return nil, err
 	}
 
-	var feeRateBtc *btcutil.Amount = nil
-
-	if feeRate != nil {
-		amt := btcutil.Amount(*feeRate)
-		feeRateBtc = &amt
-	}
-
-	unbondingTxHash, err := s.staker.UnbondStaking(*txHash, feeRateBtc)
+	unbondingTxHash, err := s.staker.UnbondStaking(*txHash)
 
 	if err != nil {
 		return nil, err
@@ -572,8 +578,11 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 
 	defer func() {
 		s.logger.Info("Closing database...")
-		s.db.Close()
-		s.logger.Info("Database closed")
+		if err := s.db.Close(); err != nil {
+			s.logger.Errorf("Error closing database: %v", err)
+		} else {
+			s.logger.Info("Database closed")
+		}
 	}()
 
 	mkErr := func(format string, args ...interface{}) error {

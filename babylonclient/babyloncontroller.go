@@ -134,12 +134,9 @@ func (bc *BabylonController) Stop() error {
 }
 
 func (bc *BabylonController) Params() (*StakingParams, error) {
-	// TODO: uint64 are quite silly types for these params, probably uint8 or uint16 would be enough
-	// as we do not expect finalization to be more than 255 or in super extreme 65535
 	// TODO: it would probably be good to have separate methods for those
 	var bccParams *bcctypes.Params
 	if err := retry.Do(func() error {
-
 		response, err := bc.bbnClient.BTCCheckpointParams()
 		if err != nil {
 			return err
@@ -174,14 +171,14 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
-	if bccParams.CheckpointFinalizationTimeout > math.MaxUint16 {
-		return nil, fmt.Errorf("checkpoint finalization timeout is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	minUnbondingTime := sdkmath.Max[uint16](
-		uint16(bccParams.CheckpointFinalizationTimeout),
-		stakingTrackerParams.MinUnbondingTime,
+	minUnbondingTimeU64 := sdkmath.Max[uint64](
+		bccParams.CheckpointFinalizationTimeout,
+		uint64(stakingTrackerParams.MinUnbondingTime),
 	)
+
+	if minUnbondingTimeU64 > math.MaxUint16 {
+		return nil, fmt.Errorf("minimum unbonding time should fit in a uint16")
+	}
 
 	return &StakingParams{
 		ConfirmationTimeBlocks:    uint32(bccParams.BtcConfirmationDepth),
@@ -191,7 +188,7 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
 		SlashingRate:              stakingTrackerParams.SlashingRate,
 		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		MinUnbondingTime:          minUnbondingTime,
+		MinUnbondingTime:          uint16(minUnbondingTimeU64),
 		UnbondingFee:              stakingTrackerParams.UnbondingFee,
 		MinStakingTime:            stakingTrackerParams.MinStakingTime,
 		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
@@ -470,7 +467,7 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		return nil, err
 	}
 
-	// check this early than covenant config makes sense, so that rest of the
+	// check early that the covenant config makes sense, so that rest of the
 	// code can assume that:
 	// 1. covenant quorum is less or equal to number of covenant pks
 	// 2. covenant pks are not empty
@@ -478,7 +475,7 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		return nil, fmt.Errorf("empty list of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
-	if response.Params.CovenantQuorum > uint32(len(response.Params.CovenantPks)) {
+	if int(response.Params.CovenantQuorum) > len(response.Params.CovenantPks) {
 		return nil, fmt.Errorf("covenant quorum is bigger than number of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
@@ -492,15 +489,18 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		covenantPks = append(covenantPks, covenantBtcPk)
 	}
 
-	if response.Params.MinUnbondingTimeBlocks > math.MaxUint16 {
+	minUnbondingTimeBlocksU32 := response.Params.MinUnbondingTimeBlocks
+	if minUnbondingTimeBlocksU32 > math.MaxUint16 {
 		return nil, fmt.Errorf("min unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
-	if response.Params.MinStakingTimeBlocks > math.MaxUint16 {
+	minStakingTimeBlocksU32 := response.Params.MinStakingTimeBlocks
+	if minStakingTimeBlocksU32 > math.MaxUint16 {
 		return nil, fmt.Errorf("min staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
-	if response.Params.MaxStakingTimeBlocks > math.MaxUint16 {
+	maxStakingTimeBlocksU32 := response.Params.MaxStakingTimeBlocks
+	if maxStakingTimeBlocksU32 > math.MaxUint16 {
 		return nil, fmt.Errorf("max staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
@@ -523,10 +523,10 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		CovenantPks:             covenantPks,
 		MinSlashingFee:          btcutil.Amount(response.Params.MinSlashingTxFeeSat),
 		CovenantQuruomThreshold: response.Params.CovenantQuorum,
-		MinUnbondingTime:        uint16(response.Params.MinUnbondingTimeBlocks),
+		MinUnbondingTime:        uint16(minUnbondingTimeBlocksU32),
 		UnbondingFee:            btcutil.Amount(response.Params.UnbondingFeeSat),
-		MinStakingTime:          uint16(response.Params.MinStakingTimeBlocks),
-		MaxStakingTime:          uint16(response.Params.MaxStakingTimeBlocks),
+		MinStakingTime:          uint16(minStakingTimeBlocksU32),
+		MaxStakingTime:          uint16(maxStakingTimeBlocksU32),
 		MinStakingValue:         btcutil.Amount(response.Params.MinStakingValueSat),
 		MaxStakingValue:         btcutil.Amount(response.Params.MaxStakingValueSat),
 	}, nil
@@ -798,14 +798,15 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 				return retry.Unrecoverable(fmt.Errorf("malformed unbonding transaction: %s: %w", err.Error(), ErrInvalidValueReceivedFromBabylonNode))
 			}
 
-			if resp.BtcDelegation.UnbondingTime > math.MaxUint16 {
+			unbondingTimeU32 := resp.BtcDelegation.UnbondingTime
+			if unbondingTimeU32 > math.MaxUint16 {
 				return retry.Unrecoverable(fmt.Errorf("malformed unbonding time: %d: %w", resp.BtcDelegation.UnbondingTime, ErrInvalidValueReceivedFromBabylonNode))
 			}
 
 			udi = &UndelegationInfo{
 				UnbondingTransaction:        tx,
 				CovenantUnbondingSignatures: coventSigInfos,
-				UnbondingTime:               uint16(resp.BtcDelegation.UnbondingTime),
+				UnbondingTime:               uint16(unbondingTimeU32),
 			}
 		}
 

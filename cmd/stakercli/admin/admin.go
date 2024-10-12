@@ -62,7 +62,7 @@ func dumpCfg(c *cli.Context) error {
 	dir, _ := path.Split(configPath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(dir, os.ModeDir); err != nil {
 			return cli.NewExitError(
 				fmt.Sprintf("could not create config directory: %s", err.Error()),
 				1,

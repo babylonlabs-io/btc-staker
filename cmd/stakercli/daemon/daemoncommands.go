@@ -36,7 +36,6 @@ const (
 	limitFlag                  = "limit"
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
-	feeRateFlag                = "fee-rate"
 	stakerAddressFlag          = "staker-address"
 )
 
@@ -167,10 +166,6 @@ var unbondCmd = cli.Command{
 			Name:     stakingTransactionHashFlag,
 			Usage:    "Hash of original staking transaction in bitcoin hex format",
 			Required: true,
-		},
-		cli.IntFlag{
-			Name:  feeRateFlag,
-			Usage: "fee rate to pay for unbonding tx in sats/kb",
 		},
 	},
 	Action: unbond,
@@ -372,18 +367,7 @@ func unbond(ctx *cli.Context) error {
 
 	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
 
-	feeRate := ctx.Int(feeRateFlag)
-
-	if feeRate < 0 {
-		return cli.NewExitError("Fee rate must be non-negative", 1)
-	}
-
-	var fr *int = nil
-	if feeRate > 0 {
-		fr = &feeRate
-	}
-
-	result, err := client.UnbondStaking(sctx, stakingTransactionHash, fr)
+	result, err := client.UnbondStaking(sctx, stakingTransactionHash)
 	if err != nil {
 		return err
 	}
