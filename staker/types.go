@@ -75,13 +75,24 @@ func pubKeyToString(pubKey *btcec.PublicKey) string {
 
 func createWitnessSignaturesForPubKeys(
 	covenantPubKeys []*btcec.PublicKey,
+	covenantQuorum uint32,
 	receivedSignaturePairs []stakerdb.PubKeySigPair,
-) []*schnorr.Signature {
+) ([]*schnorr.Signature, error) {
+
+	if len(receivedSignaturePairs) < int(covenantQuorum) {
+		return nil, fmt.Errorf("not enough signatures to create witness. Required: %d, received: %d", covenantQuorum, len(receivedSignaturePairs))
+	}
+
 	// create map of received signatures
-	receivedSignatures := make(map[string]*schnorr.Signature)
+	receivedSignaturesUpToQuorum := make(map[string]*schnorr.Signature)
 
 	for _, pair := range receivedSignaturePairs {
-		receivedSignatures[pubKeyToString(pair.PubKey)] = pair.Signature
+		// we are only interested in quorum number of signatures
+		if len(receivedSignaturesUpToQuorum) >= int(covenantQuorum) {
+			break
+		}
+
+		receivedSignaturesUpToQuorum[pubKeyToString(pair.PubKey)] = pair.Signature
 	}
 
 	sortedPubKeys := sortPubKeysForWitness(covenantPubKeys)
@@ -91,12 +102,12 @@ func createWitnessSignaturesForPubKeys(
 
 	for i, key := range sortedPubKeys {
 		k := key
-		if signature, found := receivedSignatures[pubKeyToString(k)]; found {
+		if signature, found := receivedSignaturesUpToQuorum[pubKeyToString(k)]; found {
 			signatures[i] = signature
 		}
 	}
 
-	return signatures
+	return signatures, nil
 }
 
 func slashingTxForStakingTx(
@@ -424,7 +435,7 @@ func buildUnbondingSpendInfo(
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain unbonding transaction")
 	}
 
-	if len(unbondingData.CovenantSignatures) != int(params.CovenantQuruomThreshold) {
+	if len(unbondingData.CovenantSignatures) < int(params.CovenantQuruomThreshold) {
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain all necessary signatures. Required: %d, received: %d", params.CovenantQuruomThreshold, len(unbondingData.CovenantSignatures))
 	}
 
