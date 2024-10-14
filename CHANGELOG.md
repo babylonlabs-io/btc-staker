@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.7.1
+
 ### Bug fix
 
 - [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
