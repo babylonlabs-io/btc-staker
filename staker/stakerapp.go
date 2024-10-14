@@ -314,6 +314,8 @@ func (app *StakerApp) Start() error {
 			startErr = err
 			return
 		}
+
+		app.logger.Info("StakerApp started")
 	})
 
 	return startErr
@@ -518,6 +520,8 @@ func (app *StakerApp) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
 // for some reason they are behind staker
 // TODO: Refactor this functions after adding unit tests to stakerapp
 func (app *StakerApp) checkTransactionsStatus() error {
+	app.logger.Debug("Start checking transaction status to fix db state")
+
 	stakingParams, err := app.babylonClient.Params()
 
 	if err != nil {
@@ -596,6 +600,14 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		return err
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"num_created":          len(transactionCreated),
+		"num_sent_to_btc":      len(transactionsSentToBtc),
+		"num_confirmed_on_btc": len(transactionConfirmedOnBtc),
+		"num_on_babylon":       len(transactionsOnBabylon),
+		"num_verified":         len(transactionsVerifiedOnBabylon),
+	}).Debug("Iteration over all database staking requests finished")
+
 	for _, txHash := range transactionCreated {
 		txHashCopy := txHash
 		tx, stakerAddress := app.mustGetTransactionAndStakerAddress(txHashCopy)
@@ -661,6 +673,10 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		}
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_TRANSACTION_CREATED.String(),
+	}).Debug("Partially fixed state of the database")
+
 	for _, txHash := range transactionsSentToBtc {
 		stakingTxHash := txHash
 		tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
@@ -677,6 +693,10 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			return err
 		}
 	}
+
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_SENT_TO_BTC.String(),
+	}).Debug("Partially fixed state of the database")
 
 	for _, txHash := range transactionConfirmedOnBtc {
 		stakingTxHash := txHash
@@ -749,6 +769,10 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			go app.sendDelegationToBabylonTask(req, stakerAddress, tx)
 		}
 	}
+
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_CONFIRMED_ON_BTC.String(),
+	}).Debug("Partially fixed state of the database")
 
 	for _, localInfo := range transactionsOnBabylon {
 		// we only can have one local states here
@@ -855,6 +879,12 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		}
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"state_sent_to_babylon": proto.TransactionState_SENT_TO_BABYLON.String(),
+		"state_active":          proto.TransactionState_DELEGATION_ACTIVE.String(),
+		"state_unbonding":       proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC.String(),
+	}).Debug("Partially fixed state of the database")
+
 	for _, txHash := range transactionsVerifiedOnBabylon {
 		txHashCopy := *txHash
 		storedTx, _ := app.mustGetTransactionAndStakerAddress(&txHashCopy)
@@ -865,6 +895,12 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			&txHashCopy,
 		)
 	}
+
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_VERIFIED.String(),
+	}).Debug("Partially fixed state of the database")
+
+	app.logger.Debug("Finished checking transaction status to fix db state")
 
 	return nil
 }
