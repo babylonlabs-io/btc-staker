@@ -42,6 +42,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
 signatures when building unbonding transaction witness
 
+### Misc Improvements 
+
+* [51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
+  for satoshi amount related values.
+
 ## v0.7.0
 
 ### Api breaking

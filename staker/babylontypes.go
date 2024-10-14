@@ -28,10 +28,10 @@ type inclusionInfo struct {
 
 type sendDelegationRequest struct {
 	txHash chainhash.Hash
-	// optional field, if not provided, delegation will be send to Babylon without
+	// optional field, if not provided, delegation will be sent to Babylon without
 	// the inclusion proof
 	inclusionInfo               *inclusionInfo
-	requiredInclusionBlockDepth uint64
+	requiredInclusionBlockDepth uint32
 }
 
 func (app *StakerApp) buildOwnedDelegation(

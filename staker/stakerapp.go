@@ -28,7 +28,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcwallet/wallet/txrules"
 	"github.com/cometbft/cometbft/crypto/tmhash"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
@@ -97,9 +96,6 @@ const (
 	timeoutWaitingForSpendConfirmation = 2 * time.Hour
 
 	defaultWalletUnlockTimeout = 15
-
-	// Set minimum fee to 1 sat/byte, as in standard rules policy
-	MinFeePerKb = txrules.DefaultRelayFeePerKb
 
 	// If we fail to send unbonding tx to btc for any reason we will retry in this time
 	unbondingSendRetryTimeout = 1 * time.Minute
@@ -293,9 +289,13 @@ func (app *StakerApp) Start() error {
 		}
 
 		// we registered for notifications with `nil`  so we should receive best block
-		// immeadiatly
+		// immediately
 		select {
 		case block := <-blockEventNotifier.Epochs:
+			if block.Height < 0 {
+				startErr = errors.New("block height is negative")
+				return
+			}
 			app.currentBestBlockHeight.Store(uint32(block.Height))
 		case <-app.quit:
 			startErr = errors.New("staker app quit before finishing start")
@@ -541,7 +541,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 	}
 
 	// In our scan we only record transactions which state need to be checked, as`ScanTrackedTransactions`
-	// is long running read transaction, it could dead lock with write transactions which we would need
+	// is long-running read transaction, it could deadlock with write transactions which we would need
 	// to use to update transaction state.
 	err = app.txTracker.ScanTrackedTransactions(func(tx *stakerdb.StoredTransaction) error {
 		// TODO : We need to have another stare like UnstakeTransaction sent and store
@@ -638,7 +638,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 			req := &sendDelegationRequest{
 				txHash:                      *txHashCopy,
 				inclusionInfo:               nil,
-				requiredInclusionBlockDepth: uint64(stakingParams.ConfirmationTimeBlocks),
+				requiredInclusionBlockDepth: stakingParams.ConfirmationTimeBlocks,
 			}
 
 			app.wg.Add(1)
@@ -742,7 +742,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 					inclusionBlock: details.Block,
 					inclusionProof: iclusionProof,
 				},
-				requiredInclusionBlockDepth: uint64(stakingParams.ConfirmationTimeBlocks),
+				requiredInclusionBlockDepth: stakingParams.ConfirmationTimeBlocks,
 			}
 
 			app.wg.Add(1)
@@ -1371,7 +1371,7 @@ func (app *StakerApp) handleStakingEvents() {
 					req := &sendDelegationRequest{
 						txHash:                      ev.stakingTxHash,
 						inclusionInfo:               nil,
-						requiredInclusionBlockDepth: uint64(ev.requiredDepthOnBtcChain),
+						requiredInclusionBlockDepth: ev.requiredDepthOnBtcChain,
 					}
 
 					storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
@@ -1524,7 +1524,7 @@ func (app *StakerApp) handleStakingEvents() {
 					inclusionBlock: ev.inlusionBlock,
 					inclusionProof: proof,
 				},
-				requiredInclusionBlockDepth: uint64(ev.blockDepth),
+				requiredInclusionBlockDepth: ev.blockDepth,
 			}
 
 			storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
@@ -2143,7 +2143,7 @@ func (app *StakerApp) ListActiveFinalityProviders(limit uint64, offset uint64) (
 	return app.babylonClient.QueryFinalityProviders(limit, offset)
 }
 
-// Initiates whole unbonding process. Whole process looks like this:
+// UnbondStaking initiates whole unbonding process. Whole process looks like this:
 // 1. Unbonding data is build based on exsitng staking transaction data
 // 2. Unbonding data is sent to babylon as part of undelegete request
 // 3. If request is successful, unbonding transaction is registred in db and
@@ -2154,7 +2154,7 @@ func (app *StakerApp) ListActiveFinalityProviders(limit uint64, offset uint64) (
 // This function returns control to the caller after step 3. Later is up to the caller
 // to check what is state of unbonding transaction
 func (app *StakerApp) UnbondStaking(
-	stakingTxHash chainhash.Hash, feeRate *btcutil.Amount) (*chainhash.Hash, error) {
+	stakingTxHash chainhash.Hash) (*chainhash.Hash, error) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:

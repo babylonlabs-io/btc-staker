@@ -23,19 +23,13 @@ import (
 )
 
 const (
-	defaultDataDirname     = "data"
-	defaultTLSCertFilename = "tls.cert"
-	defaultTLSKeyFilename  = "tls.key"
-	defaultLogLevel        = "info"
-	defaultLogDirname      = "logs"
-	defaultLogFilename     = "stakerd.log"
-	DefaultRPCPort         = 15812
-	// DefaultAutogenValidity is the default validity of a self-signed
-	// certificate. The value corresponds to 14 months
-	// (14 months * 30 days * 24 hours).
-	defaultTLSCertDuration = 14 * 30 * 24 * time.Hour
-	defaultConfigFileName  = "stakerd.conf"
-	defaultFeeMode         = "static"
+	defaultDataDirname    = "data"
+	defaultLogLevel       = "info"
+	defaultLogDirname     = "logs"
+	defaultLogFilename    = "stakerd.log"
+	DefaultRPCPort        = 15812
+	defaultConfigFileName = "stakerd.conf"
+	defaultFeeMode        = "static"
 	// We are using 2 sat/vbyte as default min fee rate, as currently our size estimates
 	// for different transaction types are not very accurate and if we would use 1 sat/vbyte (minimum accepted by bitcoin network)
 	// we risk into having transactions rejected by the network due to low fee.
@@ -105,8 +99,8 @@ type BtcNodeBackendConfig struct {
 	Nodetype            string    `long:"nodetype" description:"type of node to connect to {bitcoind, btcd}"`
 	WalletType          string    `long:"wallettype" description:"type of wallet to connect to {bitcoind, btcwallet}"`
 	FeeMode             string    `long:"feemode" description:"fee mode to use for fee estimation {static, dynamic}. In dynamic mode fee will be estimated using backend node"`
-	MinFeeRate          uint64    `long:"minfeerate" description:"minimum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a lower fee rate, this value will be used instead"`
-	MaxFeeRate          uint64    `long:"maxfeerate" description:"maximum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a higher fee rate, this value will be used instead. It is also used as fallback if fee estimation by connected btc node fails and as fee rate in case of static estimator"`
+	MinFeeRate          int64     `long:"minfeerate" description:"minimum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a lower fee rate, this value will be used instead"`
+	MaxFeeRate          int64     `long:"maxfeerate" description:"maximum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a higher fee rate, this value will be used instead. It is also used as fallback if fee estimation by connected btc node fails and as fee rate in case of static estimator"`
 	Btcd                *Btcd     `group:"btcd" namespace:"btcd"`
 	Bitcoind            *Bitcoind `group:"bitcoind" namespace:"bitcoind"`
 	EstimationMode      types.FeeEstimationMode
@@ -305,7 +299,7 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 	// TODO: Add log rotation
 	// At this point we know config is valid, create logger which also log to file
 	logFilePath := filepath.Join(cleanCfg.LogDir, defaultLogFilename)
-	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -443,11 +437,11 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		return nil, mkErr(fmt.Sprintf("invalid fee estimation mode: %s", cfg.BtcNodeBackendConfig.Nodetype))
 	}
 
-	if cfg.BtcNodeBackendConfig.MinFeeRate == 0 {
+	if cfg.BtcNodeBackendConfig.MinFeeRate <= 0 {
 		return nil, mkErr("minfeerate rate must be greater than 0")
 	}
 
-	if cfg.BtcNodeBackendConfig.MaxFeeRate == 0 {
+	if cfg.BtcNodeBackendConfig.MaxFeeRate <= 0 {
 		return nil, mkErr("maxfeerate rate must be greater than 0")
 	}
 
