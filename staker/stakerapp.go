@@ -621,7 +621,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		// resume pre-approval flow
 		if alreadyDelegated {
 			app.wg.Add(1)
-			app.activateVerifiedDelegation(
+			go app.activateVerifiedDelegation(
 				tx.StakingTx,
 				tx.StakingOutputIndex,
 				txHashCopy,
