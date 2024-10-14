@@ -1039,10 +1039,18 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		return fmt.Errorf("failed to receive stakerUnbondingSig.Signature")
 	}
 
-	covenantSigantures := createWitnessSignaturesForPubKeys(
+	covenantSigantures, err := createWitnessSignaturesForPubKeys(
 		params.CovenantPks,
+		params.CovenantQuruomThreshold,
 		unbondingData.CovenantSignatures,
 	)
+
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Fatalf("failed to create witness to send unbonding tx")
+	}
 
 	witness, err := unbondingSpendInfo.CreateUnbondingPathWitness(
 		covenantSigantures,

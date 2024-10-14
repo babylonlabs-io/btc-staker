@@ -435,7 +435,13 @@ func retrieveTransactionFromMempool(t *testing.T, client *rpcclient.Client, hash
 	var txes []*btcutil.Tx
 	for _, txHash := range hashes {
 		tx, err := client.GetRawTransaction(txHash)
-		require.NoError(t, err)
+
+		if err != nil {
+			// this is e2e helper method, so this error most probably some of the
+			// transactions are still not in the mempool
+			return []*btcutil.Tx{}
+		}
+
 		txes = append(txes, tx)
 	}
 	return txes
@@ -1026,7 +1032,10 @@ func (tm *TestManager) insertAllMinedBlocksToBabylon(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func (tm *TestManager) insertCovenantSigForDelegation(t *testing.T, btcDel *btcstypes.BTCDelegationResponse) {
+func (tm *TestManager) insertCovenantSigForDelegation(
+	t *testing.T,
+	btcDel *btcstypes.BTCDelegationResponse,
+) {
 	fpBTCPKs, err := bbntypes.NewBTCPKsFromBIP340PKs(btcDel.FpBtcPkList)
 	require.NoError(t, err)
 
@@ -1101,16 +1110,23 @@ func (tm *TestManager) insertCovenantSigForDelegation(t *testing.T, btcDel *btcs
 	)
 	require.NoError(t, err)
 
+	var messages []*btcstypes.MsgAddCovenantSigs
 	for i := 0; i < len(tm.CovenantPrivKeys); i++ {
-		_, err = tm.BabylonClient.SubmitCovenantSig(
+		msg := tm.BabylonClient.CreateCovenantMessage(
 			bbntypes.NewBIP340PubKeyFromBTCPK(tm.CovenantPrivKeys[i].PubKey()),
 			stakingMsgTx.TxHash().String(),
 			covenantSlashingTxSigs[i].AdaptorSigs,
 			bbntypes.NewBIP340SignatureFromBTCSig(covUnbondingSigs[i]),
 			covenantUnbondingSlashingTxSigs[i].AdaptorSigs,
 		)
-		require.NoError(t, err)
+		messages = append(messages, msg)
 	}
+	// we insert are covenant signatures in on message, this way staker
+	// program must handle the case of all signatures being present in Babylon
+	// delegation
+	// it also speeds up the tests
+	_, err = tm.BabylonClient.SubmitMultipleCovenantMessages(messages)
+	require.NoError(t, err)
 }
 
 func TestStakingFailures(t *testing.T) {
