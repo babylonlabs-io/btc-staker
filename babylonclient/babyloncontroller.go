@@ -842,14 +842,13 @@ func (bc *BabylonController) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhas
 
 // Test methods for e2e testing
 // Different babylon sig methods to support e2e testing
-func (bc *BabylonController) SubmitCovenantSig(
+func (bc *BabylonController) CreateCovenantMessage(
 	covPubKey *bbntypes.BIP340PubKey,
 	stakingTxHash string,
 	slashStakingAdaptorSigs [][]byte,
 	unbondindgSig *bbntypes.BIP340Signature,
 	slashUnbondingAdaptorSigs [][]byte,
-
-) (*pv.RelayerTxResponse, error) {
+) *btcstypes.MsgAddCovenantSigs {
 	msg := &btcstypes.MsgAddCovenantSigs{
 		Signer:                  bc.getTxSigner(),
 		Pk:                      covPubKey,
@@ -859,7 +858,19 @@ func (bc *BabylonController) SubmitCovenantSig(
 		SlashingUnbondingTxSigs: slashUnbondingAdaptorSigs,
 	}
 
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
+	return msg
+}
+
+func (bc *BabylonController) SubmitMultipleCovenantMessages(
+	covenantMsgs []*btcstypes.MsgAddCovenantSigs,
+) (*pv.RelayerTxResponse, error) {
+	var msgs []sdk.Msg
+
+	for _, covenantMsg := range covenantMsgs {
+		msgs = append(msgs, covenantMsg)
+	}
+
+	return bc.reliablySendMsgs(msgs)
 }
 
 func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDelegationResponse, error) {

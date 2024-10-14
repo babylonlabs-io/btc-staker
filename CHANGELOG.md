@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Bug fix
+
+- [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
+signatures when building unbonding transaction witness
+
 ## v0.7.0
 
 ### Api breaking
