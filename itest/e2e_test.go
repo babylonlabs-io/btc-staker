@@ -1512,8 +1512,7 @@ func TestStakingUnbonding(t *testing.T) {
 
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 
-	feeRate := 2000
-	resp, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String(), &feeRate)
+	resp, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String())
 	require.NoError(t, err)
 
 	unbondingTxHash, err := chainhash.NewHashFromStr(resp.UnbondingTxHash)
@@ -1590,8 +1589,7 @@ func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 
-	feeRate := 2000
-	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String(), &feeRate)
+	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String())
 	require.NoError(t, err)
 	unbondingTxHash, err := chainhash.NewHashFromStr(unbondResponse.UnbondingTxHash)
 	require.NoError(t, err)
@@ -1818,8 +1816,7 @@ func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 
 	// Unbond staking transaction and wait for it to be included in mempool
-	feeRate := 2000
-	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String(), &feeRate)
+	unbondResponse, err := tm.StakerClient.UnbondStaking(context.Background(), txHash.String())
 	require.NoError(t, err)
 	unbondingTxHash, err := chainhash.NewHashFromStr(unbondResponse.UnbondingTxHash)
 	require.NoError(t, err)
