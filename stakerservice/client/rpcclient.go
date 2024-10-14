@@ -195,15 +195,11 @@ func (c *StakerServiceJsonRpcClient) WatchStaking(
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) UnbondStaking(ctx context.Context, txHash string, feeRate *int) (*service.UnbondingResponse, error) {
+func (c *StakerServiceJsonRpcClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
 	result := new(service.UnbondingResponse)
 
 	params := make(map[string]interface{})
 	params["stakingTxHash"] = txHash
-
-	if feeRate != nil {
-		params["feeRate"] = feeRate
-	}
 
 	_, err := c.client.Call(ctx, "unbond_staking", params, result)
 

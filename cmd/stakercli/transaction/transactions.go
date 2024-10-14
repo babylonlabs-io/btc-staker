@@ -294,7 +294,10 @@ func createPhase1StakingTransaction(ctx *cli.Context) error {
 		return err
 	}
 
-	covenantQuorum := uint32(ctx.Uint64(covenantQuorumFlag))
+	covenantQuorum, err := parseCovenantQuorumFromCliCtx(ctx)
+	if err != nil {
+		return err
+	}
 
 	_, tx, err := btcstaking.BuildV0IdentifiableStakingOutputsAndTx(
 		tag,
@@ -402,12 +405,14 @@ func checkPhase1StakingTransaction(ctx *cli.Context) error {
 	}
 
 	covenantMembersPks, err := parseCovenantKeysFromCliCtx(ctx)
-
 	if err != nil {
 		return err
 	}
 
-	covenantQuorum := uint32(ctx.Uint64(covenantQuorumFlag))
+	covenantQuorum, err := parseCovenantQuorumFromCliCtx(ctx)
+	if err != nil {
+		return err
+	}
 
 	stakingTx, err := btcstaking.ParseV0StakingTx(
 		tx,
@@ -439,9 +444,14 @@ func checkPhase1StakingTransaction(ctx *cli.Context) error {
 		}
 	}
 
-	timeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
-	if timeBlocks > 0 && uint16(timeBlocks) != stakingTx.OpReturnData.StakingTime {
-		return fmt.Errorf("staking time in tx %d do not match with flag %d", stakingTx.OpReturnData.StakingTime, timeBlocks)
+	if ctx.Int64(helpers.StakingTimeBlocksFlag) != 0 {
+		timeBlocks, err := parseLockTimeBlocksFromCliCtx(ctx, helpers.StakingTimeBlocksFlag)
+		if err != nil {
+			return err
+		}
+		if timeBlocks != stakingTx.OpReturnData.StakingTime {
+			return fmt.Errorf("staking time in tx %d do not match with flag %d", stakingTx.OpReturnData.StakingTime, timeBlocks)
+		}
 	}
 
 	txAmount := stakingTx.StakingOutput.Value

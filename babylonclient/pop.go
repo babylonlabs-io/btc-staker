@@ -13,7 +13,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-type BabylonBtcPopType int
+type BabylonBtcPopType uint32
 
 const (
 	SchnorrType BabylonBtcPopType = iota
@@ -39,7 +39,7 @@ func NewBabylonPop(t BabylonBtcPopType, btcSigOverBbnAddr []byte) (*BabylonPop, 
 	}, nil
 }
 
-// NewBabylonBip322Pop build proper BabylonPop in BIP322 style, it verifies the
+// NewBabylonBip322Pop build proper BabylonPop in BIP322 style, it verifies
 // the bip322 signature validity
 func NewBabylonBip322Pop(
 	msg []byte,

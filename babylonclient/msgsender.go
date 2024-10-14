@@ -21,12 +21,12 @@ var (
 type sendDelegationRequest struct {
 	utils.Request[*pv.RelayerTxResponse]
 	dg                          *DelegationData
-	requiredInclusionBlockDepth uint64
+	requiredInclusionBlockDepth uint32
 }
 
 func newSendDelegationRequest(
 	dg *DelegationData,
-	requiredInclusionBlockDepth uint64,
+	requiredInclusionBlockDepth uint32,
 ) sendDelegationRequest {
 	return sendDelegationRequest{
 		Request:                     utils.NewRequest[*pv.RelayerTxResponse](),
@@ -100,7 +100,7 @@ func (b *BabylonMsgSender) Stop() {
 
 // isBabylonBtcLcReady checks if Babylon BTC light client is ready to receive delegation
 func (b *BabylonMsgSender) isBabylonBtcLcReady(
-	requiredInclusionBlockDepth uint64,
+	requiredInclusionBlockDepth uint32,
 	req *DelegationData,
 ) error {
 	// no need to consult Babylon if we send delegation without inclusion proof
@@ -121,7 +121,7 @@ func (b *BabylonMsgSender) isBabylonBtcLcReady(
 		return fmt.Errorf("error while getting delegation data: %w", err)
 	}
 
-	if depth < requiredInclusionBlockDepth {
+	if uint32(depth) < requiredInclusionBlockDepth {
 		return fmt.Errorf("btc lc not ready, required depth: %d, current depth: %d: %w", requiredInclusionBlockDepth, depth, ErrBabylonBtcLightClientNotReady)
 	}
 
@@ -247,7 +247,7 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 
 func (m *BabylonMsgSender) SendDelegation(
 	dg *DelegationData,
-	requiredInclusionBlockDepth uint64,
+	requiredInclusionBlockDepth uint32,
 ) (*pv.RelayerTxResponse, error) {
 	req := newSendDelegationRequest(dg, requiredInclusionBlockDepth)
 
