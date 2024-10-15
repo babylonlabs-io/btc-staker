@@ -7,11 +7,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type responseExpectedChan struct {
-	errChan     chan error
-	successChan chan *chainhash.Hash
-}
-
 type StakingEvent interface {
 	// Each staking event is identified by initial staking transaction hash
 	EventId() chainhash.Hash
@@ -24,7 +19,6 @@ var _ StakingEvent = (*delegationActiveOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
-var _ StakingEvent = (*sendStakingTxToBTCRequestedEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
 
 type stakingTxBtcConfirmedEvent struct {
@@ -125,20 +119,6 @@ func (app *StakerApp) logStakingEventProcessed(event StakingEvent) {
 		"eventId": event.EventId(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
-}
-
-type sendStakingTxToBTCRequestedEvent struct {
-	stakingTxHash           chainhash.Hash
-	requiredDepthOnBtcChain uint32
-	responseExpected        *responseExpectedChan
-}
-
-func (event *sendStakingTxToBTCRequestedEvent) EventId() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *sendStakingTxToBTCRequestedEvent) EventDesc() string {
-	return "SEND_STAKING_TX_TO_BTC_REQUESTED"
 }
 
 type delegationActiveOnBabylonEvent struct {
