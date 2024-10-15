@@ -70,7 +70,7 @@ type BabylonClient interface {
 	Undelegate(req *UndelegationRequest) (*pv.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
-	QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error)
+	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
 }
@@ -142,9 +142,9 @@ func (m *MockBabylonClient) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*
 	}
 }
 
-func (m *MockBabylonClient) QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error) {
+func (m *MockBabylonClient) QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error) {
 	// return always confirmed depth
-	return uint64(m.ClientParams.ConfirmationTimeBlocks) + 1, nil
+	return m.ClientParams.ConfirmationTimeBlocks + 1, nil
 }
 
 func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {

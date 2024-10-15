@@ -171,9 +171,9 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
-	minUnbondingTimeU64 := sdkmath.Max[uint64](
+	minUnbondingTimeU64 := sdkmath.Max[uint32](
 		bccParams.CheckpointFinalizationTimeout,
-		uint64(stakingTrackerParams.MinUnbondingTime),
+		uint32(stakingTrackerParams.MinUnbondingTime),
 	)
 
 	if minUnbondingTimeU64 > math.MaxUint16 {
@@ -663,7 +663,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 	}, nil
 }
 
-func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error) {
+func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error) {
 	ctx, cancel := getQueryContext(bc.cfg.Timeout)
 	defer cancel()
 

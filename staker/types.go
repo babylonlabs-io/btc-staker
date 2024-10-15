@@ -517,7 +517,7 @@ func parseWatchStakingRequest(
 	}
 
 	// 2. Check wheter slashing tx match staking tx
-	err = staking.CheckTransactions(
+	err = staking.CheckSlashingTxMatchFundingTx(
 		slashingTx,
 		stakingTx,
 		stakingOutputIdx,
@@ -584,7 +584,7 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding output does not match output produced from provided values")
 	}
 
-	err = staking.CheckTransactions(
+	err = staking.CheckSlashingTxMatchFundingTx(
 		slashUnbondingTx,
 		unbondingTx,
 		0,
