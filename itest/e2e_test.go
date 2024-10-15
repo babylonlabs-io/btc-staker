@@ -1129,7 +1129,7 @@ func (tm *TestManager) insertCovenantSigForDelegation(
 	require.NoError(t, err)
 }
 
-func ATestStakingFailures(t *testing.T) {
+func TestStakingFailures(t *testing.T) {
 	t.Parallel()
 	numMatureOutputs := uint32(200)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1245,7 +1245,7 @@ func TestSendingStakingTransaction(t *testing.T) {
 	require.Equal(t, transactionsResult.Transactions[0].StakingTxHash, txHash.String())
 }
 
-func ATestSendingStakingTransactionWithPreApproval(t *testing.T) {
+func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1312,7 +1312,7 @@ func ATestSendingStakingTransactionWithPreApproval(t *testing.T) {
 
 }
 
-func ATestMultipleWithdrawableStakingTransactions(t *testing.T) {
+func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1380,7 +1380,7 @@ func ATestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].TransactionIdx, "4")
 }
 
-func ATestSendingWatchedStakingTransaction(t *testing.T) {
+func TestSendingWatchedStakingTransaction(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1404,7 +1404,7 @@ func ATestSendingWatchedStakingTransaction(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
 }
 
-func ATestRestartingTxNotDeepEnough(t *testing.T) {
+func TestRestartingTxNotDeepEnough(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1433,7 +1433,7 @@ func ATestRestartingTxNotDeepEnough(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
 }
 
-func ATestRestartingTxNotOnBabylon(t *testing.T) {
+func TestRestartingTxNotOnBabylon(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1478,7 +1478,7 @@ func ATestRestartingTxNotOnBabylon(t *testing.T) {
 	}
 }
 
-func ATestStakingUnbonding(t *testing.T) {
+func TestStakingUnbonding(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1550,7 +1550,7 @@ func ATestStakingUnbonding(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SPENT_ON_BTC)
 }
 
-func ATestUnbondingRestartWaitingForSignatures(t *testing.T) {
+func TestUnbondingRestartWaitingForSignatures(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1625,7 +1625,7 @@ func containsOutput(outputs []walletcontroller.Utxo, address string, amount btcu
 	return false
 }
 
-func ATestBitcoindWalletRpcApi(t *testing.T) {
+func TestBitcoindWalletRpcApi(t *testing.T) {
 	t.Parallel()
 	manager, err := containers.NewManager(t)
 	require.NoError(t, err)
@@ -1701,7 +1701,7 @@ func ATestBitcoindWalletRpcApi(t *testing.T) {
 	require.Equal(t, walletcontroller.TxInChain, status)
 }
 
-func ATestBitcoindWalletBip322Signing(t *testing.T) {
+func TestBitcoindWalletBip322Signing(t *testing.T) {
 	t.Parallel()
 	manager, err := containers.NewManager(t)
 	require.NoError(t, err)
@@ -1732,7 +1732,7 @@ func ATestBitcoindWalletBip322Signing(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func ATestSendingStakingTransaction_Restaking(t *testing.T) {
+func TestSendingStakingTransaction_Restaking(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
@@ -1774,7 +1774,7 @@ func ATestSendingStakingTransaction_Restaking(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 }
 
-func ATestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
+func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs

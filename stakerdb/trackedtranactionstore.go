@@ -587,7 +587,7 @@ func CreateTrackedTransaction(
 		StakingTxBtcConfirmationInfo: nil,
 		BtcSigType:                   pop.BtcSigType,
 		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_TRANSACTION_CREATED,
+		State:                        proto.TransactionState_SENT_TO_BTC,
 		Watched:                      false,
 		UnbondingTxData:              nil,
 	}
