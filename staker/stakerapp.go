@@ -1316,7 +1316,23 @@ func (app *StakerApp) handlePreApprovalCmd(cmd *stakingRequestCmd) error {
 func (app *StakerApp) handlePostApprovalCmd(cmd *stakingRequestCmd) error {
 	bestBlockHeight := app.currentBestBlockHeight.Load()
 
-	_, err := app.wc.SendRawTransaction(cmd.stakingTx, true)
+	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
+
+	if err != nil {
+		return err
+	}
+
+	tx, fullySignd, err := app.wc.SignRawTransaction(cmd.stakingTx)
+
+	if err != nil {
+		return err
+	}
+
+	if !fullySignd {
+		return fmt.Errorf("failed to fully sign transaction with hash %s", cmd.stakingTxHash)
+	}
+
+	_, err = app.wc.SendRawTransaction(tx, true)
 
 	if err != nil {
 		return err
@@ -1780,8 +1796,9 @@ func (app *StakerApp) StakeFunds(
 
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
-	// Create unsigned transaction by wallet
-	tx, err := app.wc.CreateAndSignTx([]*wire.TxOut{stakingInfo.StakingOutput}, btcutil.Amount(feeRate), stakerAddress)
+	// Create unsigned transaction by wallet without signing. Signing will happen
+	// in next steps
+	tx, err := app.wc.CreateTransaction([]*wire.TxOut{stakingInfo.StakingOutput}, btcutil.Amount(feeRate), stakerAddress)
 
 	if err != nil {
 		return nil, err

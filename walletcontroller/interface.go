@@ -49,7 +49,7 @@ type WalletController interface {
 	SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error)
 	// requires wallet to be unlocked
 	CreateAndSignTx(
-		output []*wire.TxOut,
+		outputs []*wire.TxOut,
 		feeRatePerKb btcutil.Amount,
 		changeAddress btcutil.Address,
 	) (*wire.MsgTx, error)
