@@ -479,7 +479,7 @@ func parseWatchStakingRequest(
 	unbondingTime uint16,
 	currentParams *cl.StakingParams,
 	network *chaincfg.Params,
-) (*stakingRequestedEvent, error) {
+) (*stakingRequestCmd, error) {
 	// TODO(https://github.com/babylonlabs-io/btc-staker/issues/32):
 	// This check re-implements whole babylon validation logic. We should
 	// refactor this to use babylon validation utilities.
@@ -634,7 +634,7 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding tx do not point to staking tx")
 	}
 
-	req := newWatchedStakingRequest(
+	req := newWatchedStakingCmd(
 		stakerAddress,
 		stakingTx,
 		uint32(stakingOutputIdx),
