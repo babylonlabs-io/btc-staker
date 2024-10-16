@@ -123,7 +123,7 @@ func FuzzStoringTxs(f *testing.F) {
 			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 			require.NoError(t, err)
 			require.NoError(t, err)
-			err = s.AddTransaction(
+			err = s.AddTransactionSentToBTC(
 				storedTx.StakingTx,
 				storedTx.StakingOutputIndex,
 				storedTx.StakingTime,
@@ -182,7 +182,7 @@ func TestStateTransitions(t *testing.T) {
 	stakerAddr, err := btcutil.DecodeAddress(tx.StakerAddress, &chaincfg.MainNetParams)
 	require.NoError(t, err)
 	txHash := tx.StakingTx.TxHash()
-	err = s.AddTransaction(
+	err = s.AddTransactionSentToBTC(
 		tx.StakingTx,
 		tx.StakingOutputIndex,
 		tx.StakingTime,
@@ -238,8 +238,7 @@ func TestPaginator(t *testing.T) {
 	for _, storedTx := range generatedStoredTxs {
 		stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 		require.NoError(t, err)
-		require.NoError(t, err)
-		err = s.AddTransaction(
+		err = s.AddTransactionSentToBTC(
 			storedTx.StakingTx,
 			storedTx.StakingOutputIndex,
 			storedTx.StakingTime,
@@ -309,7 +308,7 @@ func FuzzQuerySpendableTx(f *testing.F) {
 			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 			require.NoError(t, err)
 			require.NoError(t, err)
-			err = s.AddTransaction(
+			err = s.AddTransactionSentToBTC(
 				storedTx.StakingTx,
 				storedTx.StakingOutputIndex,
 				storedTx.StakingTime,
@@ -381,5 +380,73 @@ func FuzzQuerySpendableTx(f *testing.F) {
 		require.NoError(t, err)
 		require.Len(t, storedResult.Transactions, len(hashesWithExpiredTimeLock))
 		require.Equal(t, storedResult.Total, uint64(maxCreatedTx))
+	})
+}
+
+func FuzzTrackInputs(f *testing.F) {
+	// only 3 seeds as this is pretty slow test opening/closing db
+	datagen.AddRandomSeedsToFuzzer(f, 3)
+
+	f.Fuzz(func(t *testing.T, seed int64) {
+		r := rand.New(rand.NewSource(seed))
+		s := MakeTestStore(t)
+		numTx := 45
+		// all gene
+		generatedStoredTxs := genNStoredTransactions(t, r, numTx, 200)
+
+		randomUnbondingTx := datagen.GenRandomTx(r)
+		unbodningTime := uint16(r.Int31n(int32(200)) + 1)
+
+		for _, storedTx := range generatedStoredTxs {
+			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
+			require.NoError(t, err)
+			err = s.AddTransactionSentToBabylon(
+				storedTx.StakingTx,
+				storedTx.StakingOutputIndex,
+				storedTx.StakingTime,
+				storedTx.FinalityProvidersBtcPks,
+				storedTx.Pop,
+				stakerAddr,
+				randomUnbondingTx,
+				unbodningTime,
+			)
+			require.NoError(t, err)
+		}
+
+		for _, storedTx := range generatedStoredTxs {
+			// check all inputs are used
+			for _, inp := range storedTx.StakingTx.TxIn {
+				used, err := s.OutpointUsed(&inp.PreviousOutPoint)
+				require.NoError(t, err)
+				require.True(t, used)
+			}
+		}
+
+		// generate few not saved transactions
+		notSaved := genNStoredTransactions(t, r, 20, 200)
+
+		// check all input are not used
+		for _, storedTx := range notSaved {
+			for _, inp := range storedTx.StakingTx.TxIn {
+				used, err := s.OutpointUsed(&inp.PreviousOutPoint)
+				require.NoError(t, err)
+				require.False(t, used)
+			}
+		}
+
+		for _, storedTx := range generatedStoredTxs {
+			stakingTxHash := storedTx.StakingTx.TxHash()
+			err := s.SetDelegationActiveOnBabylon(&stakingTxHash)
+			require.NoError(t, err)
+		}
+
+		for _, storedTx := range generatedStoredTxs {
+			// check all inputs are deleted
+			for _, inp := range storedTx.StakingTx.TxIn {
+				used, err := s.OutpointUsed(&inp.PreviousOutPoint)
+				require.NoError(t, err)
+				require.False(t, used)
+			}
+		}
 	})
 }

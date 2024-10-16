@@ -1349,7 +1349,7 @@ func (app *StakerApp) handlePostApprovalCmd(cmd *stakingRequestCmd) error {
 		return err
 	}
 
-	if err := app.txTracker.AddTransaction(
+	if err := app.txTracker.AddTransactionSentToBTC(
 		cmd.stakingTx,
 		cmd.stakingOutputIdx,
 		cmd.stakingTime,
@@ -1508,14 +1508,25 @@ func (app *StakerApp) handleStakingEvents() {
 
 			if err := app.txTracker.SetTxUnbondingSignaturesReceived(
 				&ev.stakingTxHash,
-				ev.delegationActive,
 				babylonCovSigsToDbSigSigs(ev.covenantUnbondingSignatures),
 			); err != nil {
 				// TODO: handle this error somehow, it means we possilbly make invalid state transition
 				app.logger.Fatalf("Error setting state for tx %s: %s", &ev.stakingTxHash, err)
 			}
 
-			if !ev.delegationActive {
+			if ev.delegationActive {
+				app.wg.Add(1)
+				go func(hash chainhash.Hash) {
+					defer app.wg.Done()
+					utils.PushOrQuit[*delegationActiveOnBabylonEvent](
+						app.delegationActiveOnBabylonEvChan,
+						&delegationActiveOnBabylonEvent{
+							stakingTxHash: hash,
+						},
+						app.quit,
+					)
+				}(ev.stakingTxHash)
+			} else {
 				storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
 				// if the delegation is not active here, it can only mean that statking
 				// is going through pre-approvel flow. Fire up task to send staking tx
@@ -1528,7 +1539,6 @@ func (app *StakerApp) handleStakingEvents() {
 				)
 			}
 
-			app.m.DelegationsActivatedOnBabylon.Inc()
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.unbondingTxConfirmedOnBtcEvChan:
@@ -1560,6 +1570,7 @@ func (app *StakerApp) handleStakingEvents() {
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
+			app.m.DelegationsActivatedOnBabylon.Inc()
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.criticalErrorEvChan:
