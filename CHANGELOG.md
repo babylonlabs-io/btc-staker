@@ -37,8 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Misc Improvements
 
-* [51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
+* [#51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
   for satoshi amount related values.
+
+* [#65](https://github.com/babylonlabs-io/btc-staker/pull/65) Various fixes to
+pre-approval flow. Do not send signed staking transactions to Babylon.
 
 ## v0.7.2
 

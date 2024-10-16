@@ -5,14 +5,13 @@ package proto;
 option go_package = "github.com/babylonlabs-io/btc-staker/proto";
 
 enum TransactionState {
-    TRANSACTION_CREATED = 0;
-    SENT_TO_BTC = 1;
-    CONFIRMED_ON_BTC = 2;
-    SENT_TO_BABYLON = 3;
-    VERIFIED = 4;
-    DELEGATION_ACTIVE = 5;
-    UNBONDING_CONFIRMED_ON_BTC = 6;
-    SPENT_ON_BTC = 7;
+    SENT_TO_BTC = 0;
+    CONFIRMED_ON_BTC = 1;
+    SENT_TO_BABYLON = 2;
+    VERIFIED = 3;
+    DELEGATION_ACTIVE = 4;
+    UNBONDING_CONFIRMED_ON_BTC = 5;
+    SPENT_ON_BTC = 6;
 }
 
 message WatchedTxData {

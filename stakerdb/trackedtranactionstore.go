@@ -552,30 +552,32 @@ func (c *TrackedTransactionStore) addTransactionInternal(
 	})
 }
 
-func (c *TrackedTransactionStore) AddTransaction(
+func CreateTrackedTransaction(
 	btcTx *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTime uint16,
 	fpPubKeys []*btcec.PublicKey,
 	pop *ProofOfPossession,
 	stakerAddress btcutil.Address,
-) error {
-	txHash := btcTx.TxHash()
-	txHashBytes := txHash[:]
+) (*StoredTransaction, error) {
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
+		return nil, fmt.Errorf("cannot add transaction without finality providers public keys")
 	}
 
-	var fpPubKeysBytes [][]byte = make([][]byte, len(fpPubKeys))
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
 
 	for i, pk := range fpPubKeys {
 		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
+	}
+
+	if pop == nil {
+		return nil, fmt.Errorf("cannot add transaction without proof of possession")
 	}
 
 	msg := proto.TrackedTransaction{
@@ -589,13 +591,121 @@ func (c *TrackedTransactionStore) AddTransaction(
 		StakingTxBtcConfirmationInfo: nil,
 		BtcSigType:                   pop.BtcSigType,
 		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_TRANSACTION_CREATED,
+		State:                        proto.TransactionState_SENT_TO_BTC,
+		Watched:                      false,
+		UnbondingTxData:              nil,
+	}
+
+	return protoTxToStoredTransaction(&msg)
+}
+
+func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
+	btcTx *wire.MsgTx,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	fpPubKeys []*btcec.PublicKey,
+	pop *ProofOfPossession,
+	stakerAddress btcutil.Address,
+	unbondingTx *wire.MsgTx,
+	unbondingTime uint16,
+) error {
+	txHash := btcTx.TxHash()
+	txHashBytes := txHash[:]
+	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
+
+	if err != nil {
+		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
+	}
+
+	if len(fpPubKeys) == 0 {
+		return fmt.Errorf("cannot add transaction without finality providers public keys")
+	}
+
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
+
+	for i, pk := range fpPubKeys {
+		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
+	}
+
+	if pop == nil {
+		return fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
+
+	if err != nil {
+		return fmt.Errorf("failed to create unbonding transaction data: %w", err)
+	}
+
+	msg := proto.TrackedTransaction{
+		// Setting it to 0, proper number will be filled by `addTransactionInternal`
+		TrackedTransactionIdx:        0,
+		StakingTransaction:           serializedTx,
+		StakingOutputIdx:             stakingOutputIndex,
+		StakerAddress:                stakerAddress.EncodeAddress(),
+		StakingTime:                  uint32(stakingTime),
+		FinalityProvidersBtcPks:      fpPubKeysBytes,
+		StakingTxBtcConfirmationInfo: nil,
+		BtcSigType:                   pop.BtcSigType,
+		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
+		State:                        proto.TransactionState_SENT_TO_BABYLON,
+		Watched:                      false,
+		UnbondingTxData:              update,
+	}
+
+	return c.addTransactionInternal(
+		txHashBytes[:], &msg, nil,
+	)
+}
+
+func (c *TrackedTransactionStore) AddTransaction(
+	btcTx *wire.MsgTx,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	fpPubKeys []*btcec.PublicKey,
+	pop *ProofOfPossession,
+	stakerAddress btcutil.Address,
+) error {
+	txHash := btcTx.TxHash()
+	txHashBytes := txHash[:]
+	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
+
+	if err != nil {
+		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
+	}
+
+	if len(fpPubKeys) == 0 {
+		return fmt.Errorf("cannot add transaction without finality providers public keys")
+	}
+
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
+
+	for i, pk := range fpPubKeys {
+		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
+	}
+
+	if pop == nil {
+		return fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	msg := proto.TrackedTransaction{
+		// Setting it to 0, proper number will be filled by `addTransactionInternal`
+		TrackedTransactionIdx:        0,
+		StakingTransaction:           serializedTx,
+		StakingOutputIdx:             stakingOutputIndex,
+		StakerAddress:                stakerAddress.EncodeAddress(),
+		StakingTime:                  uint32(stakingTime),
+		FinalityProvidersBtcPks:      fpPubKeysBytes,
+		StakingTxBtcConfirmationInfo: nil,
+		BtcSigType:                   pop.BtcSigType,
+		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
+		State:                        proto.TransactionState_SENT_TO_BTC,
 		Watched:                      false,
 		UnbondingTxData:              nil,
 	}
 
 	return c.addTransactionInternal(
-		txHashBytes, &msg, nil,
+		txHashBytes[:], &msg, nil,
 	)
 }
 

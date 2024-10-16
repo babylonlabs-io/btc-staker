@@ -716,7 +716,7 @@ func (tm *TestManager) sendStakingTxBTC(
 	require.Equal(t, stakingDetails.StakingTxHash, txHash)
 
 	if sendToBabylonFirst {
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_TRANSACTION_CREATED.String())
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
 	} else {
 		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
 	}
