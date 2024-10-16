@@ -544,6 +544,7 @@ func (tm *TestManager) FinalizeUntilEpoch(t *testing.T, epoch uint64) {
 			},
 			2000,
 			tm.MinerAddr,
+			nil,
 		)
 		require.NoError(t, err)
 		_, err = tm.Sa.Wallet().SendRawTransaction(tx1, true)
@@ -557,6 +558,7 @@ func (tm *TestManager) FinalizeUntilEpoch(t *testing.T, epoch uint64) {
 			},
 			2000,
 			tm.MinerAddr,
+			nil,
 		)
 		require.NoError(t, err)
 		_, err = tm.Sa.Wallet().SendRawTransaction(tx2, true)
@@ -804,6 +806,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 		[]*wire.TxOut{stakingInfo.StakingOutput},
 		2000,
 		tm.MinerAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	txHash := tx.TxHash()
@@ -1677,6 +1680,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 		[]*wire.TxOut{newOutput},
 		btcutil.Amount(2000),
 		walletAddress,
+		nil,
 	)
 	require.NoError(t, err)
 

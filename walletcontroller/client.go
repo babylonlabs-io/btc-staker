@@ -140,7 +140,9 @@ func (w *RpcWalletController) NetworkName() string {
 func (w *RpcWalletController) CreateTransaction(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
-	changeAddres btcutil.Address) (*wire.MsgTx, error) {
+	changeAddres btcutil.Address,
+	useUtxoFn UseUtxoFn,
+) (*wire.MsgTx, error) {
 
 	utxoResults, err := w.ListUnspent()
 
@@ -154,9 +156,20 @@ func (w *RpcWalletController) CreateTransaction(
 		return nil, err
 	}
 
+	var utxosToUse []Utxo
+	if useUtxoFn != nil {
+		for _, u := range utxos {
+			if useUtxoFn(u) {
+				utxosToUse = append(utxosToUse, u)
+			}
+		}
+	} else {
+		utxosToUse = utxos
+	}
+
 	// sort utxos by amount from highest to lowest, this is effectively strategy of using
 	// largest inputs first
-	sort.Sort(sort.Reverse(byAmount(utxos)))
+	sort.Sort(sort.Reverse(byAmount(utxosToUse)))
 
 	changeScript, err := txscript.PayToAddrScript(changeAddres)
 
@@ -164,7 +177,7 @@ func (w *RpcWalletController) CreateTransaction(
 		return nil, err
 	}
 
-	tx, err := buildTxFromOutputs(utxos, outputs, feeRatePerKb, changeScript)
+	tx, err := buildTxFromOutputs(utxosToUse, outputs, feeRatePerKb, changeScript)
 
 	if err != nil {
 		return nil, err
@@ -177,8 +190,9 @@ func (w *RpcWalletController) CreateAndSignTx(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
 	changeAddress btcutil.Address,
+	useUtxoFn UseUtxoFn,
 ) (*wire.MsgTx, error) {
-	tx, err := w.CreateTransaction(outputs, feeRatePerKb, changeAddress)
+	tx, err := w.CreateTransaction(outputs, feeRatePerKb, changeAddress, useUtxoFn)
 
 	if err != nil {
 		return nil, err

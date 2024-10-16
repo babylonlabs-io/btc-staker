@@ -37,21 +37,31 @@ type TaprootSigningResult struct {
 	FullInputWitness wire.TxWitness
 }
 
+// Function to filer utxos that should be used in transaction creation
+type UseUtxoFn func(utxo Utxo) bool
+
 type WalletController interface {
 	UnlockWallet(timeoutSecs int64) error
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
 	ImportPrivKey(privKeyWIF *btcutil.WIF) error
 	NetworkName() string
+	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// inputs
 	CreateTransaction(
 		outputs []*wire.TxOut,
 		feeRatePerKb btcutil.Amount,
-		changeScript btcutil.Address) (*wire.MsgTx, error)
+		changeScript btcutil.Address,
+		usedUtxoFilter UseUtxoFn,
+	) (*wire.MsgTx, error)
 	SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error)
 	// requires wallet to be unlocked
+	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// inputs
 	CreateAndSignTx(
 		outputs []*wire.TxOut,
 		feeRatePerKb btcutil.Amount,
 		changeAddress btcutil.Address,
+		usedUtxoFilter UseUtxoFn,
 	) (*wire.MsgTx, error)
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
 	ListOutputs(onlySpendable bool) ([]Utxo, error)

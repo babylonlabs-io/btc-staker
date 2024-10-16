@@ -1705,6 +1705,20 @@ func (app *StakerApp) WatchStaking(
 	}
 }
 
+func (app *StakerApp) filteUtxoFnGen() walletcontroller.UseUtxoFn {
+	return func(utxo walletcontroller.Utxo) bool {
+		outpoint := utxo.OutPoint
+
+		used, err := app.txTracker.OutpointUsed(&outpoint)
+
+		if err != nil {
+			return false
+		}
+
+		return !used
+	}
+}
+
 func (app *StakerApp) StakeFunds(
 	stakerAddress btcutil.Address,
 	stakingAmount btcutil.Amount,
@@ -1809,7 +1823,12 @@ func (app *StakerApp) StakeFunds(
 
 	// Create unsigned transaction by wallet without signing. Signing will happen
 	// in next steps
-	tx, err := app.wc.CreateTransaction([]*wire.TxOut{stakingInfo.StakingOutput}, btcutil.Amount(feeRate), stakerAddress)
+	tx, err := app.wc.CreateTransaction(
+		[]*wire.TxOut{stakingInfo.StakingOutput},
+		btcutil.Amount(feeRate),
+		stakerAddress,
+		app.filteUtxoFnGen(),
+	)
 
 	if err != nil {
 		return nil, err
