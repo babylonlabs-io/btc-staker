@@ -570,10 +570,14 @@ func CreateTrackedTransaction(
 		return nil, fmt.Errorf("cannot add transaction without finality providers public keys")
 	}
 
-	var fpPubKeysBytes [][]byte = make([][]byte, len(fpPubKeys))
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
 
 	for i, pk := range fpPubKeys {
 		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
+	}
+
+	if pop == nil {
+		return nil, fmt.Errorf("cannot add transaction without proof of possession")
 	}
 
 	msg := proto.TrackedTransaction{
@@ -610,23 +614,27 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
 	if len(fpPubKeys) == 0 {
 		return fmt.Errorf("cannot add transaction without finality providers public keys")
 	}
 
-	var fpPubKeysBytes [][]byte = make([][]byte, len(fpPubKeys))
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
 
 	for i, pk := range fpPubKeys {
 		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
 	}
 
+	if pop == nil {
+		return fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
 	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create unbonding transaction data: %w", err)
 	}
 
 	msg := proto.TrackedTransaction{
@@ -646,7 +654,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	}
 
 	return c.addTransactionInternal(
-		txHashBytes, &msg, nil,
+		txHashBytes[:], &msg, nil,
 	)
 }
 
@@ -663,17 +671,21 @@ func (c *TrackedTransactionStore) AddTransaction(
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
 	if len(fpPubKeys) == 0 {
 		return fmt.Errorf("cannot add transaction without finality providers public keys")
 	}
 
-	var fpPubKeysBytes [][]byte = make([][]byte, len(fpPubKeys))
+	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
 
 	for i, pk := range fpPubKeys {
 		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
+	}
+
+	if pop == nil {
+		return fmt.Errorf("cannot add transaction without proof of possession")
 	}
 
 	msg := proto.TrackedTransaction{
@@ -693,7 +705,7 @@ func (c *TrackedTransactionStore) AddTransaction(
 	}
 
 	return c.addTransactionInternal(
-		txHashBytes, &msg, nil,
+		txHashBytes[:], &msg, nil,
 	)
 }
 
