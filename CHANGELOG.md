@@ -39,12 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 * [#51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
   for satoshi amount related values.
-
 * [#65](https://github.com/babylonlabs-io/btc-staker/pull/65) Various fixes to
 pre-approval flow. Do not send signed staking transactions to Babylon.
-
+* [#66](https://github.com/babylonlabs-io/btc-staker/pull/66) Bump babylon to
+v0.13.0.
 * [#67](https://github.com/babylonlabs-io/btc-staker/pull/67) Enable concurrent
-sending of multiple pre-approval staking transactions
+sending of multiple pre-approval staking transactions.
 
 ## v0.7.2
 
