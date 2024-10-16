@@ -133,6 +133,26 @@ var stakeCmd = cli.Command{
 	Action: stake,
 }
 
+var stakeFromPhase1Cmd = cli.Command{
+	Name:        "stake-from-phase1",
+	ShortName:   "stfp1",
+	Usage:       "stake-from-phase1",
+	Description: "Creates a Babylon staking transaction from the Phase1 BTC staking tx",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  stakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: defaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: stake,
+}
+
 var unstakeCmd = cli.Command{
 	Name:      "unstake",
 	ShortName: "ust",
@@ -331,6 +351,33 @@ func stake(ctx *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+func stakeFromPhase1TxBTC(ctx *cli.Context) error {
+	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	if err != nil {
+		return err
+	}
+
+	sctx := context.Background()
+
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+	stakingTx, err := client.StakingDetails(sctx, stakingTransactionHash)
+	if err != nil {
+		return err
+	}
+
+	// results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// client.WatchStaking()
+
+	// helpers.PrintRespJSON(results)
 
 	return nil
 }
