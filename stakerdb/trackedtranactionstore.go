@@ -640,26 +640,13 @@ func outpointBytes(op *wire.OutPoint) ([]byte, error) {
 		return nil, err
 	}
 
-	binary.Write(&buf, binary.BigEndian, op.Index)
+	err = binary.Write(&buf, binary.BigEndian, op.Index)
 
-	return buf.Bytes(), nil
-}
-
-func outpointFromBytes(b []byte) (*wire.OutPoint, error) {
-	if len(b) != 36 {
-		return nil, fmt.Errorf("invalid outpoint bytes length")
-	}
-
-	hash, err := chainhash.NewHash(b[:32])
 	if err != nil {
 		return nil, err
 	}
 
-	return &wire.OutPoint{
-		Hash:  *hash,
-		Index: binary.BigEndian.Uint32(b[32:]),
-	}, nil
-
+	return buf.Bytes(), nil
 }
 
 func getInputData(tx *wire.MsgTx) (*inputData, error) {
