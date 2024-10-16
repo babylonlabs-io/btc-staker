@@ -1382,7 +1382,7 @@ func (app *StakerApp) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash,
 		[]*wire.TxOut{cmd.stakingOutput},
 		btcutil.Amount(cmd.feeRate),
 		cmd.stakerAddress,
-		app.filteUtxoFnGen(),
+		app.filterUtxoFnGen(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build staking transaction: %w", err)
@@ -1729,7 +1729,7 @@ func (app *StakerApp) WatchStaking(
 	}
 }
 
-func (app *StakerApp) filteUtxoFnGen() walletcontroller.UseUtxoFn {
+func (app *StakerApp) filterUtxoFnGen() walletcontroller.UseUtxoFn {
 	return func(utxo walletcontroller.Utxo) bool {
 		outpoint := utxo.OutPoint
 
@@ -1845,23 +1845,9 @@ func (app *StakerApp) StakeFunds(
 
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
-	// Create unsigned transaction by wallet without signing. Signing will happen
-	// in next steps
-	tx, err := app.wc.CreateTransaction(
-		[]*wire.TxOut{stakingInfo.StakingOutput},
-		btcutil.Amount(feeRate),
-		stakerAddress,
-		app.filteUtxoFnGen(),
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
 	app.logger.WithFields(logrus.Fields{
 		"stakerAddress": stakerAddress,
 		"stakingAmount": stakingInfo.StakingOutput,
-		"btxTxHash":     tx.TxHash(),
 		"fee":           feeRate,
 	}).Info("Created and signed staking transaction")
 
