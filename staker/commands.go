@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // we can make command to implement StakingEvent interface
@@ -15,10 +16,8 @@ var _ StakingEvent = (*stakingRequestCmd)(nil)
 
 type stakingRequestCmd struct {
 	stakerAddress           btcutil.Address
-	stakingTxHash           chainhash.Hash
-	stakingTx               *wire.MsgTx
-	stakingOutputIdx        uint32
-	stakingOutputPkScript   []byte
+	stakingOutput           *wire.TxOut
+	feeRate                 chainfee.SatPerKVByte
 	stakingTime             uint16
 	stakingValue            btcutil.Amount
 	fpBtcPks                []*btcec.PublicKey
@@ -36,9 +35,8 @@ func (req *stakingRequestCmd) isWatched() bool {
 
 func newOwnedStakingCommand(
 	stakerAddress btcutil.Address,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-	stakingOutputPkScript []byte,
+	stakingOutput *wire.TxOut,
+	feeRate chainfee.SatPerKVByte,
 	stakingTime uint16,
 	stakingValue btcutil.Amount,
 	fpBtcPks []*btcec.PublicKey,
@@ -48,10 +46,8 @@ func newOwnedStakingCommand(
 ) *stakingRequestCmd {
 	return &stakingRequestCmd{
 		stakerAddress:           stakerAddress,
-		stakingTxHash:           stakingTx.TxHash(),
-		stakingTx:               stakingTx,
-		stakingOutputIdx:        stakingOutputIdx,
-		stakingOutputPkScript:   stakingOutputPkScript,
+		stakingOutput:           stakingOutput,
+		feeRate:                 feeRate,
 		stakingTime:             stakingTime,
 		stakingValue:            stakingValue,
 		fpBtcPks:                fpBtcPks,
@@ -65,6 +61,12 @@ func newOwnedStakingCommand(
 }
 
 type watchTxDataCmd struct {
+	// watched tx data
+	stakingTxHash         chainhash.Hash
+	stakingTx             *wire.MsgTx
+	stakingOutputIdx      uint32
+	stakingOutputPkScript []byte
+
 	slashingTx        *wire.MsgTx
 	slashingTxSig     *schnorr.Signature
 	stakerBabylonAddr sdk.AccAddress
@@ -97,24 +99,24 @@ func newWatchedStakingCmd(
 ) *stakingRequestCmd {
 	return &stakingRequestCmd{
 		stakerAddress:           stakerAddress,
-		stakingTxHash:           stakingTx.TxHash(),
-		stakingTx:               stakingTx,
-		stakingOutputIdx:        stakingOutputIdx,
-		stakingOutputPkScript:   stakingOutputPkScript,
 		stakingTime:             stakingTime,
 		stakingValue:            stakingValue,
 		fpBtcPks:                fpBtcPks,
 		requiredDepthOnBtcChain: confirmationTimeBlocks,
 		pop:                     pop,
 		watchTxData: &watchTxDataCmd{
-			slashingTx:          slashingTx,
-			slashingTxSig:       slashingTxSignature,
-			stakerBabylonAddr:   stakerBabylonAddr,
-			stakerBtcPk:         stakerBtcPk,
-			unbondingTx:         unbondingTx,
-			slashUnbondingTx:    slashUnbondingTx,
-			slashUnbondingTxSig: slashUnbondingTxSig,
-			unbondingTime:       unbondingTime,
+			stakingTxHash:         stakingTx.TxHash(),
+			stakingTx:             stakingTx,
+			stakingOutputIdx:      stakingOutputIdx,
+			stakingOutputPkScript: stakingOutputPkScript,
+			slashingTx:            slashingTx,
+			slashingTxSig:         slashingTxSignature,
+			stakerBabylonAddr:     stakerBabylonAddr,
+			stakerBtcPk:           stakerBtcPk,
+			unbondingTx:           unbondingTx,
+			slashUnbondingTx:      slashUnbondingTx,
+			slashUnbondingTxSig:   slashUnbondingTxSig,
+			unbondingTime:         unbondingTime,
 		},
 		errChan:     make(chan error, 1),
 		successChan: make(chan *chainhash.Hash, 1),
@@ -122,7 +124,8 @@ func newWatchedStakingCmd(
 }
 
 func (event *stakingRequestCmd) EventId() chainhash.Hash {
-	return event.stakingTxHash
+	// we do not have has for this event
+	return chainhash.Hash{}
 }
 
 func (event *stakingRequestCmd) EventDesc() string {

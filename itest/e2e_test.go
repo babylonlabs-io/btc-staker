@@ -544,6 +544,7 @@ func (tm *TestManager) FinalizeUntilEpoch(t *testing.T, epoch uint64) {
 			},
 			2000,
 			tm.MinerAddr,
+			nil,
 		)
 		require.NoError(t, err)
 		_, err = tm.Sa.Wallet().SendRawTransaction(tx1, true)
@@ -557,6 +558,7 @@ func (tm *TestManager) FinalizeUntilEpoch(t *testing.T, epoch uint64) {
 			},
 			2000,
 			tm.MinerAddr,
+			nil,
 		)
 		require.NoError(t, err)
 		_, err = tm.Sa.Wallet().SendRawTransaction(tx2, true)
@@ -740,7 +742,7 @@ func (tm *TestManager) sendStakingTxBTC(
 	return hashFromString
 }
 
-func (tm *TestManager) sendMultipleStakingTx(t *testing.T, testStakingData []*testStakingData) []*chainhash.Hash {
+func (tm *TestManager) sendMultipleStakingTx(t *testing.T, testStakingData []*testStakingData, sendToBabylonFirst bool) []*chainhash.Hash {
 	var hashes []*chainhash.Hash
 	for _, data := range testStakingData {
 		fpBTCPKs := []string{}
@@ -754,7 +756,7 @@ func (tm *TestManager) sendMultipleStakingTx(t *testing.T, testStakingData []*te
 			data.StakingAmount,
 			fpBTCPKs,
 			int64(data.StakingTime),
-			false,
+			sendToBabylonFirst,
 		)
 		require.NoError(t, err)
 		txHash, err := chainhash.NewHashFromStr(res.TxHash)
@@ -768,14 +770,21 @@ func (tm *TestManager) sendMultipleStakingTx(t *testing.T, testStakingData []*te
 		stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), hashStr)
 		require.NoError(t, err)
 		require.Equal(t, stakingDetails.StakingTxHash, hashStr)
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
+
+		if sendToBabylonFirst {
+			require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
+		} else {
+			require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
+		}
 	}
 
-	mBlock := tm.mineBlock(t)
-	require.Equal(t, len(hashes)+1, len(mBlock.Transactions))
+	if !sendToBabylonFirst {
+		mBlock := tm.mineBlock(t)
+		require.Equal(t, len(hashes)+1, len(mBlock.Transactions))
 
-	_, err := tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
-	require.NoError(t, err)
+		_, err := tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+		require.NoError(t, err)
+	}
 	return hashes
 }
 
@@ -804,6 +813,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 		[]*wire.TxOut{stakingInfo.StakingOutput},
 		2000,
 		tm.MinerAddr,
+		nil,
 	)
 	require.NoError(t, err)
 	txHash := tx.TxHash()
@@ -1346,7 +1356,7 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 		testStakingData3,
 		testStakingData4,
 		testStakingData5,
-	})
+	}, false)
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 
@@ -1378,6 +1388,61 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].StakingTxHash, txHashes[3].String())
 
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].TransactionIdx, "4")
+}
+
+func TestMultiplePreApprovalTransactions(t *testing.T) {
+	t.Parallel()
+	// need to have at least 300 block on testnet as only then segwit is activated.
+	// Mature output is out which has 100 confirmations, which means 200mature outputs
+	// will generate 300 blocks
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+	minStakingTime := params.MinStakingTime
+	stakingTime1 := minStakingTime
+	stakingTime2 := minStakingTime + 4
+	stakingTime3 := minStakingTime + 1
+
+	testStakingData1 := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime1, 10000, 1)
+	testStakingData2 := testStakingData1.withStakingTime(stakingTime2)
+	testStakingData3 := testStakingData1.withStakingTime(stakingTime3)
+
+	tm.createAndRegisterFinalityProviders(t, testStakingData1)
+	txHashes := tm.sendMultipleStakingTx(t, []*testStakingData{
+		testStakingData1,
+		testStakingData2,
+		testStakingData3,
+	}, true)
+
+	for _, txHash := range txHashes {
+		txHash := txHash
+		tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+	}
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 3)
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.insertCovenantSigForDelegation(t, pend[1])
+	tm.insertCovenantSigForDelegation(t, pend[2])
+
+	for _, txHash := range txHashes {
+		txHash := txHash
+		tm.waitForStakingTxState(t, txHash, proto.TransactionState_VERIFIED)
+	}
+
+	// Ultimately we will get 3 tx in the mempool meaning all staking transactions
+	// use valid inputs
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, txHashes)
+		return len(txFromMempool) == 3
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
 }
 
 func TestSendingWatchedStakingTransaction(t *testing.T) {
@@ -1456,7 +1521,7 @@ func TestRestartingTxNotOnBabylon(t *testing.T) {
 	txHashes := tm.sendMultipleStakingTx(t, []*testStakingData{
 		testStakingData1,
 		testStakingData2,
-	})
+	}, false)
 
 	// Confirm tx on btc
 	minedBlocks := tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, false)
@@ -1677,6 +1742,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 		[]*wire.TxOut{newOutput},
 		btcutil.Amount(2000),
 		walletAddress,
+		nil,
 	)
 	require.NoError(t, err)
 

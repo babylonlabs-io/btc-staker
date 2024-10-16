@@ -43,6 +43,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * [#65](https://github.com/babylonlabs-io/btc-staker/pull/65) Various fixes to
 pre-approval flow. Do not send signed staking transactions to Babylon.
 
+* [#67](https://github.com/babylonlabs-io/btc-staker/pull/67) Enable concurrent
+sending of multiple pre-approval staking transactions
+
 ## v0.7.2
 
 ### Bug fix
