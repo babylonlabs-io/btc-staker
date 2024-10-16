@@ -35,7 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
-### Misc Improvements
+## v0.8.0
+
+### Improvements
 
 * [#51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
   for satoshi amount related values.
