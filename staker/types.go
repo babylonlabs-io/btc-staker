@@ -242,7 +242,7 @@ func createSpendStakeTxFromStoredTx(
 	// This is to cover cases:
 	// - staker is unable to sent delegation to babylon
 	// - staking transaction on babylon fail to get covenant signatures
-	if storedtx.StakingTxConfirmedOnBtc() {
+	if storedtx.StakingTxConfirmedOnBtc() && !storedtx.UnbondingTxConfirmedOnBtc() {
 		stakingInfo, err := staking.BuildStakingInfo(
 			stakerBtcPk,
 			storedtx.FinalityProvidersBtcPks,
@@ -284,7 +284,7 @@ func createSpendStakeTxFromStoredTx(
 			fundingOutput:          storedtx.StakingTx.TxOut[storedtx.StakingOutputIndex],
 			calculatedFee:          *calculatedFee,
 		}, nil
-	} else if storedtx.IsUnbonded() {
+	} else if storedtx.StakingTxConfirmedOnBtc() && storedtx.UnbondingTxConfirmedOnBtc() {
 		data := storedtx.UnbondingTxData
 
 		unbondingInfo, err := staking.BuildUnbondingInfo(

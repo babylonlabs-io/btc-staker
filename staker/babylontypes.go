@@ -352,10 +352,31 @@ func (app *StakerApp) activateVerifiedDelegation(
 					"stakingTxHash": stakingTxHash,
 				}).Debug("Delegation has been activated on the Babylon chain")
 
-				utils.PushOrQuit[*delegationActiveOnBabylonEvent](
-					app.delegationActiveOnBabylonEvChan,
-					&delegationActiveOnBabylonEvent{
+				info, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
+
+				if err != nil {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+						"err":           err,
+					}).Error("error getting staking transaction details from btc chain")
+					// Failed to get params, we cannont do anything, most probably connection error to babylon node
+					// we will try again in next iteration
+					continue
+				}
+
+				if status != walletcontroller.TxInChain {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+					}).Debug("Staking transaction active on babylon, but not on btc chain. Waiting for btc node to catch up")
+					continue
+				}
+
+				utils.PushOrQuit[*delegationActivatedPreApprovalEvent](
+					app.delegationActivatedPreApprovalEvChan,
+					&delegationActivatedPreApprovalEvent{
 						stakingTxHash: *stakingTxHash,
+						blockHash:     *info.BlockHash,
+						blockHeight:   info.BlockHeight,
 					},
 					app.quit,
 				)
