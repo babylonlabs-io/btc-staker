@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Bug fix
+
+* [#78](https://github.com/babylonlabs-io/btc-staker/pull/78) Fix
+`withdrawable-transactions` query bug, introduced when adding pre-approval
+transactions handling
+
 ## v0.8.0
 
 ### Improvements

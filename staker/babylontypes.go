@@ -359,8 +359,9 @@ func (app *StakerApp) activateVerifiedDelegation(
 						"stakingTxHash": stakingTxHash,
 						"err":           err,
 					}).Error("error getting staking transaction details from btc chain")
-					// Failed to get params, we cannont do anything, most probably connection error to babylon node
-					// we will try again in next iteration
+
+					// failed to retrieve transaction details from bitcoind node, most probably
+					// connection error, we will try again in next iteration
 					continue
 				}
 
