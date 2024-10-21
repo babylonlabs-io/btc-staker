@@ -133,14 +133,16 @@ type StoredTransaction struct {
 
 // StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
 func (t *StoredTransaction) StakingTxConfirmedOnBtc() bool {
-	return t.State == proto.TransactionState_SENT_TO_BABYLON ||
-		t.State == proto.TransactionState_DELEGATION_ACTIVE ||
-		t.State == proto.TransactionState_CONFIRMED_ON_BTC
+	return t.StakingTxConfirmationInfo != nil
 }
 
-// IsUnbonded returns true only if unbonding transaction was sent and confirmed on bitcoin
-func (t *StoredTransaction) IsUnbonded() bool {
-	return t.State == proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC
+// UnbondingTxConfirmedOnBtc returns true only if unbonding transaction was sent and confirmed on bitcoin
+func (t *StoredTransaction) UnbondingTxConfirmedOnBtc() bool {
+	if t.UnbondingTxData == nil {
+		return false
+	}
+
+	return t.UnbondingTxData.UnbondingTxConfirmationInfo != nil
 }
 
 type WatchedTransactionData struct {
@@ -1020,6 +1022,23 @@ func (c *TrackedTransactionStore) SetDelegationActiveOnBabylon(txHash *chainhash
 	return c.setTxState(txHash, setTxSpentOnBtc)
 }
 
+func (c *TrackedTransactionStore) SetDelegationActiveOnBabylonAndConfirmedOnBtc(
+	txHash *chainhash.Hash,
+	blockHash *chainhash.Hash,
+	blockHeight uint32,
+) error {
+	setDelegationActiveOnBabylon := func(tx *proto.TrackedTransaction) error {
+		tx.State = proto.TransactionState_DELEGATION_ACTIVE
+		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
+			BlockHash:   blockHash.CloneBytes(),
+			BlockHeight: blockHeight,
+		}
+		return nil
+	}
+
+	return c.setTxState(txHash, setDelegationActiveOnBabylon)
+}
+
 func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
 	txHash *chainhash.Hash,
 	covenantSignatures []PubKeySigPair,
@@ -1222,10 +1241,10 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 					return false, nil
 				}
 
-				if txFromDb.StakingTxConfirmedOnBtc() {
+				if txFromDb.StakingTxConfirmedOnBtc() && !txFromDb.UnbondingTxConfirmedOnBtc() {
 					scriptTimeLock = txFromDb.StakingTime
 					confirmationHeight = txFromDb.StakingTxConfirmationInfo.Height
-				} else if txFromDb.IsUnbonded() {
+				} else if txFromDb.StakingTxConfirmedOnBtc() && txFromDb.UnbondingTxConfirmedOnBtc() {
 					scriptTimeLock = txFromDb.UnbondingTxData.UnbondingTime
 					confirmationHeight = txFromDb.UnbondingTxData.UnbondingTxConfirmationInfo.Height
 				} else {

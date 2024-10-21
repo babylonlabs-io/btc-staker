@@ -126,7 +126,8 @@ type StakerApp struct {
 	stakingRequestedCmdChan                       chan *stakingRequestCmd
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
-	delegationActiveOnBabylonEvChan               chan *delegationActiveOnBabylonEvent
+	delegationActivatedPostApprovalEvChan         chan *delegationActivatedPostApprovalEvent
+	delegationActivatedPreApprovalEvChan          chan *delegationActivatedPreApprovalEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
 	unbondingTxConfirmedOnBtcEvChan               chan *unbondingTxConfirmedOnBtcEvent
 	spendStakeTxConfirmedOnBtcEvChan              chan *spendStakeTxConfirmedOnBtcEvent
@@ -234,18 +235,17 @@ func NewStakerAppFromDeps(
 
 		// event for when delegation is sent to babylon and included in babylon
 		delegationSubmittedToBabylonEvChan: make(chan *delegationSubmittedToBabylonEvent),
-		// event for when delegation is active on babylon after being verified
-		delegationActiveOnBabylonEvChan: make(chan *delegationActiveOnBabylonEvent),
+		// event for when delegation is active on babylon after going through post approval flow
+		delegationActivatedPostApprovalEvChan: make(chan *delegationActivatedPostApprovalEvent),
+		// event for when delegation is active on babylon after going through pre approval flow
+		delegationActivatedPreApprovalEvChan: make(chan *delegationActivatedPreApprovalEvent),
 		// event emitte	d upon transaction which spends staking transaction is confirmed on BTC
 		spendStakeTxConfirmedOnBtcEvChan: make(chan *spendStakeTxConfirmedOnBtcEvent),
-
 		// channel which receives unbonding signatures from covenant for unbonding
 		// transaction
 		unbondingTxSignaturesConfirmedOnBabylonEvChan: make(chan *unbondingTxSignaturesConfirmedOnBabylonEvent),
-
 		// channel which receives confirmation that unbonding transaction was confirmed on BTC
 		unbondingTxConfirmedOnBtcEvChan: make(chan *unbondingTxConfirmedOnBtcEvent),
-
 		// channel which receives critical errors, critical errors are errors which we do not know
 		// how to handle, so we just log them. It is up to user to investigate, what had happend
 		// and report the situation
@@ -1542,9 +1542,9 @@ func (app *StakerApp) handleStakingEvents() {
 				app.wg.Add(1)
 				go func(hash chainhash.Hash) {
 					defer app.wg.Done()
-					utils.PushOrQuit[*delegationActiveOnBabylonEvent](
-						app.delegationActiveOnBabylonEvChan,
-						&delegationActiveOnBabylonEvent{
+					utils.PushOrQuit[*delegationActivatedPostApprovalEvent](
+						app.delegationActivatedPostApprovalEvChan,
+						&delegationActivatedPostApprovalEvent{
 							stakingTxHash: hash,
 						},
 						app.quit,
@@ -1587,7 +1587,7 @@ func (app *StakerApp) handleStakingEvents() {
 			}
 			app.logStakingEventProcessed(ev)
 
-		case ev := <-app.delegationActiveOnBabylonEvChan:
+		case ev := <-app.delegationActivatedPostApprovalEvChan:
 			app.logStakingEventReceived(ev)
 			if err := app.txTracker.SetDelegationActiveOnBabylon(&ev.stakingTxHash); err != nil {
 				// TODO: handle this error somehow, it means we received spend stake confirmation for tx which we do not store
@@ -1595,6 +1595,18 @@ func (app *StakerApp) handleStakingEvents() {
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
 			app.m.DelegationsActivatedOnBabylon.Inc()
+			app.logStakingEventProcessed(ev)
+
+		case ev := <-app.delegationActivatedPreApprovalEvChan:
+			app.logStakingEventReceived(ev)
+			if err := app.txTracker.SetDelegationActiveOnBabylonAndConfirmedOnBtc(
+				&ev.stakingTxHash,
+				&ev.blockHash,
+				ev.blockHeight,
+			); err != nil {
+				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
+			}
+
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.criticalErrorEvChan:
