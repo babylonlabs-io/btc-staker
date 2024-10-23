@@ -35,22 +35,6 @@ func newSendDelegationRequest(
 	}
 }
 
-type sendUndelegationRequest struct {
-	utils.Request[*pv.RelayerTxResponse]
-	stakingTxHash *chainhash.Hash
-	ur            *UndelegationRequest
-}
-
-func newSendUndelegationRequest(
-	ur *UndelegationRequest,
-) sendUndelegationRequest {
-	return sendUndelegationRequest{
-		Request:       utils.NewRequest[*pv.RelayerTxResponse](),
-		ur:            ur,
-		stakingTxHash: &ur.StakingTxHash,
-	}
-}
-
 // BabylonMsgSender is responsible for sending delegation and undelegation requests to babylon
 // It makes sure:
 // - that babylon is ready for either delgetion or undelegation
