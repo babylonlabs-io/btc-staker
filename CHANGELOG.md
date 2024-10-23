@@ -41,6 +41,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 `withdrawable-transactions` query bug, introduced when adding pre-approval
 transactions handling
 
+### Improvements
+
+* [#79](https://github.com/babylonlabs-io/btc-staker/pull/79) Remove `BTCUndelegate`
+message sending
+
 ## v0.8.0
 
 ### Improvements
