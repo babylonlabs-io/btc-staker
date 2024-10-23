@@ -435,21 +435,6 @@ func (bc *BabylonController) Delegate(dg *DelegationData) (*pv.RelayerTxResponse
 	return bc.reliablySendMsgs([]sdk.Msg{delegateMsg})
 }
 
-func (bc *BabylonController) Undelegate(
-	req *UndelegationRequest,
-) (*pv.RelayerTxResponse, error) {
-
-	ubSig := bbntypes.NewBIP340SignatureFromBTCSig(req.StakerUnbondingSig)
-
-	msg := &btcstypes.MsgBTCUndelegate{
-		Signer:         bc.getTxSigner(),
-		StakingTxHash:  req.StakingTxHash.String(),
-		UnbondingTxSig: ubSig,
-	}
-
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
-}
-
 func getQueryContext(timeout time.Duration) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	return ctx, cancel
