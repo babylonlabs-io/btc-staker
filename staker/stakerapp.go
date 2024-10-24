@@ -756,6 +756,14 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				continue
 			}
 
+			var heighttHint uint32
+
+			if tx.StakingTxConfirmationInfo == nil {
+				heighttHint = 200000
+			} else {
+				heighttHint = tx.StakingTxConfirmationInfo.Height
+			}
+
 			// At this point:
 			// - staking output is spent
 			// - unbonding tx has been found in the btc chain
@@ -766,7 +774,7 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				tx.UnbondingTxData.UnbondingTx.TxOut[0].PkScript,
 				UnbondingTxConfirmations,
 				// unbonding transactions will for sure be included after staking tranasction
-				tx.StakingTxConfirmationInfo.Height,
+				heighttHint,
 			)
 
 			if err != nil {
