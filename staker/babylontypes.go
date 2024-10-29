@@ -46,7 +46,11 @@ func (app *StakerApp) buildOwnedDelegation(
 
 	slashingFee := app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat)
 
-	stakingSlashingTx, stakingSlashingSpendInfo, err := slashingTxForStakingTx(
+	app.logger.WithFields(logrus.Fields{
+		"slashingFee": slashingFee,
+	}).Info("Before buidling of the slashing transaction")
+
+	stakingSlashingTx, stakingSlashingSpendInfo, err := app.slashingTxForStakingTx(
 		slashingFee,
 		externalData,
 		storedTx,

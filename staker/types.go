@@ -9,6 +9,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"github.com/babylonlabs-io/babylon/btcstaking"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	"github.com/sirupsen/logrus"
 
 	bbn "github.com/babylonlabs-io/babylon/types"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
@@ -110,7 +111,7 @@ func createWitnessSignaturesForPubKeys(
 	return signatures, nil
 }
 
-func slashingTxForStakingTx(
+func (app *StakerApp) slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
 	storedTx *stakerdb.StoredTransaction,
@@ -118,6 +119,33 @@ func slashingTxForStakingTx(
 ) (*wire.MsgTx, *staking.SpendInfo, error) {
 	stakerPubKey := delegationData.stakerPublicKey
 	lockSlashTxLockTime := delegationData.babylonParams.MinUnbondingTime + 1
+
+	slashingRateFloat64, err := delegationData.babylonParams.SlashingRate.Float64()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error converting slashing rate to float64: %w", err)
+	}
+
+	stakingOutput := storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex]
+	stakingAmount := stakingOutput.Value
+
+	slashingAmount := btcutil.Amount(stakingAmount).MulF64(slashingRateFloat64)
+	if slashingAmount <= 0 {
+		return nil, nil, fmt.Errorf("fooo ")
+	}
+
+	// Calculate the change amount
+	changeAmount := btcutil.Amount(stakingAmount) - slashingAmount - slashingFee
+	if changeAmount <= 0 {
+		return nil, nil, fmt.Errorf("fooo 2")
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"slashingFee":    int64(slashingFee),
+		"stakingAmount":  int64(stakingAmount),
+		"slashingRate":   slashingRateFloat64,
+		"slashingAmount": int64(slashingAmount),
+		"changeAmount":   int64(changeAmount),
+	}).Info("Before BuildSlashingTxFromStakingTxStrict")
 
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
