@@ -452,6 +452,10 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		return nil, err
 	}
 
+	bc.logger.WithFields(logrus.Fields{
+		"slashingPkScript": hex.EncodeToString(response.Params.SlashingPkScript),
+	}).Info("slashing pk script from babylon")
+
 	// check early that the covenant config makes sense, so that rest of the
 	// code can assume that:
 	// 1. covenant quorum is less or equal to number of covenant pks
