@@ -20,6 +20,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/mempool"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/wallet/txrules"
 	"github.com/btcsuite/btcwallet/wallet/txsizes"
@@ -111,6 +113,134 @@ func createWitnessSignaturesForPubKeys(
 	return signatures, nil
 }
 
+func (app *StakerApp) buildSlashingTxFromOutpoint(
+	stakingOutput wire.OutPoint,
+	stakingAmount, fee int64,
+	slashingPkScript []byte,
+	changeAddress btcutil.Address,
+	slashingRate sdkmath.LegacyDec,
+) (*wire.MsgTx, error) {
+	// Validate staking amount
+	if stakingAmount <= 0 {
+		return nil, fmt.Errorf("staking amount must be larger than 0")
+	}
+
+	if len(slashingPkScript) == 0 {
+		return nil, fmt.Errorf("slashing pk script must not be empty")
+	}
+
+	// Calculate the amount to be slashed
+	slashingRateFloat64, err := slashingRate.Float64()
+	if err != nil {
+		return nil, fmt.Errorf("error converting slashing rate to float64: %w", err)
+	}
+	slashingAmount := btcutil.Amount(stakingAmount).MulF64(slashingRateFloat64)
+	if slashingAmount <= 0 {
+		return nil, fmt.Errorf("slashing amout low")
+	}
+
+	// Calculate the change amount
+	changeAmount := btcutil.Amount(stakingAmount) - slashingAmount - btcutil.Amount(fee)
+	if changeAmount <= 0 {
+		return nil, fmt.Errorf("change amount low")
+	}
+	// Generate script for change address
+	changeAddrScript, err := txscript.PayToAddrScript(changeAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new btc transaction
+	tx := wire.NewMsgTx(wire.TxVersion)
+	// TODO: this builds input with sequence number equal to MaxTxInSequenceNum, which
+	// means this tx is not replaceable.
+	input := wire.NewTxIn(&stakingOutput, nil, nil)
+	tx.AddTxIn(input)
+	tx.AddTxOut(wire.NewTxOut(int64(slashingAmount), slashingPkScript))
+	tx.AddTxOut(wire.NewTxOut(int64(changeAmount), changeAddrScript))
+
+	// Verify that the none of the outputs is a dust output.
+	for i, out := range tx.TxOut {
+		if mempool.IsDust(out, mempool.DefaultMinRelayTxFee) {
+			app.logger.WithFields(logrus.Fields{
+				"slashingFee":     int64(fee),
+				"stakingAmount":   int64(stakingAmount),
+				"slashingRate":    slashingRateFloat64,
+				"slashingAmount":  int64(slashingAmount),
+				"changeAmount":    int64(changeAmount),
+				"outputIndex":     i,
+				"minimalRelayFee": mempool.DefaultMinRelayTxFee,
+				"slashPkScript":   hex.EncodeToString(slashingPkScript),
+				"changeAddScript": hex.EncodeToString(changeAddrScript),
+			}).Info("Returning dust error")
+
+			return nil, fmt.Errorf("dust output found")
+		}
+	}
+
+	return tx, nil
+}
+
+func getPossibleStakingOutput(
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+) (*wire.TxOut, error) {
+	if stakingTx == nil {
+		return nil, fmt.Errorf("provided staking transaction must not be nil")
+	}
+
+	if int(stakingOutputIdx) >= len(stakingTx.TxOut) {
+		return nil, fmt.Errorf("invalid staking output index %d, tx has %d outputs", stakingOutputIdx, len(stakingTx.TxOut))
+	}
+
+	stakingOutput := stakingTx.TxOut[stakingOutputIdx]
+
+	if !txscript.IsPayToTaproot(stakingOutput.PkScript) {
+		return nil, fmt.Errorf("must be pay to taproot output")
+	}
+
+	return stakingOutput, nil
+}
+
+func (app *StakerApp) BuildSlashingTxFromStakingTxStrict(
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+	slashingPkScript []byte,
+	stakerPk *btcec.PublicKey,
+	slashChangeLockTime uint16,
+	fee int64,
+	slashingRate sdkmath.LegacyDec,
+	net *chaincfg.Params,
+) (*wire.MsgTx, error) {
+	// Get the staking output at the specified index from the staking transaction
+	stakingOutput, err := getPossibleStakingOutput(stakingTx, stakingOutputIdx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an OutPoint for the staking output
+	stakingTxHash := stakingTx.TxHash()
+	stakingOutpoint := wire.NewOutPoint(&stakingTxHash, stakingOutputIdx)
+
+	// Create taproot address committing to timelock script
+	si, err := staking.BuildRelativeTimelockTaprootScript(
+		stakerPk,
+		slashChangeLockTime,
+		net,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Build slashing tx with the staking output information
+	return app.buildSlashingTxFromOutpoint(
+		*stakingOutpoint,
+		stakingOutput.Value, fee,
+		slashingPkScript, si.TapAddress,
+		slashingRate)
+}
+
 func (app *StakerApp) slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
@@ -147,7 +277,7 @@ func (app *StakerApp) slashingTxForStakingTx(
 		"changeAmount":   int64(changeAmount),
 	}).Info("Before BuildSlashingTxFromStakingTxStrict")
 
-	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
+	slashingTx, err := app.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
 		storedTx.StakingOutputIndex,
 		delegationData.babylonParams.SlashingPkScript,
