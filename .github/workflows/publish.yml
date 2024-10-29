@@ -17,11 +17,6 @@ jobs:
      run-lint: true
 
   docker_pipeline:
-    permissions:
-      # required for all workflows
-      security-events: write
-      # required to fetch internal or private CodeQL packs
-      packages: read
     needs: ["lint_test"]
     uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@huy/add-docker-sec
     secrets: inherit
