@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
@@ -150,7 +151,7 @@ var stakeFromPhase1Cmd = cli.Command{
 			Required: true,
 		},
 	},
-	Action: stake,
+	Action: stakeFromPhase1TxBTC,
 }
 
 var unstakeCmd = cli.Command{
@@ -365,10 +366,36 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	sctx := context.Background()
 
 	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
-	stakingTx, err := client.StakingDetails(sctx, stakingTransactionHash)
-	if err != nil {
-		return err
+	if len(stakingTransactionHash) == 0 {
+		return errors.New("staking tx hash hex is empty")
 	}
+	// staking details is not good, because it loads from db, not BTC
+	// stakingTx, err := client.StakingDetails(sctx, stakingTransactionHash)
+
+	// stakingTx.
+
+	// sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
+
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// pop, err := cl.NewBabylonBip322Pop(
+	// 	babylonAddrHash,
+	// 	sig,
+	// 	stakerAddress,
+	// )
+
+	// if err := app.txTracker.AddTransactionSentToBTC(
+	// 	stakingTx,
+	// 	stakingOutputIdx,
+	// 	cmd.stakingTime,
+	// 	cmd.fpBtcPks,
+	// 	babylonPopToDbPop(cmd.pop),
+	// 	cmd.stakerAddress,
+	// ); err != nil {
+	// 	return nil, err
+	// }
 
 	// results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
 	// if err != nil {

@@ -126,6 +126,22 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
+func (s *StakerService) bbnStakeFromBTCStakingTx(_ *rpctypes.Context,
+	btcStkTxHash string,
+) (*struct{}, error) {
+	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, _, err := s.staker.TxDetailsBTC(stkTxHash)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,
 	stakingTxHash string) (*StakingDetails, error) {
 
@@ -551,6 +567,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                     rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
+		"bbnStakeFromBTCStakingTx":  rpc.NewRPCFunc(s.bbnStakeFromBTCStakingTx, "btcStkTxHash"),
 		"staking_details":           rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":               rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions": rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),

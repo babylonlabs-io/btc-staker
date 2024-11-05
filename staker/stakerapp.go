@@ -23,6 +23,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -2187,4 +2188,8 @@ func (app *StakerApp) UnbondStaking(
 
 	unbondingTxHash := tx.UnbondingTxData.UnbondingTx.TxHash()
 	return &unbondingTxHash, nil
+}
+
+func (app *StakerApp) TxDetailsBTC(stakingTxHash *chainhash.Hash) (*btcjson.GetTransactionResult, *btcutil.Tx, error) {
+	return app.wc.Tx(stakingTxHash)
 }
