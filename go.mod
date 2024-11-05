@@ -24,7 +24,7 @@ require (
 	github.com/cosmos/relayer/v2 v2.5.2
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/jsternberg/zap-logfmt v1.3.0
-	github.com/lightningnetwork/lnd 0.17.0-beta
+	github.com/lightningnetwork/lnd v0.18.3-beta
 	github.com/lightningnetwork/lnd/kvdb v1.4.1
 	github.com/ory/dockertest/v3 v3.10.0
 	github.com/prometheus/client_golang v1.19.1
