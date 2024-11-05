@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - 'main'
-    - 'devops/add-docker-security'
+    - 'devops/add-docker-security-r2'
     tags:
     - '*'
 
