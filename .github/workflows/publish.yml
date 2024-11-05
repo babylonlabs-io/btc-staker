@@ -27,3 +27,4 @@ jobs:
     secrets: inherit
     with:
      publish: true
+     docker_scan: true
