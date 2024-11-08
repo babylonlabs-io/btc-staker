@@ -25,10 +25,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y bash curl jq wg
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/go.mod /tmp
 RUN WASMVM_VERSION=$(grep github.com/CosmWasm/wasmvm /tmp/go.mod | cut -d' ' -f2) && \
-    wget https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/libwasmvm."$(uname -m)".so \
+    wget -nv https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/libwasmvm."$(uname -m)".so \
     -O /lib/libwasmvm."$(uname -m)".so && \
     # verify checksum
-    wget https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/checksums.txt -O /tmp/checksums.txt && \
+    wget -nv https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/checksums.txt -O /tmp/checksums.txt && \
     sha256sum /lib/libwasmvm."$(uname -m)".so | grep "$(cat /tmp/checksums.txt | grep libwasmvm."$(uname -m)" | cut -d ' ' -f 1)"
 RUN rm -f /tmp/go.mod
 
