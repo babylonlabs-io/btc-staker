@@ -1,6 +1,10 @@
 
 vulnerabilities:
 - id: CVE-2024-27304
-  statement: Not using the function. Ignored.
+  statement: lnd related, Not using the function. Ignored.
 - id: GHSA-7jwh-3vrq-q3m8
-  statement: Not using the function. Ignored.
+  statement: lnd related, Not using the function. Ignored.
+- id: CVE-2024-27289
+  statement: lnd related, Not using the function. Ignored.
+- id: CVE-2024-38359
+  statement: lnd related, Not using the function. Ignored.
