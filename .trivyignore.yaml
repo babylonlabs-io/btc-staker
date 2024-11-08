@@ -1,0 +1,6 @@
+
+vulnerabilities:
+- id: CVE-2024-27304
+  statement: Not using the function. Ignored.
+- id: GHSA-7jwh-3vrq-q3m8
+  statement: Not using the function. Ignored.
