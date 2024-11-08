@@ -1,7 +1,7 @@
 FROM golang:1.23.1 AS builder
 
 # Install cli tools for building and final image
-RUN apt-get update && apt-get install -y make git bash gcc curl jq
+RUN apt-get update && apt-get install --no-install-recommends -y make git bash gcc curl jq
 
 # Build
 WORKDIR /go/src/github.com/babylonlabs-io/btc-staker
@@ -20,7 +20,7 @@ RUN BUILD_TAGS=netgo \
 FROM debian:bookworm-slim AS run
 
 RUN addgroup --gid 1138 --system btcstaker && adduser --uid 1138 --system --home /home/btcstaker btcstaker
-RUN apt-get update && apt-get install -y bash curl jq wget
+RUN apt-get update && apt-get install --no-install-recommends -y bash curl jq wget
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/go.mod /tmp
 RUN WASMVM_VERSION=$(grep github.com/CosmWasm/wasmvm /tmp/go.mod | cut -d' ' -f2) && \
