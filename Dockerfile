@@ -18,6 +18,7 @@ RUN BUILD_TAGS=netgo \
 
 # FINAL IMAGE
 FROM debian:bookworm-slim AS run
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN addgroup --gid 1138 --system btcstaker && adduser --uid 1138 --system --home /home/btcstaker btcstaker
 RUN apt-get update && apt-get install --no-install-recommends -y bash curl jq wget
