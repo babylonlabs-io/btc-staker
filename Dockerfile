@@ -1,6 +1,7 @@
 FROM golang:1.23.1 AS builder
 
 # Install cli tools for building and final image
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install --no-install-recommends -y make git bash gcc curl jq && rm -rf /var/lib/apt/lists/*
 
 # Build
@@ -21,6 +22,7 @@ FROM debian:bookworm-slim AS run
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN addgroup --gid 1138 --system btcstaker && adduser --uid 1138 --system --home /home/btcstaker btcstaker
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates bash curl jq wget && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/go.mod /tmp
