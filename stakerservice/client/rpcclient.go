@@ -7,23 +7,23 @@ import (
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 
-type StakerServiceJsonRpcClient struct {
+type StakerServiceJsonRPCClient struct {
 	client *jsonrpcclient.Client
 }
 
 // TODO Add some kind of timeout config
-func NewStakerServiceJsonRpcClient(remoteAddress string) (*StakerServiceJsonRpcClient, error) {
+func NewStakerServiceJsonRPCClient(remoteAddress string) (*StakerServiceJsonRPCClient, error) {
 	client, err := jsonrpcclient.New(remoteAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	return &StakerServiceJsonRpcClient{
+	return &StakerServiceJsonRPCClient{
 		client: client,
 	}, nil
 }
 
-func (c *StakerServiceJsonRpcClient) Health(ctx context.Context) (*service.ResultHealth, error) {
+func (c *StakerServiceJsonRPCClient) Health(ctx context.Context) (*service.ResultHealth, error) {
 	result := new(service.ResultHealth)
 	_, err := c.client.Call(ctx, "health", map[string]interface{}{}, result)
 	if err != nil {
@@ -32,7 +32,7 @@ func (c *StakerServiceJsonRpcClient) Health(ctx context.Context) (*service.Resul
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) ListOutputs(ctx context.Context) (*service.OutputsResponse, error) {
+func (c *StakerServiceJsonRPCClient) ListOutputs(ctx context.Context) (*service.OutputsResponse, error) {
 	result := new(service.OutputsResponse)
 	_, err := c.client.Call(ctx, "list_outputs", map[string]interface{}{}, result)
 	if err != nil {
@@ -41,7 +41,7 @@ func (c *StakerServiceJsonRpcClient) ListOutputs(ctx context.Context) (*service.
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) BabylonFinalityProviders(ctx context.Context, offset *int, limit *int) (*service.FinalityProvidersResponse, error) {
+func (c *StakerServiceJsonRPCClient) BabylonFinalityProviders(ctx context.Context, offset *int, limit *int) (*service.FinalityProvidersResponse, error) {
 	result := new(service.FinalityProvidersResponse)
 
 	params := make(map[string]interface{})
@@ -61,7 +61,7 @@ func (c *StakerServiceJsonRpcClient) BabylonFinalityProviders(ctx context.Contex
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) Stake(
+func (c *StakerServiceJsonRPCClient) Stake(
 	ctx context.Context,
 	stakerAddress string,
 	stakingAmount int64,
@@ -85,7 +85,7 @@ func (c *StakerServiceJsonRpcClient) Stake(
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) ListStakingTransactions(ctx context.Context, offset *int, limit *int) (*service.ListStakingTransactionsResponse, error) {
+func (c *StakerServiceJsonRPCClient) ListStakingTransactions(ctx context.Context, offset *int, limit *int) (*service.ListStakingTransactionsResponse, error) {
 	result := new(service.ListStakingTransactionsResponse)
 
 	params := make(map[string]interface{})
@@ -105,7 +105,7 @@ func (c *StakerServiceJsonRpcClient) ListStakingTransactions(ctx context.Context
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) WithdrawableTransactions(ctx context.Context, offset *int, limit *int) (*service.WithdrawableTransactionsResponse, error) {
+func (c *StakerServiceJsonRPCClient) WithdrawableTransactions(ctx context.Context, offset *int, limit *int) (*service.WithdrawableTransactionsResponse, error) {
 	result := new(service.WithdrawableTransactionsResponse)
 
 	params := make(map[string]interface{})
@@ -125,7 +125,7 @@ func (c *StakerServiceJsonRpcClient) WithdrawableTransactions(ctx context.Contex
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) StakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
+func (c *StakerServiceJsonRPCClient) StakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
 	result := new(service.StakingDetails)
 
 	params := make(map[string]interface{})
@@ -138,7 +138,7 @@ func (c *StakerServiceJsonRpcClient) StakingDetails(ctx context.Context, txHash 
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) SpendStakingTransaction(ctx context.Context, txHash string) (*service.SpendTxDetails, error) {
+func (c *StakerServiceJsonRPCClient) SpendStakingTransaction(ctx context.Context, txHash string) (*service.SpendTxDetails, error) {
 	result := new(service.SpendTxDetails)
 
 	params := make(map[string]interface{})
@@ -151,7 +151,7 @@ func (c *StakerServiceJsonRpcClient) SpendStakingTransaction(ctx context.Context
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) WatchStaking(
+func (c *StakerServiceJsonRPCClient) WatchStaking(
 	ctx context.Context,
 	stakingTx string,
 	stakingTime int,
@@ -169,7 +169,6 @@ func (c *StakerServiceJsonRpcClient) WatchStaking(
 	unbondingTime int,
 	popType int,
 ) (*service.ResultStake, error) {
-
 	result := new(service.ResultStake)
 	params := make(map[string]interface{})
 	params["stakingTx"] = stakingTx
@@ -195,7 +194,7 @@ func (c *StakerServiceJsonRpcClient) WatchStaking(
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
+func (c *StakerServiceJsonRPCClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
 	result := new(service.UnbondingResponse)
 
 	params := make(map[string]interface{})

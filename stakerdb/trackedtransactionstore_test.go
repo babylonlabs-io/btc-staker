@@ -100,6 +100,7 @@ func genNStoredTransactions(t *testing.T, r *rand.Rand, n int, maxStakingTime ui
 }
 
 func TestEmptyStore(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	s := MakeTestStore(t)
 	hash := datagen.GenRandomBtcdHash(r)
@@ -176,6 +177,7 @@ func FuzzStoringTxs(f *testing.F) {
 }
 
 func TestStateTransitions(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	s := MakeTestStore(t)
 	tx := genStoredTransaction(t, r, 200)
@@ -192,7 +194,7 @@ func TestStateTransitions(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Inital state
+	// Initial state
 	storedTx, err := s.GetTransaction(&txHash)
 	require.NoError(t, err)
 	require.Equal(t, proto.TransactionState_SENT_TO_BTC, storedTx.State)
@@ -229,6 +231,7 @@ func TestStateTransitions(t *testing.T) {
 }
 
 func TestPaginator(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	s := MakeTestStore(t)
 	numTx := 45
@@ -276,19 +279,19 @@ func TestPaginator(t *testing.T) {
 	require.Equal(t, 5, len(storedResult3.Transactions))
 	require.Equal(t, numTx, int(storedResult3.Total))
 
-	var allTransactionsFromDb []stakerdb.StoredTransaction
-	allTransactionsFromDb = append(allTransactionsFromDb, storedResult1.Transactions...)
-	allTransactionsFromDb = append(allTransactionsFromDb, storedResult2.Transactions...)
-	allTransactionsFromDb = append(allTransactionsFromDb, storedResult3.Transactions...)
+	var allTransactionsFromDB []stakerdb.StoredTransaction
+	allTransactionsFromDB = append(allTransactionsFromDB, storedResult1.Transactions...)
+	allTransactionsFromDB = append(allTransactionsFromDB, storedResult2.Transactions...)
+	allTransactionsFromDB = append(allTransactionsFromDB, storedResult3.Transactions...)
 
-	require.Equal(t, len(generatedStoredTxs), len(allTransactionsFromDb))
+	require.Equal(t, len(generatedStoredTxs), len(allTransactionsFromDB))
 	for i, storedTx := range generatedStoredTxs {
-		require.Equal(t, storedTx.StakingTx, allTransactionsFromDb[i].StakingTx)
-		require.Equal(t, storedTx.StakingOutputIndex, allTransactionsFromDb[i].StakingOutputIndex)
-		require.Equal(t, storedTx.StakingTime, allTransactionsFromDb[i].StakingTime)
-		require.True(t, pubKeysSliceEqual(storedTx.FinalityProvidersBtcPks, allTransactionsFromDb[i].FinalityProvidersBtcPks))
-		require.Equal(t, storedTx.Pop, allTransactionsFromDb[i].Pop)
-		require.Equal(t, storedTx.StakerAddress, allTransactionsFromDb[i].StakerAddress)
+		require.Equal(t, storedTx.StakingTx, allTransactionsFromDB[i].StakingTx)
+		require.Equal(t, storedTx.StakingOutputIndex, allTransactionsFromDB[i].StakingOutputIndex)
+		require.Equal(t, storedTx.StakingTime, allTransactionsFromDB[i].StakingTime)
+		require.True(t, pubKeysSliceEqual(storedTx.FinalityProvidersBtcPks, allTransactionsFromDB[i].FinalityProvidersBtcPks))
+		require.Equal(t, storedTx.Pop, allTransactionsFromDB[i].Pop)
+		require.Equal(t, storedTx.StakerAddress, allTransactionsFromDB[i].StakerAddress)
 	}
 }
 
@@ -299,7 +302,7 @@ func FuzzQuerySpendableTx(f *testing.F) {
 	f.Fuzz(func(t *testing.T, seed int64) {
 		r := rand.New(rand.NewSource(seed))
 		s := MakeTestStore(t)
-		// ganerate random transactions between 20 and 50
+		// generate random transactions between 20 and 50
 		maxCreatedTx := int(r.Int31n(31) + 20)
 		// random staking time between 150 and 250 blocks
 		maxStakingTime := r.Int31n(101) + 150
@@ -322,7 +325,7 @@ func FuzzQuerySpendableTx(f *testing.F) {
 		query := stakerdb.DefaultStoredTransactionQuery()
 		// random confirmation block
 		confirmationBlock := uint32(r.Int31n(1000) + 1)
-		halfOfMaxStaking := int32(maxStakingTime / 2)
+		halfOfMaxStaking := maxStakingTime / 2
 		currentBestBlock := confirmationBlock + uint32(r.Int31n(halfOfMaxStaking)+1)
 		filteredQuery := query.WithdrawableTransactionsFilter(currentBestBlock)
 

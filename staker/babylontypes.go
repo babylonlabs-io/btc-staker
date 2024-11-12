@@ -71,7 +71,7 @@ func (app *StakerApp) buildOwnedDelegation(
 		externalData.babylonParams.SlashingPkScript,
 		externalData.babylonParams.UnbondingFee,
 		// TODO: Possiblity to customize finalization time
-		uint16(externalData.babylonParams.MinUnbondingTime)+1,
+		externalData.babylonParams.MinUnbondingTime+1,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		app.network,
@@ -137,7 +137,6 @@ func (app *StakerApp) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
-
 	if storedTx.Watched {
 		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.txHash)
 
@@ -178,7 +177,7 @@ func (app *StakerApp) buildDelegation(
 	}
 }
 
-// TODO for now we launch this handler indefinitly. At some point we may introduce
+// TODO for now we launch this handler indefinitely. At some point we may introduce
 // timeout, and if signatures are not find in this timeout, then we may submit
 // evidence that covenant members are censoring our staking transactions
 func (app *StakerApp) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.Hash) {
@@ -477,9 +476,8 @@ func (app *StakerApp) activateVerifiedDelegation(
 					"stakingTxHash": stakingTxHash,
 				}).Error("failed to send staking transaction to btc chain to activate verified delegation")
 			}
-			// at this point we send signed staking transaciton to BTC chain, we will
+			// at this point we send signed staking transaction to BTC chain, we will
 			// still wait for its activation
-
 		case <-app.quit:
 			return
 		}

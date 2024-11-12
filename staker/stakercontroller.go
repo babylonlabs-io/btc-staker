@@ -16,9 +16,8 @@ type StakerController struct {
 
 func NewStakerControllerFromClients(
 	wc walletcontroller.WalletController,
-	BabylonClient cl.BabylonClient,
+	babylonClient cl.BabylonClient,
 ) (*StakerController, error) {
-
 	networkName := wc.NetworkName()
 
 	params, err := ut.GetBtcNetworkParams(networkName)
@@ -30,6 +29,6 @@ func NewStakerControllerFromClients(
 	return &StakerController{
 		Wc:            wc,
 		network:       params,
-		BabylonClient: BabylonClient,
+		BabylonClient: babylonClient,
 	}, err
 }

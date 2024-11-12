@@ -99,7 +99,6 @@ func validateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
-
 	var info []*ValidityInfo
 
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
@@ -330,7 +329,7 @@ var checkPhase1StakingTransactionCmd = cli.Command{
 	Name:      "check-phase1-staking-transaction",
 	ShortName: "cpst",
 	Usage:     "Checks whether provided staking transactions is valid staking transaction (tx must be funded/have inputs)",
-	Description: "Checks staking transaction agains custom set of parameters. Use for custom transactions" +
+	Description: "Checks staking transaction against custom set of parameters. Use for custom transactions" +
 		"that may not obey the global parameters. For most cases use `check-phase1-staking-transaction-params`",
 	Flags: []cli.Flag{
 		cli.StringFlag{
@@ -527,7 +526,6 @@ func createPhase1StakingTransactionWithParams(ctx *cli.Context) error {
 
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputFilePath, err)
-
 	}
 
 	currentNetwork, err := utils.GetBtcNetworkParams(ctx.String(networkNameFlag))
@@ -891,7 +889,6 @@ func createWithdrawalInfo(
 	parsedStakingTransaction *btcstaking.ParsedV0StakingTx,
 	paramsForHeight *parser.ParsedVersionedGlobalParams,
 	net *chaincfg.Params) (*withdrawalInfo, error) {
-
 	if len(unbondingTxHex) > 0 {
 		// withdrawal from unbonding output
 		unbondingTx, _, err := bbn.NewBTCTxFromHex(unbondingTxHex)

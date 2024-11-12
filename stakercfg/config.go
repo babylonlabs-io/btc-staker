@@ -73,18 +73,18 @@ func DefaultWalletConfig() WalletConfig {
 	}
 }
 
-type WalletRpcConfig struct {
+type WalletRPCConfig struct {
 	Host             string `long:"wallethost" description:"location of the wallet rpc server"`
 	User             string `long:"walletuser" description:"user auth for the wallet rpc server"`
 	Pass             string `long:"walletpassword" description:"password auth for the wallet rpc server"`
-	DisableTls       bool   `long:"noclienttls" description:"disables tls for the wallet rpc client"`
+	DisableTLS       bool   `long:"noclienttls" description:"disables tls for the wallet rpc client"`
 	RPCWalletCert    string `long:"rpcwalletcert" description:"File containing the wallet daemon's certificate file"`
 	RawRPCWalletCert string `long:"rawrpcwalletcert" description:"The raw bytes of the wallet daemon's PEM-encoded certificate chain which will be used to authenticate the RPC connection."`
 }
 
-func DefaultWalletRpcConfig() WalletRpcConfig {
-	return WalletRpcConfig{
-		DisableTls: true,
+func DefaultWalletRPCConfig() WalletRPCConfig {
+	return WalletRPCConfig{
+		DisableTLS: true,
 		Host:       "localhost:18556",
 		User:       "rpcuser",
 		Pass:       "rpcpass",
@@ -125,7 +125,7 @@ func DefaultBtcNodeBackendConfig() BtcNodeBackendConfig {
 type StakerConfig struct {
 	BabylonStallingInterval   time.Duration `long:"babylonstallinginterval" description:"The interval for Babylon node BTC light client to catch up with the real chain before re-sending delegation request"`
 	UnbondingTxCheckInterval  time.Duration `long:"unbondingtxcheckinterval" description:"The interval for staker whether delegation received all covenant signatures"`
-	CheckActiveInterval       time.Duration `long:"checkactiveinterval" description:"The interval for staker to check wheter delegation is active on Babylon node"`
+	CheckActiveInterval       time.Duration `long:"checkactiveinterval" description:"The interval for staker to check whether delegation is active on Babylon node"`
 	MaxConcurrentTransactions uint32        `long:"maxconcurrenttransactions" description:"Maximum concurrent transactions in flight to babylon node"`
 	ExitOnCriticalError       bool          `long:"exitoncriticalerror" description:"Exit stakerd on critical error"`
 }
@@ -152,7 +152,7 @@ type Config struct {
 
 	WalletConfig *WalletConfig `group:"walletconfig" namespace:"walletconfig"`
 
-	WalletRpcConfig *WalletRpcConfig `group:"walletrpcconfig" namespace:"walletrpcconfig"`
+	WalletRPCConfig *WalletRPCConfig `group:"walletrpcconfig" namespace:"walletrpcconfig"`
 
 	ChainConfig *ChainConfig `group:"chain" namespace:"chain"`
 
@@ -166,15 +166,15 @@ type Config struct {
 
 	MetricsConfig *MetricsConfig `group:"metricsconfig" namespace:"metricsconfig"`
 
-	JsonRpcServerConfig *JsonRpcServerConfig
+	JsonRPCServerConfig *JsonRpcServerConfig
 
 	ActiveNetParams chaincfg.Params
 
-	RpcListeners []net.Addr
+	RPCListeners []net.Addr
 }
 
 func DefaultConfig() Config {
-	rpcConf := DefaultWalletRpcConfig()
+	rpcConf := DefaultWalletRPCConfig()
 	walletConf := DefaultWalletConfig()
 	chainCfg := DefaultChainConfig()
 	nodeBackendCfg := DefaultBtcNodeBackendConfig()
@@ -189,7 +189,7 @@ func DefaultConfig() Config {
 		DebugLevel:           defaultLogLevel,
 		LogDir:               defaultLogDir,
 		WalletConfig:         &walletConf,
-		WalletRpcConfig:      &rpcConf,
+		WalletRPCConfig:      &rpcConf,
 		ChainConfig:          &chainCfg,
 		BtcNodeBackendConfig: &nodeBackendCfg,
 		BabylonConfig:        &bbnConfig,
@@ -491,10 +491,10 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// At least one RPCListener is required. So listen on localhost per
 	// default.
-	if len(cfg.JsonRpcServerConfig.RawRPCListeners) == 0 {
+	if len(cfg.JsonRPCServerConfig.RawRPCListeners) == 0 {
 		addr := fmt.Sprintf("localhost:%d", DefaultRPCPort)
-		cfg.JsonRpcServerConfig.RawRPCListeners = append(
-			cfg.JsonRpcServerConfig.RawRPCListeners, addr,
+		cfg.JsonRPCServerConfig.RawRPCListeners = append(
+			cfg.JsonRPCServerConfig.RawRPCListeners, addr,
 		)
 	}
 
@@ -506,8 +506,8 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// Add default port to all RPC listener addresses if needed and remove
 	// duplicate addresses.
-	cfg.RpcListeners, err = lncfg.NormalizeAddresses(
-		cfg.JsonRpcServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
+	cfg.RPCListeners, err = lncfg.NormalizeAddresses(
+		cfg.JsonRPCServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
 		net.ResolveTCPAddr,
 	)
 

@@ -79,7 +79,6 @@ func makeInputSource(utxos []Utxo) txauthor.InputSource {
 
 	return func(target btcutil.Amount) (btcutil.Amount, []*wire.TxIn,
 		[]btcutil.Amount, [][]byte, error) {
-
 		for currentTotal < target && len(utxos) != 0 {
 			nextCredit := &utxos[0]
 			utxos = utxos[1:]
@@ -98,7 +97,6 @@ func buildTxFromOutputs(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
 	changeScript []byte) (*wire.MsgTx, error) {
-
 	if len(utxos) == 0 {
 		return nil, fmt.Errorf("there must be at least 1 usable UTXO to build transaction")
 	}

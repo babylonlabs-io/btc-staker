@@ -9,7 +9,6 @@ import (
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
-	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -40,17 +39,17 @@ const (
 
 func NewRpcWalletController(scfg *stakercfg.Config) (*RpcWalletController, error) {
 	return NewRpcWalletControllerFromArgs(
-		scfg.WalletRpcConfig.Host,
-		scfg.WalletRpcConfig.User,
-		scfg.WalletRpcConfig.Pass,
+		scfg.WalletRPCConfig.Host,
+		scfg.WalletRPCConfig.User,
+		scfg.WalletRPCConfig.Pass,
 		scfg.ActiveNetParams.Name,
 		scfg.WalletConfig.WalletName,
 		scfg.WalletConfig.WalletPass,
 		scfg.BtcNodeBackendConfig.ActiveWalletBackend,
 		&scfg.ActiveNetParams,
-		scfg.WalletRpcConfig.DisableTls,
-		scfg.WalletRpcConfig.RawRPCWalletCert,
-		scfg.WalletRpcConfig.RPCWalletCert,
+		scfg.WalletRPCConfig.DisableTLS,
+		scfg.WalletRPCConfig.RawRPCWalletCert,
+		scfg.WalletRPCConfig.RPCWalletCert,
 	)
 }
 
@@ -66,7 +65,6 @@ func NewRpcWalletControllerFromArgs(
 	disableTls bool,
 	rawWalletCert string, walletCertFilePath string,
 ) (*RpcWalletController, error) {
-
 	connCfg := &rpcclient.ConnConfig{
 		Host:                 rpcHostURL(host, walletName),
 		User:                 user,
@@ -80,7 +78,7 @@ func NewRpcWalletControllerFromArgs(
 	}
 
 	if !connCfg.DisableTLS {
-		cert, err := scfg.ReadCertFile(rawWalletCert, walletCertFilePath)
+		cert, err := stakercfg.ReadCertFile(rawWalletCert, walletCertFilePath)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +141,6 @@ func (w *RpcWalletController) CreateTransaction(
 	changeAddres btcutil.Address,
 	useUtxoFn UseUtxoFn,
 ) (*wire.MsgTx, error) {
-
 	utxoResults, err := w.ListUnspent()
 
 	if err != nil {
@@ -457,5 +454,4 @@ func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 
 	// neither witness, nor signature is filled.
 	return nil, fmt.Errorf("no signature found in PSBT packet. Wallet can't sign given tx")
-
 }

@@ -82,7 +82,6 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	stakingTimeBlocks int64,
 	sendToBabylonFirst bool,
 ) (*ResultStake, error) {
-
 	if stakingAmount <= 0 {
 		return nil, fmt.Errorf("staking amount must be positive")
 	}
@@ -94,7 +93,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -166,7 +165,6 @@ func (s *StakerService) spendStake(_ *rpctypes.Context,
 }
 
 func (s *StakerService) listOutputs(_ *rpctypes.Context) (*OutputsResponse, error) {
-
 	outputs, err := s.staker.ListUnspentOutputs()
 
 	if err != nil {
@@ -224,7 +222,6 @@ func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 }
 
 func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*FinalityProvidersResponse, error) {
-
 	pageParams, err := getPageParams(offset, limit)
 	if err != nil {
 		return nil, err
@@ -300,7 +297,7 @@ func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, li
 		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx))
 	}
 
-	var lastIdx string = "0"
+	lastIdx := "0"
 	if len(stakingDetails) > 0 {
 		// this should ease up pagination i.e in case when whe have 1000 transactions, and we limit query to 50
 		// due to filetring we can retrun  response with 50 transactions when last one have index 400,
@@ -405,7 +402,7 @@ func (s *StakerService) watchStaking(
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -609,8 +606,8 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	// TODO: investigate if we can use logrus directly to pass it to rpcserver
 	rpcLogger := log.NewTMLogger(s.logger.Writer())
 
-	listeners := make([]net.Listener, len(s.config.RpcListeners))
-	for i, listenAddr := range s.config.RpcListeners {
+	listeners := make([]net.Listener, len(s.config.RPCListeners))
+	for i, listenAddr := range s.config.RPCListeners {
 		listenAddressStr := listenAddr.Network() + "://" + listenAddr.String()
 		mux := http.NewServeMux()
 		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
