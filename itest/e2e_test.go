@@ -147,7 +147,7 @@ type TestManager struct {
 	MinerAddr        btcutil.Address
 	wg               *sync.WaitGroup
 	serviceAddress   string
-	StakerClient     *dc.StakerServiceJsonRPCClient
+	StakerClient     *dc.StakerServiceJSONRPCClient
 	CovenantPrivKeys []*btcec.PrivateKey
 	BitcoindHandler  *BitcoindTestHandler
 	TestRpcClient    *rpcclient.Client
@@ -298,7 +298,7 @@ func StartManager(
 	require.NoError(t, err)
 	cfg.DBConfig.DBPath = dbTempDir
 
-	dbbackend, err := stakercfg.GetDbBackend(cfg.DBConfig)
+	dbbackend, err := stakercfg.GetDBBackend(cfg.DBConfig)
 	require.NoError(t, err)
 
 	m := metrics.NewStakerMetrics()
@@ -346,7 +346,7 @@ func StartManager(
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	stakerClient, err := dc.NewStakerServiceJsonRPCClient("tcp://" + addressString)
+	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
 	return &TestManager{
@@ -398,7 +398,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	logger.SetLevel(logrus.DebugLevel)
 	logger.Out = os.Stdout
 
-	dbbackend, err := stakercfg.GetDbBackend(tm.Config.DBConfig)
+	dbbackend, err := stakercfg.GetDBBackend(tm.Config.DBConfig)
 	require.NoError(t, err)
 	m := metrics.NewStakerMetrics()
 	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zapLogger, dbbackend, m)
@@ -426,7 +426,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
-	stakerClient, err := dc.NewStakerServiceJsonRPCClient("tcp://" + tm.serviceAddress)
+	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
 	require.NoError(t, err)
 	tm.StakerClient = stakerClient
 }
@@ -1757,7 +1757,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
 	// Create wallet controller the same way as in staker program
-	wc, err := walletcontroller.NewRpcWalletController(&scfg)
+	wc, err := walletcontroller.NewRPCWalletController(&scfg)
 	require.NoError(t, err)
 
 	outputs, err := wc.ListOutputs(true)
@@ -1825,7 +1825,7 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
 
-	controller, err := walletcontroller.NewRpcWalletController(cfg)
+	controller, err := walletcontroller.NewRPCWalletController(cfg)
 	require.NoError(t, err)
 
 	err = controller.UnlockWallet(30)

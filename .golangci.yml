@@ -74,6 +74,7 @@ issues:
         - errcheck
         - dupl
         - gosec
+        - gocritic
     - path-except: _test\.go
       linters:
         - forbidigo

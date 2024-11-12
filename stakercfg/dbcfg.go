@@ -62,7 +62,7 @@ func DBConfigToBoltBackenCondfig(db *DBConfig) kvdb.BoltBackendConfig {
 	}
 }
 
-func GetDbBackend(cfg *DBConfig) (kvdb.Backend, error) {
+func GetDBBackend(cfg *DBConfig) (kvdb.Backend, error) {
 	boltConfig := DBConfigToBoltBackenCondfig(cfg)
 	return kvdb.GetBoltBackend(&boltConfig)
 }

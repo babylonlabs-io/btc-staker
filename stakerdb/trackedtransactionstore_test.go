@@ -28,7 +28,7 @@ func MakeTestStore(t *testing.T) *stakerdb.TrackedTransactionStore {
 
 	cfg.DBPath = tempDirName
 
-	backend, err := stakercfg.GetDbBackend(&cfg)
+	backend, err := stakercfg.GetDBBackend(&cfg)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

@@ -144,7 +144,7 @@ func NewStakerAppFromConfig(
 ) (*StakerApp, error) {
 	// TODO: If we want to support multiple wallet types, this is most probably the place to decide
 	// on concrete implementation
-	walletClient, err := walletcontroller.NewRpcWalletController(config)
+	walletClient, err := walletcontroller.NewRPCWalletController(config)
 	if err != nil {
 		return nil, err
 	}

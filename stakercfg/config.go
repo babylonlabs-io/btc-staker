@@ -91,7 +91,7 @@ func DefaultWalletRPCConfig() WalletRPCConfig {
 	}
 }
 
-type JsonRpcServerConfig struct {
+type JSONRPCServerConfig struct {
 	RawRPCListeners []string `long:"rpclisten" description:"Add an interface/port/socket to listen for RPC connections"`
 }
 
@@ -166,7 +166,7 @@ type Config struct {
 
 	MetricsConfig *MetricsConfig `group:"metricsconfig" namespace:"metricsconfig"`
 
-	JsonRPCServerConfig *JsonRpcServerConfig
+	JSONRPCServerConfig *JSONRPCServerConfig
 
 	ActiveNetParams chaincfg.Params
 
@@ -337,6 +337,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 // ValidateConfig check the given configuration to be sane. This makes sure no
 // illegal values or combination of values are set. All file system paths are
 // normalized. The cleaned up config is returned on success.
+//
+//nolint:gocyclo
 func ValidateConfig(cfg Config) (*Config, error) {
 	// If the provided stakerd directory is not the default, we'll modify the
 	// path to all of the files and directories that will live within it.
@@ -491,10 +493,10 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// At least one RPCListener is required. So listen on localhost per
 	// default.
-	if len(cfg.JsonRPCServerConfig.RawRPCListeners) == 0 {
+	if len(cfg.JSONRPCServerConfig.RawRPCListeners) == 0 {
 		addr := fmt.Sprintf("localhost:%d", DefaultRPCPort)
-		cfg.JsonRPCServerConfig.RawRPCListeners = append(
-			cfg.JsonRPCServerConfig.RawRPCListeners, addr,
+		cfg.JSONRPCServerConfig.RawRPCListeners = append(
+			cfg.JSONRPCServerConfig.RawRPCListeners, addr,
 		)
 	}
 
@@ -507,7 +509,7 @@ func ValidateConfig(cfg Config) (*Config, error) {
 	// Add default port to all RPC listener addresses if needed and remove
 	// duplicate addresses.
 	cfg.RPCListeners, err = lncfg.NormalizeAddresses(
-		cfg.JsonRPCServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
+		cfg.JSONRPCServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
 		net.ResolveTCPAddr,
 	)
 

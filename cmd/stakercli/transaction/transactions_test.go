@@ -164,7 +164,7 @@ func genSchnorPubKeyHex(t *testing.T) string {
 	return hex.EncodeToString(schnorr.SerializePubKey(btcPub))
 }
 
-func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) (output string) {
+func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) string {
 	outPut := filepath.Join(t.TempDir(), fmt.Sprintf("%s-out.txt", datagen.GenRandomHexStr(r, 10)))
 	outPutFile, err := os.Create(outPut)
 	require.NoError(t, err)

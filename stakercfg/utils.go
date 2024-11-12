@@ -13,7 +13,6 @@ func ReadCertFile(rawCert string, certFilePath string) ([]byte, error) {
 			return nil, err
 		}
 		return rpcCert, nil
-
 	}
 	certFile, err := os.Open(certFilePath)
 	if err != nil {

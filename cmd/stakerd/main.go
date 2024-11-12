@@ -60,7 +60,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	dbBackend, err := scfg.GetDbBackend(cfg.DBConfig)
+	dbBackend, err := scfg.GetDBBackend(cfg.DBConfig)
 
 	if err != nil {
 		err = fmt.Errorf("failed to load db backend: %w", err)

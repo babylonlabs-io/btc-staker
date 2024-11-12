@@ -127,7 +127,6 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,
 	stakingTxHash string) (*StakingDetails, error) {
-
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
 		return nil, err
