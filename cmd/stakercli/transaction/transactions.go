@@ -954,41 +954,40 @@ func createWithdrawalInfo(
 			withdrawalFundingUtxo: unbondingTx.TxOut[0],
 			withdrawalSpendInfo:   timeLockPathInfo,
 		}, nil
-	} else {
-		stakingInfo, err := btcstaking.BuildStakingInfo(
-			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
-			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
-			paramsForHeight.CovenantPks,
-			paramsForHeight.CovenantQuorum,
-			parsedStakingTransaction.OpReturnData.StakingTime,
-			btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("error building staking info: %w", err)
-		}
-
-		timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("error building timelock path spend info: %w", err)
-		}
-
-		withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
-
-		if withdrawalOutputValue <= 0 {
-			return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
-		}
-
-		return &withdrawalInfo{
-			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
-			withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
-			withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
-			withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
-			withdrawalSpendInfo:   timelockPathInfo,
-		}, nil
 	}
+	stakingInfo, err := btcstaking.BuildStakingInfo(
+		parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+		[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+		paramsForHeight.CovenantPks,
+		paramsForHeight.CovenantQuorum,
+		parsedStakingTransaction.OpReturnData.StakingTime,
+		btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error building staking info: %w", err)
+	}
+
+	timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("error building timelock path spend info: %w", err)
+	}
+
+	withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
+
+	if withdrawalOutputValue <= 0 {
+		return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
+	}
+
+	return &withdrawalInfo{
+		withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+		withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
+		withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
+		withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
+		withdrawalSpendInfo:   timelockPathInfo,
+	}, nil
 }
 
 func createPhase1WitdrawalTransaction(ctx *cli.Context) error {

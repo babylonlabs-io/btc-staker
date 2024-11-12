@@ -7,8 +7,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 )
 
-// Stateless controller for different client operations
-type StakerController struct {
+// Controller for different client operations
+type Controller struct {
 	BabylonClient cl.BabylonClient
 	Wc            walletcontroller.WalletController
 	network       *chaincfg.Params
@@ -17,7 +17,7 @@ type StakerController struct {
 func NewStakerControllerFromClients(
 	wc walletcontroller.WalletController,
 	babylonClient cl.BabylonClient,
-) (*StakerController, error) {
+) (*Controller, error) {
 	networkName := wc.NetworkName()
 
 	params, err := ut.GetBtcNetworkParams(networkName)
@@ -26,7 +26,7 @@ func NewStakerControllerFromClients(
 		return nil, err
 	}
 
-	return &StakerController{
+	return &Controller{
 		Wc:            wc,
 		network:       params,
 		BabylonClient: babylonClient,

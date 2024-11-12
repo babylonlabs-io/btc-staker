@@ -1235,13 +1235,14 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 					return false, nil
 				}
 
-				if txFromDB.StakingTxConfirmedOnBtc() && !txFromDB.UnbondingTxConfirmedOnBtc() {
+				switch {
+				case txFromDB.StakingTxConfirmedOnBtc() && !txFromDB.UnbondingTxConfirmedOnBtc():
 					scriptTimeLock = txFromDB.StakingTime
 					confirmationHeight = txFromDB.StakingTxConfirmationInfo.Height
-				} else if txFromDB.StakingTxConfirmedOnBtc() && txFromDB.UnbondingTxConfirmedOnBtc() {
+				case txFromDB.StakingTxConfirmedOnBtc() && txFromDB.UnbondingTxConfirmedOnBtc():
 					scriptTimeLock = txFromDB.UnbondingTxData.UnbondingTime
 					confirmationHeight = txFromDB.UnbondingTxData.UnbondingTxConfirmationInfo.Height
-				} else {
+				default:
 					return false, nil
 				}
 
@@ -1254,13 +1255,12 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 				if timeLockExpired {
 					resp.Transactions = append(resp.Transactions, *txFromDB)
 					return true, nil
-				} else {
-					return false, nil
 				}
-			} else {
-				resp.Transactions = append(resp.Transactions, *txFromDB)
-				return true, nil
+
+				return false, nil
 			}
+			resp.Transactions = append(resp.Transactions, *txFromDB)
+			return true, nil
 		}
 
 		if err := paginator.query(accumulateTransactions); err != nil {

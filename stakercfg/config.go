@@ -2,6 +2,7 @@ package stakercfg
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -265,7 +266,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the config
 		// file doesn't exist which is OK.
-		if _, ok := err.(*flags.IniError); ok {
+		var iniErr *flags.IniError
+		if errors.As(err, &iniErr) {
 			return nil, nil, nil, err
 		}
 
@@ -285,7 +287,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 	cleanCfg, err := ValidateConfig(cfg)
 	if err != nil {
 		// Log help message in case of usage error.
-		if _, ok := err.(*usageError); ok {
+		var usageErr *usageError
+		if errors.As(err, &usageErr) {
 			cfgLogger.Warnf("Incorrect usage: %v", usageMessage)
 		}
 
@@ -358,11 +361,12 @@ func ValidateConfig(cfg Config) (*Config, error) {
 			// Show a nicer error message if it's because a symlink
 			// is linked to a directory that does not exist
 			// (probably because it's not mounted).
-			if e, ok := err.(*os.PathError); ok && os.IsExist(err) {
-				link, lerr := os.Readlink(e.Path)
+			var pathErr *os.PathError
+			if errors.As(err, &pathErr) && os.IsExist(err) {
+				link, lerr := os.Readlink(pathErr.Path)
 				if lerr == nil {
 					str := "is symlink %s -> %s mounted?"
-					err = fmt.Errorf(str, e.Path, link)
+					err = fmt.Errorf(str, pathErr.Path, link)
 				}
 			}
 

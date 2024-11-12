@@ -239,6 +239,7 @@ func createSpendStakeTxFromStoredTx(
 	// This is to cover cases:
 	// - staker is unable to sent delegation to babylon
 	// - staking transaction on babylon fail to get covenant signatures
+	//nolint:gocritic
 	if storedtx.StakingTxConfirmedOnBtc() && !storedtx.UnbondingTxConfirmedOnBtc() {
 		stakingInfo, err := staking.BuildStakingInfo(
 			stakerBtcPk,
@@ -325,9 +326,8 @@ func createSpendStakeTxFromStoredTx(
 			fundingOutputSpendInfo: unbondingTimeLockPathInfo,
 			calculatedFee:          *calculatedFee,
 		}, nil
-	} else {
-		return nil, fmt.Errorf("cannot build spend stake transactions.Staking transaction is in invalid state: %s", storedtx.State)
 	}
+	return nil, fmt.Errorf("cannot build spend stake transactions.Staking transaction is in invalid state: %s", storedtx.State)
 }
 
 type UnbondingSlashingDesc struct {
@@ -662,9 +662,8 @@ func haveDuplicates(btcPKs []*btcec.PublicKey) bool {
 
 		if _, found := seen[pkStr]; found {
 			return true
-		} else {
-			seen[pkStr] = struct{}{}
 		}
+		seen[pkStr] = struct{}{}
 	}
 
 	return false

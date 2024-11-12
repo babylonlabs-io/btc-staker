@@ -141,7 +141,7 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost stri
 type TestManager struct {
 	Config           *stakercfg.Config
 	Db               kvdb.Backend
-	Sa               *staker.StakerApp
+	Sa               *staker.App
 	BabylonClient    *babylonclient.BabylonController
 	WalletPubKey     *btcec.PublicKey
 	MinerAddr        btcutil.Address

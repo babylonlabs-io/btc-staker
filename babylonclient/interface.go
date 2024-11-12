@@ -146,16 +146,16 @@ func (m *MockBabylonClient) QueryHeaderDepth(_ *chainhash.Hash) (uint32, error) 
 	return m.ClientParams.ConfirmationTimeBlocks + 1, nil
 }
 
-func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {
+func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool, error) {
 	return false, nil
 }
 
-func (m *MockBabylonClient) QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error) {
+func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationInfo, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
 func (m *MockBabylonClient) Undelegate(
-	req *UndelegationRequest) (*pv.RelayerTxResponse, error) {
+	_ *UndelegationRequest) (*pv.RelayerTxResponse, error) {
 	return &pv.RelayerTxResponse{Code: 0}, nil
 }
 

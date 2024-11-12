@@ -8,8 +8,7 @@ import (
 )
 
 type StakingEvent interface {
-	// Each staking event is identified by initial staking transaction hash
-	EventId() chainhash.Hash
+	EventID() chainhash.Hash // Each staking event is identified by initial staking transaction hash
 	EventDesc() string
 }
 
@@ -32,7 +31,7 @@ type stakingTxBtcConfirmedEvent struct {
 	inlusionBlock *wire.MsgBlock
 }
 
-func (event *stakingTxBtcConfirmedEvent) EventId() chainhash.Hash {
+func (event *stakingTxBtcConfirmedEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -46,7 +45,7 @@ type delegationSubmittedToBabylonEvent struct {
 	unbondingTime uint16
 }
 
-func (event *delegationSubmittedToBabylonEvent) EventId() chainhash.Hash {
+func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -60,7 +59,7 @@ type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
 	covenantUnbondingSignatures []cl.CovenantSignatureInfo
 }
 
-func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventId() chainhash.Hash {
+func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -74,7 +73,7 @@ type unbondingTxConfirmedOnBtcEvent struct {
 	blockHeight   uint32
 }
 
-func (event *unbondingTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *unbondingTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -86,7 +85,7 @@ type spendStakeTxConfirmedOnBtcEvent struct {
 	stakingTxHash chainhash.Hash
 }
 
-func (event *spendStakeTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *spendStakeTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -100,7 +99,7 @@ type criticalErrorEvent struct {
 	additionalContext string
 }
 
-func (event *criticalErrorEvent) EventId() chainhash.Hash {
+func (event *criticalErrorEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -108,16 +107,16 @@ func (event *criticalErrorEvent) EventDesc() string {
 	return "CRITICAL_ERROR"
 }
 
-func (app *StakerApp) logStakingEventReceived(event StakingEvent) {
+func (app *App) logStakingEventReceived(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Received staking event")
 }
 
-func (app *StakerApp) logStakingEventProcessed(event StakingEvent) {
+func (app *App) logStakingEventProcessed(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
 }
@@ -126,7 +125,7 @@ type delegationActivatedPostApprovalEvent struct {
 	stakingTxHash chainhash.Hash
 }
 
-func (event *delegationActivatedPostApprovalEvent) EventId() chainhash.Hash {
+func (event *delegationActivatedPostApprovalEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -140,7 +139,7 @@ type delegationActivatedPreApprovalEvent struct {
 	blockHeight   uint32
 }
 
-func (event *delegationActivatedPreApprovalEvent) EventId() chainhash.Hash {
+func (event *delegationActivatedPreApprovalEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 

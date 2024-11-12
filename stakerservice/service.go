@@ -42,14 +42,14 @@ type StakerService struct {
 	started int32
 
 	config *scfg.Config
-	staker *str.StakerApp
+	staker *str.App
 	logger *logrus.Logger
 	db     kvdb.Backend
 }
 
 func NewStakerService(
 	c *scfg.Config,
-	s *str.StakerApp,
+	s *str.App,
 	l *logrus.Logger,
 	db kvdb.Backend,
 ) *StakerService {
@@ -191,12 +191,12 @@ type PageParams struct {
 
 func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	var limit uint64
-
-	if limitPtr == nil {
+	switch {
+	case limitPtr == nil:
 		limit = defaultLimit
-	} else if *limitPtr < 0 {
+	case *limitPtr < 0:
 		return nil, fmt.Errorf("limit cannot be negative")
-	} else {
+	default:
 		limit = uint64(*limitPtr)
 	}
 
@@ -205,13 +205,13 @@ func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	}
 
 	var offset uint64
-
-	if offsetPtr == nil {
+	switch {
+	case offsetPtr == nil:
 		offset = defaultOffset
-	} else if *offsetPtr < 0 {
-		return nil, fmt.Errorf("offset cannot be negative")
-	} else {
+	case *offsetPtr >= 0:
 		offset = uint64(*offsetPtr)
+	default:
+		return nil, fmt.Errorf("offset cannot be negative")
 	}
 
 	return &PageParams{

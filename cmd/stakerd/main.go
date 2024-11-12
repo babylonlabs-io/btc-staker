@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,10 +26,11 @@ func main() {
 	cfg, cfgLogger, zapLogger, err := scfg.LoadConfig()
 
 	if err != nil {
-		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
-			// Print error if not due to help request.
+		var flagsErr *flags.Error
+		if !errors.As(err, &flagsErr) || flagsErr.Type != flags.ErrHelp {
 			err = fmt.Errorf("failed to load config: %w", err)
 			_, _ = fmt.Fprintln(os.Stderr, err)
+			//nolint:gocritic
 			os.Exit(1)
 		}
 
