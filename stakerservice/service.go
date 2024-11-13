@@ -588,8 +588,8 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 		return fmt.Errorf(format, args...)
 	}
 
-	err := s.staker.Start()
-	if err != nil {
+	//nolint:contextcheck
+	if err := s.staker.Start(); err != nil {
 		return mkErr("error starting staker: %w", err)
 	}
 

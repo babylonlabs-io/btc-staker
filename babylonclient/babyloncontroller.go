@@ -904,7 +904,6 @@ func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfo
 }
 
 func (bc *BabylonController) ActivateDelegation(
-	_ context.Context,
 	stakingTxHash chainhash.Hash,
 	proof *btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
 	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{

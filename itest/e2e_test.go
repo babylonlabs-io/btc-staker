@@ -1313,7 +1313,6 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 
 	_, err = tm.BabylonClient.ActivateDelegation(
-		context.Background(),
 		*txHash,
 		proof,
 	)

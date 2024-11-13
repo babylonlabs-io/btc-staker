@@ -261,8 +261,7 @@ func (app *App) Start() error {
 		// although staker without node is not very useful
 
 		app.logger.Infof("Connecting to node backend: %s", app.config.BtcNodeBackendConfig.Nodetype)
-		err := app.notifier.Start()
-		if err != nil {
+		if err := app.notifier.Start(); err != nil {
 			startErr = err
 			return
 		}
@@ -276,9 +275,7 @@ func (app *App) Start() error {
 			return
 		}
 
-		err = app.feeEstimator.Start()
-
-		if err != nil {
+		if err = app.feeEstimator.Start(); err != nil {
 			startErr = err
 			return
 		}
