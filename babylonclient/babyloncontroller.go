@@ -16,7 +16,6 @@ import (
 	"github.com/avast/retry-go/v4"
 	bbnclient "github.com/babylonlabs-io/babylon/client/client"
 	bbntypes "github.com/babylonlabs-io/babylon/types"
-	bcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 	btclctypes "github.com/babylonlabs-io/babylon/x/btclightclient/types"
 	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
@@ -135,7 +134,7 @@ func (bc *BabylonController) Stop() error {
 
 func (bc *BabylonController) Params() (*StakingParams, error) {
 	// TODO: it would probably be good to have separate methods for those
-	var bccParams *bcctypes.Params
+	var bccParams *btcctypes.Params
 	if err := retry.Do(func() error {
 		response, err := bc.bbnClient.BTCCheckpointParams()
 		if err != nil {
@@ -181,8 +180,8 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    uint32(bccParams.BtcConfirmationDepth),
-		FinalizationTimeoutBlocks: uint32(bccParams.CheckpointFinalizationTimeout),
+		ConfirmationTimeBlocks:    bccParams.BtcConfirmationDepth,
+		FinalizationTimeoutBlocks: bccParams.CheckpointFinalizationTimeout,
 		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
 		CovenantPks:               stakingTrackerParams.CovenantPks,
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
@@ -375,13 +374,13 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 	slashUnbondingTxSig := bbntypes.NewBIP340SignatureFromBTCSig(dg.Ud.SlashUnbondingTransactionSig)
 
-	var stakingTransactionInclusionProof *btcstypes.InclusionProof = nil
+	var stakingTransactionInclusionProof *btcstypes.InclusionProof
 
 	if dg.StakingTransactionInclusionInfo != nil {
 		inclusionBlockHash := bbntypes.NewBTCHeaderHashBytesFromChainhash(
 			dg.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash,
 		)
-		txKey := &bcctypes.TransactionKey{
+		txKey := &btcctypes.TransactionKey{
 			Index: dg.StakingTransactionInclusionInfo.StakingTransactionIdx,
 			Hash:  &inclusionBlockHash,
 		}
@@ -670,7 +669,6 @@ func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint3
 			"error":        err,
 		}).Error("Failed to query babylon for the depth of the header")
 	})); err != nil {
-
 		// translate errors to locally handable ones
 		if strings.Contains(err.Error(), btclctypes.ErrHeaderDoesNotExist.Error()) {
 			return 0, fmt.Errorf("%s: %w", err.Error(), ErrHeaderNotKnownToBabylon)
@@ -681,10 +679,9 @@ func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint3
 	}
 
 	return response.Depth, nil
-
 }
 
-// Insert BTC block header using rpc client
+// InsertBtcBlockHeaders Insert BTC block header using rpc client
 func (bc *BabylonController) InsertBtcBlockHeaders(headers []*wire.BlockHeader) (*pv.RelayerTxResponse, error) {
 	msg := &btclctypes.MsgInsertHeaders{
 		Signer:  bc.getTxSigner(),
@@ -748,7 +745,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 			return err
 		}
 
-		var udi *UndelegationInfo = nil
+		var udi *UndelegationInfo
 
 		if resp.BtcDelegation.UndelegationResponse != nil {
 			var coventSigInfos []CovenantSignatureInfo
@@ -873,7 +870,7 @@ func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDeleg
 
 	res, err := queryClient.BTCDelegations(ctx, &queryRequest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query BTC delegations: %v", err)
+		return nil, fmt.Errorf("failed to query BTC delegations: %w", err)
 	}
 
 	return res.BtcDelegations, nil
@@ -900,17 +897,15 @@ func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctyp
 func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfoResponse, error) {
 	res, err := bc.bbnClient.QueryClient.BTCHeaderChainTip()
 	if err != nil {
-		return nil, fmt.Errorf("failed to query BTC tip: %v", err)
+		return nil, fmt.Errorf("failed to query BTC tip: %w", err)
 	}
 
 	return res.Header, nil
 }
 
 func (bc *BabylonController) ActivateDelegation(
-	ctx context.Context,
 	stakingTxHash chainhash.Hash,
 	proof *btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
-
 	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{
 		Signer:                  bc.getTxSigner(),
 		StakingTxHash:           stakingTxHash.String(),
@@ -923,5 +918,4 @@ func (bc *BabylonController) ActivateDelegation(
 	}
 
 	return res, nil
-
 }

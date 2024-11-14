@@ -99,7 +99,6 @@ func validateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
-
 	var info []*ValidityInfo
 
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
@@ -330,7 +329,7 @@ var checkPhase1StakingTransactionCmd = cli.Command{
 	Name:      "check-phase1-staking-transaction",
 	ShortName: "cpst",
 	Usage:     "Checks whether provided staking transactions is valid staking transaction (tx must be funded/have inputs)",
-	Description: "Checks staking transaction agains custom set of parameters. Use for custom transactions" +
+	Description: "Checks staking transaction against custom set of parameters. Use for custom transactions" +
 		"that may not obey the global parameters. For most cases use `check-phase1-staking-transaction-params`",
 	Flags: []cli.Flag{
 		cli.StringFlag{
@@ -527,7 +526,6 @@ func createPhase1StakingTransactionWithParams(ctx *cli.Context) error {
 
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputFilePath, err)
-
 	}
 
 	currentNetwork, err := utils.GetBtcNetworkParams(ctx.String(networkNameFlag))
@@ -891,7 +889,6 @@ func createWithdrawalInfo(
 	parsedStakingTransaction *btcstaking.ParsedV0StakingTx,
 	paramsForHeight *parser.ParsedVersionedGlobalParams,
 	net *chaincfg.Params) (*withdrawalInfo, error) {
-
 	if len(unbondingTxHex) > 0 {
 		// withdrawal from unbonding output
 		unbondingTx, _, err := bbn.NewBTCTxFromHex(unbondingTxHex)
@@ -957,41 +954,40 @@ func createWithdrawalInfo(
 			withdrawalFundingUtxo: unbondingTx.TxOut[0],
 			withdrawalSpendInfo:   timeLockPathInfo,
 		}, nil
-	} else {
-		stakingInfo, err := btcstaking.BuildStakingInfo(
-			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
-			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
-			paramsForHeight.CovenantPks,
-			paramsForHeight.CovenantQuorum,
-			parsedStakingTransaction.OpReturnData.StakingTime,
-			btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("error building staking info: %w", err)
-		}
-
-		timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("error building timelock path spend info: %w", err)
-		}
-
-		withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
-
-		if withdrawalOutputValue <= 0 {
-			return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
-		}
-
-		return &withdrawalInfo{
-			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
-			withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
-			withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
-			withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
-			withdrawalSpendInfo:   timelockPathInfo,
-		}, nil
 	}
+	stakingInfo, err := btcstaking.BuildStakingInfo(
+		parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+		[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+		paramsForHeight.CovenantPks,
+		paramsForHeight.CovenantQuorum,
+		parsedStakingTransaction.OpReturnData.StakingTime,
+		btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error building staking info: %w", err)
+	}
+
+	timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("error building timelock path spend info: %w", err)
+	}
+
+	withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
+
+	if withdrawalOutputValue <= 0 {
+		return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
+	}
+
+	return &withdrawalInfo{
+		withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+		withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
+		withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
+		withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
+		withdrawalSpendInfo:   timelockPathInfo,
+	}, nil
 }
 
 func createPhase1WitdrawalTransaction(ctx *cli.Context) error {

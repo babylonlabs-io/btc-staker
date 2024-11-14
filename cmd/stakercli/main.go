@@ -18,8 +18,8 @@ func fatal(err error) {
 const (
 	btcNetworkFlag          = "btc-network"
 	btcWalletHostFlag       = "btc-wallet-host"
-	btcWalletRpcUserFlag    = "btc-wallet-rpc-user"
-	btcWalletRpcPassFlag    = "btc-wallet-rpc-pass"
+	btcWalletRPCUserFlag    = "btc-wallet-rpc-user"
+	btcWalletRPCPassFlag    = "btc-wallet-rpc-pass"
 	btcWalletPassphraseFlag = "btc-wallet-passphrase"
 	btcWalletBackendFlag    = "btc-wallet-backend"
 )
@@ -40,12 +40,12 @@ func main() {
 			Value: "127.0.0.1:18554",
 		},
 		cli.StringFlag{
-			Name:  btcWalletRpcUserFlag,
+			Name:  btcWalletRPCUserFlag,
 			Usage: "Bitcoin wallet rpc user",
 			Value: "user",
 		},
 		cli.StringFlag{
-			Name:  btcWalletRpcPassFlag,
+			Name:  btcWalletRPCPassFlag,
 			Usage: "Bitcoin wallet rpc password",
 			Value: "pass",
 		},

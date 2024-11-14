@@ -240,7 +240,7 @@ var withdrawableTransactionsCmd = cli.Command{
 
 func checkHealth(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,7 @@ func checkHealth(ctx *cli.Context) error {
 
 func listOutputs(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func listOutputs(ctx *cli.Context) error {
 
 func babylonFinalityProviders(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -312,7 +312,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 
 func stake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -337,7 +337,7 @@ func stake(ctx *cli.Context) error {
 
 func unstake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -358,7 +358,7 @@ func unstake(ctx *cli.Context) error {
 
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func unbond(ctx *cli.Context) error {
 
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -400,7 +400,7 @@ func stakingDetails(ctx *cli.Context) error {
 
 func listStakingTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -432,7 +432,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 
 func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}

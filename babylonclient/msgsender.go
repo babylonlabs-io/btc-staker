@@ -66,22 +66,22 @@ func NewBabylonMsgSender(
 	}
 }
 
-func (b *BabylonMsgSender) Start() {
-	b.startOnce.Do(func() {
-		b.wg.Add(1)
-		go b.handleSentToBabylon()
+func (m *BabylonMsgSender) Start() {
+	m.startOnce.Do(func() {
+		m.wg.Add(1)
+		go m.handleSentToBabylon()
 	})
 }
 
-func (b *BabylonMsgSender) Stop() {
-	b.stopOnce.Do(func() {
-		close(b.quit)
-		b.wg.Wait()
+func (m *BabylonMsgSender) Stop() {
+	m.stopOnce.Do(func() {
+		close(m.quit)
+		m.wg.Wait()
 	})
 }
 
 // isBabylonBtcLcReady checks if Babylon BTC light client is ready to receive delegation
-func (b *BabylonMsgSender) isBabylonBtcLcReady(
+func (m *BabylonMsgSender) isBabylonBtcLcReady(
 	requiredInclusionBlockDepth uint32,
 	req *DelegationData,
 ) error {
@@ -90,7 +90,7 @@ func (b *BabylonMsgSender) isBabylonBtcLcReady(
 		return nil
 	}
 
-	depth, err := b.cl.QueryHeaderDepth(req.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash)
+	depth, err := m.cl.QueryHeaderDepth(req.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash)
 
 	if err != nil {
 		// If header is not known to babylon, or it is on LCFork, then most probably
@@ -103,7 +103,7 @@ func (b *BabylonMsgSender) isBabylonBtcLcReady(
 		return fmt.Errorf("error while getting delegation data: %w", err)
 	}
 
-	if uint32(depth) < requiredInclusionBlockDepth {
+	if depth < requiredInclusionBlockDepth {
 		return fmt.Errorf("btc lc not ready, required depth: %d, current depth: %d: %w", requiredInclusionBlockDepth, depth, ErrBabylonBtcLightClientNotReady)
 	}
 
@@ -183,5 +183,4 @@ func (m *BabylonMsgSender) SendDelegation(
 		m.sendDelegationRequestChan,
 		m.quit,
 	)
-
 }

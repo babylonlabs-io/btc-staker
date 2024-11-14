@@ -95,10 +95,10 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost stri
 	bitcoindPass := "pass"
 
 	// Wallet configuration
-	defaultConfig.WalletRpcConfig.Host = bitcoindHost
-	defaultConfig.WalletRpcConfig.User = bitcoindUser
-	defaultConfig.WalletRpcConfig.Pass = bitcoindPass
-	defaultConfig.WalletRpcConfig.DisableTls = true
+	defaultConfig.WalletRPCConfig.Host = bitcoindHost
+	defaultConfig.WalletRPCConfig.User = bitcoindUser
+	defaultConfig.WalletRPCConfig.Pass = bitcoindPass
+	defaultConfig.WalletRPCConfig.DisableTLS = true
 	defaultConfig.WalletConfig.WalletPass = passphrase
 	defaultConfig.WalletConfig.WalletName = walletName
 
@@ -141,13 +141,13 @@ func defaultStakerConfig(t *testing.T, walletName, passphrase, bitcoindHost stri
 type TestManager struct {
 	Config           *stakercfg.Config
 	Db               kvdb.Backend
-	Sa               *staker.StakerApp
+	Sa               *staker.App
 	BabylonClient    *babylonclient.BabylonController
 	WalletPubKey     *btcec.PublicKey
 	MinerAddr        btcutil.Address
 	wg               *sync.WaitGroup
 	serviceAddress   string
-	StakerClient     *dc.StakerServiceJsonRpcClient
+	StakerClient     *dc.StakerServiceJSONRPCClient
 	CovenantPrivKeys []*btcec.PrivateKey
 	BitcoindHandler  *BitcoindTestHandler
 	TestRpcClient    *rpcclient.Client
@@ -272,7 +272,7 @@ func StartManager(
 	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 	cfg, c := defaultStakerConfig(t, walletName, passphrase, rpcHost)
 	cfg.BtcNodeBackendConfig.Bitcoind.RPCHost = rpcHost
-	cfg.WalletRpcConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	cfg.WalletRPCConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 
 	// update port with the dynamically allocated one from docker
 	cfg.BabylonConfig.RPCAddr = fmt.Sprintf("http://localhost:%s", babylond.GetPort("26657/tcp"))
@@ -298,7 +298,7 @@ func StartManager(
 	require.NoError(t, err)
 	cfg.DBConfig.DBPath = dbTempDir
 
-	dbbackend, err := stakercfg.GetDbBackend(cfg.DBConfig)
+	dbbackend, err := stakercfg.GetDBBackend(cfg.DBConfig)
 	require.NoError(t, err)
 
 	m := metrics.NewStakerMetrics()
@@ -325,7 +325,7 @@ func StartManager(
 	addressString := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	addrPort := netip.MustParseAddrPort(addressString)
 	address := net.TCPAddrFromAddrPort(addrPort)
-	cfg.RpcListeners = append(cfg.RpcListeners, address) // todo(lazar): check with konrad who uses this
+	cfg.RPCListeners = append(cfg.RPCListeners, address) // todo(lazar): check with konrad who uses this
 
 	stakerService := service.NewStakerService(
 		cfg,
@@ -346,7 +346,7 @@ func StartManager(
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	stakerClient, err := dc.NewStakerServiceJsonRpcClient("tcp://" + addressString)
+	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
 	return &TestManager{
@@ -398,7 +398,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	logger.SetLevel(logrus.DebugLevel)
 	logger.Out = os.Stdout
 
-	dbbackend, err := stakercfg.GetDbBackend(tm.Config.DBConfig)
+	dbbackend, err := stakercfg.GetDBBackend(tm.Config.DBConfig)
 	require.NoError(t, err)
 	m := metrics.NewStakerMetrics()
 	stakerApp, err := staker.NewStakerAppFromConfig(tm.Config, logger, zapLogger, dbbackend, m)
@@ -426,7 +426,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
-	stakerClient, err := dc.NewStakerServiceJsonRpcClient("tcp://" + tm.serviceAddress)
+	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
 	require.NoError(t, err)
 	tm.StakerClient = stakerClient
 }
@@ -1313,7 +1313,6 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 
 	_, err = tm.BabylonClient.ActivateDelegation(
-		context.Background(),
 		*txHash,
 		proof,
 	)
@@ -1747,9 +1746,9 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 
 	// hardcoded config
 	scfg := stakercfg.DefaultConfig()
-	scfg.WalletRpcConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
-	scfg.WalletRpcConfig.User = "user"
-	scfg.WalletRpcConfig.Pass = "pass"
+	scfg.WalletRPCConfig.Host = fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	scfg.WalletRPCConfig.User = "user"
+	scfg.WalletRPCConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
 	scfg.WalletConfig.WalletPass = passphrase
 	scfg.WalletConfig.WalletName = walletName
@@ -1757,7 +1756,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
 	// Create wallet controller the same way as in staker program
-	wc, err := walletcontroller.NewRpcWalletController(&scfg)
+	wc, err := walletcontroller.NewRPCWalletController(&scfg)
 	require.NoError(t, err)
 
 	outputs, err := wc.ListOutputs(true)
@@ -1825,7 +1824,7 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
 
-	controller, err := walletcontroller.NewRpcWalletController(cfg)
+	controller, err := walletcontroller.NewRPCWalletController(cfg)
 	require.NoError(t, err)
 
 	err = controller.UnlockWallet(30)
