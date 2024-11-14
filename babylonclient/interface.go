@@ -54,6 +54,9 @@ type StakingParams struct {
 
 	// Maximum staking value required by babylon
 	MaxStakingValue btcutil.Amount
+
+	// AllowList expiration height
+	AllowListExpirationHeight uint64
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -72,6 +75,7 @@ type BabylonClient interface {
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
+	GetLatestBlockHeight() (uint64, error)
 }
 
 type MockBabylonClient struct {
@@ -157,6 +161,10 @@ func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationI
 func (m *MockBabylonClient) Undelegate(
 	_ *UndelegationRequest) (*pv.RelayerTxResponse, error) {
 	return &pv.RelayerTxResponse{Code: 0}, nil
+}
+
+func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
+	return 0, nil
 }
 
 func GetMockClient() *MockBabylonClient {

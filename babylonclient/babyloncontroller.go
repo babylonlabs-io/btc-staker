@@ -99,18 +99,19 @@ func NewBabylonController(
 }
 
 type StakingTrackerResponse struct {
-	SlashingPkScript        []byte
-	SlashingRate            sdkmath.LegacyDec
-	MinComissionRate        sdkmath.LegacyDec
-	CovenantPks             []*btcec.PublicKey
-	CovenantQuruomThreshold uint32
-	MinSlashingFee          btcutil.Amount
-	MinUnbondingTime        uint16
-	UnbondingFee            btcutil.Amount
-	MinStakingTime          uint16
-	MaxStakingTime          uint16
-	MinStakingValue         btcutil.Amount
-	MaxStakingValue         btcutil.Amount
+	SlashingPkScript          []byte
+	SlashingRate              sdkmath.LegacyDec
+	MinComissionRate          sdkmath.LegacyDec
+	CovenantPks               []*btcec.PublicKey
+	CovenantQuruomThreshold   uint32
+	MinSlashingFee            btcutil.Amount
+	MinUnbondingTime          uint16
+	UnbondingFee              btcutil.Amount
+	MinStakingTime            uint16
+	MaxStakingTime            uint16
+	MinStakingValue           btcutil.Amount
+	MaxStakingValue           btcutil.Amount
+	AllowListExpirationHeight uint64
 }
 
 type FinalityProviderInfo struct {
@@ -193,6 +194,7 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
 		MinStakingValue:           stakingTrackerParams.MinStakingValue,
 		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
 	}, nil
 }
 
@@ -215,6 +217,18 @@ func (bc *BabylonController) GetKeyAddress() sdk.AccAddress {
 	}
 
 	return addr
+}
+
+func (bc *BabylonController) GetLatestBlockHeight() (uint64, error) {
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	status, err := bc.bbnClient.RPCClient.Status(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint64(status.SyncInfo.LatestBlockHeight), nil
 }
 
 func (bc *BabylonController) getTxSigner() string {
@@ -501,18 +515,19 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 	}
 
 	return &StakingTrackerResponse{
-		SlashingPkScript:        response.Params.SlashingPkScript,
-		SlashingRate:            response.Params.SlashingRate,
-		MinComissionRate:        response.Params.MinCommissionRate,
-		CovenantPks:             covenantPks,
-		MinSlashingFee:          btcutil.Amount(response.Params.MinSlashingTxFeeSat),
-		CovenantQuruomThreshold: response.Params.CovenantQuorum,
-		MinUnbondingTime:        uint16(minUnbondingTimeBlocksU32),
-		UnbondingFee:            btcutil.Amount(response.Params.UnbondingFeeSat),
-		MinStakingTime:          uint16(minStakingTimeBlocksU32),
-		MaxStakingTime:          uint16(maxStakingTimeBlocksU32),
-		MinStakingValue:         btcutil.Amount(response.Params.MinStakingValueSat),
-		MaxStakingValue:         btcutil.Amount(response.Params.MaxStakingValueSat),
+		SlashingPkScript:          response.Params.SlashingPkScript,
+		SlashingRate:              response.Params.SlashingRate,
+		MinComissionRate:          response.Params.MinCommissionRate,
+		CovenantPks:               covenantPks,
+		MinSlashingFee:            btcutil.Amount(response.Params.MinSlashingTxFeeSat),
+		CovenantQuruomThreshold:   response.Params.CovenantQuorum,
+		MinUnbondingTime:          uint16(minUnbondingTimeBlocksU32),
+		UnbondingFee:              btcutil.Amount(response.Params.UnbondingFeeSat),
+		MinStakingTime:            uint16(minStakingTimeBlocksU32),
+		MaxStakingTime:            uint16(maxStakingTimeBlocksU32),
+		MinStakingValue:           btcutil.Amount(response.Params.MinStakingValueSat),
+		MaxStakingValue:           btcutil.Amount(response.Params.MaxStakingValueSat),
+		AllowListExpirationHeight: response.Params.AllowListExpirationHeight,
 	}, nil
 }
 
