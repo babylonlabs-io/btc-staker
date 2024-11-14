@@ -1783,6 +1783,21 @@ func (app *App) StakeFunds(
 		return nil, err
 	}
 
+	// Allow list is enabled, check if we are past the expiration height and we can
+	// create new delegations
+	if params.AllowListExpirationHeight > 0 {
+		latestBlockHeight, err := app.babylonClient.GetLatestBlockHeight()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		// we add +1 to account for comet bft lazy execution
+		if latestBlockHeight <= params.AllowListExpirationHeight+1 {
+			return nil, fmt.Errorf("allow is enabled, cannot create new delegations. Latest block height %d is before allow list expiration height %d",
+				latestBlockHeight, params.AllowListExpirationHeight)
+		}
+	}
+
 	slashingFee := app.getSlashingFee(params.MinSlashingTxFeeSat)
 
 	if stakingAmount <= slashingFee {
