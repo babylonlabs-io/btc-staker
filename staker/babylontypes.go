@@ -34,7 +34,7 @@ type sendDelegationRequest struct {
 	requiredInclusionBlockDepth uint32
 }
 
-func (app *StakerApp) buildOwnedDelegation(
+func (app *App) buildOwnedDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
@@ -71,7 +71,7 @@ func (app *StakerApp) buildOwnedDelegation(
 		externalData.babylonParams.SlashingPkScript,
 		externalData.babylonParams.UnbondingFee,
 		// TODO: Possiblity to customize finalization time
-		uint16(externalData.babylonParams.MinUnbondingTime)+1,
+		externalData.babylonParams.MinUnbondingTime+1,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		app.network,
@@ -133,11 +133,10 @@ func (app *StakerApp) buildOwnedDelegation(
 	return dg, nil
 }
 
-func (app *StakerApp) buildDelegation(
+func (app *App) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
-
 	if storedTx.Watched {
 		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.txHash)
 
@@ -169,19 +168,18 @@ func (app *StakerApp) buildDelegation(
 			&undelegationData,
 		)
 		return dg, nil
-	} else {
-		return app.buildOwnedDelegation(
-			req,
-			stakerAddress,
-			storedTx,
-		)
 	}
+	return app.buildOwnedDelegation(
+		req,
+		stakerAddress,
+		storedTx,
+	)
 }
 
-// TODO for now we launch this handler indefinitly. At some point we may introduce
+// TODO for now we launch this handler indefinitely. At some point we may introduce
 // timeout, and if signatures are not find in this timeout, then we may submit
 // evidence that covenant members are censoring our staking transactions
-func (app *StakerApp) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.Hash) {
+func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.Hash) {
 	checkSigTicker := time.NewTicker(app.config.StakerConfig.UnbondingTxCheckInterval)
 	defer checkSigTicker.Stop()
 	defer app.wg.Done()
@@ -266,7 +264,7 @@ func (app *StakerApp) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chai
 	}
 }
 
-func (app *StakerApp) finalityProviderExists(fpPk *btcec.PublicKey) error {
+func (app *App) finalityProviderExists(fpPk *btcec.PublicKey) error {
 	if fpPk == nil {
 		return fmt.Errorf("provided finality provider public key is nil")
 	}
@@ -301,7 +299,7 @@ func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
 // reaches verified state. i.e
 // - delegation is on babylon
 // - delegation has received enough covenant signatures
-func (app *StakerApp) activateVerifiedDelegation(
+func (app *App) activateVerifiedDelegation(
 	stakingTransaction *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTxHash *chainhash.Hash) {
@@ -352,10 +350,32 @@ func (app *StakerApp) activateVerifiedDelegation(
 					"stakingTxHash": stakingTxHash,
 				}).Debug("Delegation has been activated on the Babylon chain")
 
-				utils.PushOrQuit[*delegationActiveOnBabylonEvent](
-					app.delegationActiveOnBabylonEvChan,
-					&delegationActiveOnBabylonEvent{
+				info, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
+
+				if err != nil {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+						"err":           err,
+					}).Error("error getting staking transaction details from btc chain")
+
+					// failed to retrieve transaction details from bitcoind node, most probably
+					// connection error, we will try again in next iteration
+					continue
+				}
+
+				if status != walletcontroller.TxInChain {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+					}).Debug("Staking transaction active on babylon, but not on btc chain. Waiting for btc node to catch up")
+					continue
+				}
+
+				utils.PushOrQuit[*delegationActivatedPreApprovalEvent](
+					app.delegationActivatedPreApprovalEvChan,
+					&delegationActivatedPreApprovalEvent{
 						stakingTxHash: *stakingTxHash,
+						blockHash:     *info.BlockHash,
+						blockHeight:   info.BlockHeight,
 					},
 					app.quit,
 				)
@@ -455,9 +475,8 @@ func (app *StakerApp) activateVerifiedDelegation(
 					"stakingTxHash": stakingTxHash,
 				}).Error("failed to send staking transaction to btc chain to activate verified delegation")
 			}
-			// at this point we send signed staking transaciton to BTC chain, we will
+			// at this point we send signed staking transaction to BTC chain, we will
 			// still wait for its activation
-
 		case <-app.quit:
 			return
 		}

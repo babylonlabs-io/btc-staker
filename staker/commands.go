@@ -123,11 +123,11 @@ func newWatchedStakingCmd(
 	}
 }
 
-func (event *stakingRequestCmd) EventId() chainhash.Hash {
+func (req *stakingRequestCmd) EventID() chainhash.Hash {
 	// we do not have has for this event
 	return chainhash.Hash{}
 }
 
-func (event *stakingRequestCmd) EventDesc() string {
+func (req *stakingRequestCmd) EventDesc() string {
 	return "STAKING_REQUESTED_CMD"
 }

@@ -34,26 +34,29 @@ type StakingParams struct {
 	// The rate at which the staked funds will be slashed, expressed as a decimal.
 	SlashingRate sdkmath.LegacyDec
 
-	// Convenant quorum threshold
+	// Covenant quorum threshold
 	CovenantQuruomThreshold uint32
 
-	// Minimum unbonding time required by bayblon
+	// Minimum unbonding time required by babylon
 	MinUnbondingTime uint16
 
 	// Fee required by unbonding transaction
 	UnbondingFee btcutil.Amount
 
-	// Minimum staking time required by bayblon
+	// Minimum staking time required by babylon
 	MinStakingTime uint16
 
-	// Maximum staking time required by bayblon
+	// Maximum staking time required by babylon
 	MaxStakingTime uint16
 
-	// Minimum staking value required by bayblon
+	// Minimum staking value required by babylon
 	MinStakingValue btcutil.Amount
 
-	// Maximum staking value required by bayblon
+	// Maximum staking value required by babylon
 	MaxStakingValue btcutil.Amount
+
+	// AllowList expiration height
+	AllowListExpirationHeight uint64
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -67,12 +70,12 @@ type BabylonClient interface {
 	SingleKeyKeyring
 	Params() (*StakingParams, error)
 	Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error)
-	Undelegate(req *UndelegationRequest) (*pv.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
+	GetLatestBlockHeight() (uint64, error)
 }
 
 type MockBabylonClient struct {
@@ -125,7 +128,7 @@ func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse,
 	return &pv.RelayerTxResponse{Code: 0}, nil
 }
 
-func (m *MockBabylonClient) QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error) {
+func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*FinalityProvidersClientResponse, error) {
 	return &FinalityProvidersClientResponse{
 		FinalityProviders: []FinalityProviderInfo{*m.ActiveFinalityProvider},
 		Total:             1,
@@ -137,27 +140,31 @@ func (m *MockBabylonClient) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*
 		return &FinalityProviderClientResponse{
 			FinalityProvider: *m.ActiveFinalityProvider,
 		}, nil
-	} else {
-		return nil, ErrFinalityProviderDoesNotExist
 	}
+
+	return nil, ErrFinalityProviderDoesNotExist
 }
 
-func (m *MockBabylonClient) QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error) {
+func (m *MockBabylonClient) QueryHeaderDepth(_ *chainhash.Hash) (uint32, error) {
 	// return always confirmed depth
 	return m.ClientParams.ConfirmationTimeBlocks + 1, nil
 }
 
-func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {
+func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool, error) {
 	return false, nil
 }
 
-func (m *MockBabylonClient) QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error) {
+func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationInfo, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
 func (m *MockBabylonClient) Undelegate(
-	req *UndelegationRequest) (*pv.RelayerTxResponse, error) {
+	_ *UndelegationRequest) (*pv.RelayerTxResponse, error) {
 	return &pv.RelayerTxResponse{Code: 0}, nil
+}
+
+func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
+	return 0, nil
 }
 
 func GetMockClient() *MockBabylonClient {

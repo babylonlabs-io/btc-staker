@@ -8,14 +8,14 @@ import (
 )
 
 type StakingEvent interface {
-	// Each staking event is identified by initial staking transaction hash
-	EventId() chainhash.Hash
+	EventID() chainhash.Hash // Each staking event is identified by initial staking transaction hash
 	EventDesc() string
 }
 
 var _ StakingEvent = (*stakingTxBtcConfirmedEvent)(nil)
 var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
-var _ StakingEvent = (*delegationActiveOnBabylonEvent)(nil)
+var _ StakingEvent = (*delegationActivatedPostApprovalEvent)(nil)
+var _ StakingEvent = (*delegationActivatedPreApprovalEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
@@ -31,7 +31,7 @@ type stakingTxBtcConfirmedEvent struct {
 	inlusionBlock *wire.MsgBlock
 }
 
-func (event *stakingTxBtcConfirmedEvent) EventId() chainhash.Hash {
+func (event *stakingTxBtcConfirmedEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -45,7 +45,7 @@ type delegationSubmittedToBabylonEvent struct {
 	unbondingTime uint16
 }
 
-func (event *delegationSubmittedToBabylonEvent) EventId() chainhash.Hash {
+func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -59,7 +59,7 @@ type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
 	covenantUnbondingSignatures []cl.CovenantSignatureInfo
 }
 
-func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventId() chainhash.Hash {
+func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -73,7 +73,7 @@ type unbondingTxConfirmedOnBtcEvent struct {
 	blockHeight   uint32
 }
 
-func (event *unbondingTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *unbondingTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -85,7 +85,7 @@ type spendStakeTxConfirmedOnBtcEvent struct {
 	stakingTxHash chainhash.Hash
 }
 
-func (event *spendStakeTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *spendStakeTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -99,7 +99,7 @@ type criticalErrorEvent struct {
 	additionalContext string
 }
 
-func (event *criticalErrorEvent) EventId() chainhash.Hash {
+func (event *criticalErrorEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -107,28 +107,42 @@ func (event *criticalErrorEvent) EventDesc() string {
 	return "CRITICAL_ERROR"
 }
 
-func (app *StakerApp) logStakingEventReceived(event StakingEvent) {
+func (app *App) logStakingEventReceived(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Received staking event")
 }
 
-func (app *StakerApp) logStakingEventProcessed(event StakingEvent) {
+func (app *App) logStakingEventProcessed(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
 }
 
-type delegationActiveOnBabylonEvent struct {
+type delegationActivatedPostApprovalEvent struct {
 	stakingTxHash chainhash.Hash
 }
 
-func (event *delegationActiveOnBabylonEvent) EventId() chainhash.Hash {
+func (event *delegationActivatedPostApprovalEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
-func (event *delegationActiveOnBabylonEvent) EventDesc() string {
-	return "DELEGATION_ACTIVE_ON_BABYLON_EVENT"
+func (event *delegationActivatedPostApprovalEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON_POST_APPROVAL_EVENT"
+}
+
+type delegationActivatedPreApprovalEvent struct {
+	stakingTxHash chainhash.Hash
+	blockHash     chainhash.Hash
+	blockHeight   uint32
+}
+
+func (event *delegationActivatedPreApprovalEvent) EventID() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *delegationActivatedPreApprovalEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON_PRE_APPROVAL_EVENT"
 }

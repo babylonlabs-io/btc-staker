@@ -35,7 +35,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
-### Misc Improvements
+## v0.11.0
+
+### Improvements
+
+* [#93](https://github.com/babylonlabs-io/btc-staker/pull/93) Fix linting config
+* [#95](https://github.com/babylonlabs-io/btc-staker/pull/95) Bump babylon to v0.16
+* [#96](https://github.com/babylonlabs-io/btc-staker/pull/96) Check allow list
+expiration height before creating new delegations
+
+## v0.10.0
+
+* [#87](https://github.com/babylonlabs-io/btc-staker/pull/87) Bump babylon v15
+
+## v0.9.0
+
+### Bug fix
+
+* [#78](https://github.com/babylonlabs-io/btc-staker/pull/78) Fix
+`withdrawable-transactions` query bug, introduced when adding pre-approval
+transactions handling
+
+### Improvements
+
+* [#79](https://github.com/babylonlabs-io/btc-staker/pull/79) Remove `BTCUndelegate`
+message sending
+
+## v0.8.0
+
+### Improvements
 
 * [#51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
   for satoshi amount related values.

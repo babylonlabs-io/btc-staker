@@ -71,6 +71,7 @@ var (
 		Versions: []*parser.VersionedGlobalParams{&defaultParam},
 	}
 
+	//nolint:errchkjson
 	paramsMarshalled, _ = json.Marshal(globalParams)
 
 	parsedGlobalParams, _ = parser.ParseGlobalParams(&globalParams)
@@ -78,6 +79,7 @@ var (
 )
 
 func TestVerifyUnspendableKeyPath(t *testing.T) {
+	t.Parallel()
 	bz, err := hex.DecodeString(unspendableKeyPath)
 	require.NoError(t, err)
 
@@ -162,7 +164,7 @@ func genSchnorPubKeyHex(t *testing.T) string {
 	return hex.EncodeToString(schnorr.SerializePubKey(btcPub))
 }
 
-func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) (output string) {
+func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) string {
 	outPut := filepath.Join(t.TempDir(), fmt.Sprintf("%s-out.txt", datagen.GenRandomHexStr(r, 10)))
 	outPutFile, err := os.Create(outPut)
 	require.NoError(t, err)
@@ -221,7 +223,7 @@ func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, ar
 	return data
 }
 
-func randRange(r *rand.Rand, min, max int) int {
+func randRange(_ *rand.Rand, min, max int) int {
 	return rand.Intn(max+1-min) + min
 }
 
@@ -277,6 +279,7 @@ func createCustomValidStakeParams(
 }
 
 func TestCheckPhase1StakingTransactionCmd(t *testing.T) {
+	t.Parallel()
 	app := testApp()
 	stakerCliCheckP1StkTx := []string{
 		"stakercli", "transaction", "check-phase1-staking-transaction",
@@ -593,7 +596,6 @@ func FuzzCreateWithdrawalStaking(f *testing.F) {
 		require.Equal(t, ctrlBlockBytes, decoded.Inputs[0].TaprootLeafScript[0].ControlBlock)
 		require.Equal(t, tli.RevealedLeaf.Script, decoded.Inputs[0].TaprootLeafScript[0].Script)
 		require.Equal(t, tli.RevealedLeaf.LeafVersion, decoded.Inputs[0].TaprootLeafScript[0].LeafVersion)
-
 	})
 }
 
@@ -684,7 +686,7 @@ func FuzzCreateWithdrawalUnbonding(f *testing.F) {
 		addrPkScript, err := txscript.PayToAddrScript(addr)
 		require.NoError(t, err)
 		require.Equal(t, addrPkScript, wtx.TxOut[0].PkScript)
-		require.Equal(t, int64(unbondingInfo.UnbondingOutput.Value)-fee, wtx.TxOut[0].Value)
+		require.Equal(t, unbondingInfo.UnbondingOutput.Value-fee, wtx.TxOut[0].Value)
 
 		decodedBytes, err := base64.StdEncoding.DecodeString(wr.WithdrawalPsbtPacketBase64)
 		require.NoError(t, err)

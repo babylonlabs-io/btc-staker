@@ -42,14 +42,14 @@ type StakerService struct {
 	started int32
 
 	config *scfg.Config
-	staker *str.StakerApp
+	staker *str.App
 	logger *logrus.Logger
 	db     kvdb.Backend
 }
 
 func NewStakerService(
 	c *scfg.Config,
-	s *str.StakerApp,
+	s *str.App,
 	l *logrus.Logger,
 	db kvdb.Backend,
 ) *StakerService {
@@ -82,7 +82,6 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	stakingTimeBlocks int64,
 	sendToBabylonFirst bool,
 ) (*ResultStake, error) {
-
 	if stakingAmount <= 0 {
 		return nil, fmt.Errorf("staking amount must be positive")
 	}
@@ -94,7 +93,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -144,7 +143,6 @@ func (s *StakerService) bbnStakeFromBTCStakingTx(_ *rpctypes.Context,
 
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,
 	stakingTxHash string) (*StakingDetails, error) {
-
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
 		return nil, err
@@ -182,7 +180,6 @@ func (s *StakerService) spendStake(_ *rpctypes.Context,
 }
 
 func (s *StakerService) listOutputs(_ *rpctypes.Context) (*OutputsResponse, error) {
-
 	outputs, err := s.staker.ListUnspentOutputs()
 
 	if err != nil {
@@ -210,12 +207,12 @@ type PageParams struct {
 
 func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	var limit uint64
-
-	if limitPtr == nil {
+	switch {
+	case limitPtr == nil:
 		limit = defaultLimit
-	} else if *limitPtr < 0 {
+	case *limitPtr < 0:
 		return nil, fmt.Errorf("limit cannot be negative")
-	} else {
+	default:
 		limit = uint64(*limitPtr)
 	}
 
@@ -224,13 +221,13 @@ func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	}
 
 	var offset uint64
-
-	if offsetPtr == nil {
+	switch {
+	case offsetPtr == nil:
 		offset = defaultOffset
-	} else if *offsetPtr < 0 {
-		return nil, fmt.Errorf("offset cannot be negative")
-	} else {
+	case *offsetPtr >= 0:
 		offset = uint64(*offsetPtr)
+	default:
+		return nil, fmt.Errorf("offset cannot be negative")
 	}
 
 	return &PageParams{
@@ -240,7 +237,6 @@ func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 }
 
 func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*FinalityProvidersResponse, error) {
-
 	pageParams, err := getPageParams(offset, limit)
 	if err != nil {
 		return nil, err
@@ -316,7 +312,7 @@ func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, li
 		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx))
 	}
 
-	var lastIdx string = "0"
+	lastIdx := "0"
 	if len(stakingDetails) > 0 {
 		// this should ease up pagination i.e in case when whe have 1000 transactions, and we limit query to 50
 		// due to filetring we can retrun  response with 50 transactions when last one have index 400,
@@ -421,7 +417,7 @@ func (s *StakerService) watchStaking(
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -609,8 +605,8 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 		return fmt.Errorf(format, args...)
 	}
 
-	err := s.staker.Start()
-	if err != nil {
+	//nolint:contextcheck
+	if err := s.staker.Start(); err != nil {
 		return mkErr("error starting staker: %w", err)
 	}
 
@@ -626,8 +622,8 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	// TODO: investigate if we can use logrus directly to pass it to rpcserver
 	rpcLogger := log.NewTMLogger(s.logger.Writer())
 
-	listeners := make([]net.Listener, len(s.config.RpcListeners))
-	for i, listenAddr := range s.config.RpcListeners {
+	listeners := make([]net.Listener, len(s.config.RPCListeners))
+	for i, listenAddr := range s.config.RPCListeners {
 		listenAddressStr := listenAddr.Network() + "://" + listenAddr.String()
 		mux := http.NewServeMux()
 		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
