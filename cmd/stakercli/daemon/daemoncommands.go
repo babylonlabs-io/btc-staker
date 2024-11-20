@@ -30,6 +30,7 @@ var DaemonCommands = []cli.Command{
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
 			unbondCmd,
+			stakeFromPhase1Cmd,
 		},
 	},
 }
@@ -140,8 +141,8 @@ var stakeCmd = cli.Command{
 var stakeFromPhase1Cmd = cli.Command{
 	Name:        "stake-from-phase1",
 	ShortName:   "stfp1",
-	Usage:       "stake-from-phase1",
-	Description: "Creates a Babylon staking transaction from the Phase1 BTC staking tx",
+	Usage:       "stakercli stake-from-phase1 [fullpath/to/global_parameters.json]",
+	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking tx",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  stakingDaemonAddressFlag,
