@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	bbn "github.com/babylonlabs-io/babylon/types"
-	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	bbn "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
+	"github.com/btcsuite/btcd/btcec/v2"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"

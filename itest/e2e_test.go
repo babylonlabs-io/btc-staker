@@ -4,6 +4,7 @@
 package e2etest
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -880,16 +882,54 @@ func TestStakeFromPhase1(t *testing.T) {
 		"--covenant-quorum=1", "--network=regtest",
 	}
 
-	fpDepositStakingAmount := 5000000 // 0.05BTC
-	fpStakingTimeLock := 52560        // 1 year
+	paramsFilePath := testutil.CreateTempFileWithParams(t)
+	lastParams := testutil.GlobalParams.Versions[len(testutil.GlobalParams.Versions)-1]
+	fpDepositStakingAmount := lastParams.MinStakingAmount
+	inclusionHeight := lastParams.ActivationHeight + 1
+	stakingTime := lastParams.MaxStakingTime
 
 	createTxCmdArgs := []string{
+		paramsFilePath,
 		fmt.Sprintf("--staker-pk=%s", btcStakerPkHex),
 		fmt.Sprintf("--finality-provider-pk=%s", fpPkHex),
 		fmt.Sprintf("--staking-amount=%d", fpDepositStakingAmount),
-		fmt.Sprintf("--staking-time=%d", fpStakingTimeLock),
+		fmt.Sprintf("--tx-inclusion-height=%d", inclusionHeight),
+		fmt.Sprintf("--staking-time=%d", stakingTime),
 	}
-	res := testutil.AppRunCreatePhase1StakingTx(r, t, appCli, append(createTxCmdArgs, commonFlags...))
-	require.NotNil(t, res)
+	resP1StkTx := testutil.AppRunCreatePhase1StakingTxWithParams(r, t, appCli, append(createTxCmdArgs, commonFlags...))
+	require.NotNil(t, resP1StkTx)
+
+	stkTx, err := hex.DecodeString(resP1StkTx.StakingTxHex)
+	require.NoError(t, err)
+
+	var tx wire.MsgTx
+	rbuf := bytes.NewReader(stkTx)
+	err = tx.DeserializeNoWitness(rbuf)
+	require.NoError(t, err)
+
+	rpcBtc := tmBTC.TestRpcBtcClient
+	err = rpcBtc.WalletPassphrase(tmBTC.WalletPassphrase, 20)
+	require.NoError(t, err)
+
+	resFundRawStkTx, err := rpcBtc.FundRawTransaction(&tx, btcjson.FundRawTransactionOpts{
+		FeeRate: btcjson.Float64(0.02),
+	}, btcjson.Bool(false))
+	require.NoError(t, err)
+	require.NotNil(t, resFundRawStkTx)
+
+	signedStkTx, complete, err := rpcBtc.SignRawTransactionWithWallet(resFundRawStkTx.Transaction)
+	require.True(t, complete)
+	require.NoError(t, err)
+	require.NotNil(t, signedStkTx)
+
+	txHash, err := rpcBtc.SendRawTransaction(signedStkTx, false)
+	require.NoError(t, err)
+	require.NotNil(t, txHash)
+
+	tmBTC.BitcoindHandler.GenerateBlocks(5)
+
+	stkTxResult, err := rpcBtc.GetTransaction(txHash)
+	require.NoError(t, err)
+	require.NotNil(t, stkTxResult)
 	// tm.createAndRegisterFinalityProviders(t, testStakingData)
 }

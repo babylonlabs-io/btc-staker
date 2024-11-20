@@ -3,12 +3,13 @@ package e2etest
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ory/dockertest/v3"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ory/dockertest/v3"
 
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/stretchr/testify/require"
