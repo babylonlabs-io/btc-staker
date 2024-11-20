@@ -155,7 +155,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, err
 	}
 
-	if err := s.staker.AddBTCTransactionToDbAndCheckStatus(stakerAddr, wireStkTx, parsedStakingTx); err != nil {
+	if err := s.staker.AddBTCTransactionToDBAndCheckStatus(stakerAddr, wireStkTx, parsedStakingTx); err != nil {
 		return nil, err
 	}
 

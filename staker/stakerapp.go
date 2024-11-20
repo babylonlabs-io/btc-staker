@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
-	"github.com/babylonlabs-io/babylon/btcstaking"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/metrics"
@@ -507,12 +506,12 @@ func (app *App) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
 	}
 }
 
-// AddBTCTransactionToDbAndCheckStatus receives a BTC staking transaction that should be
+// AddBTCTransactionToDBAndCheckStatus receives a BTC staking transaction that should be
 // already included in the BTC network
-func (app *App) AddBTCTransactionToDbAndCheckStatus(
+func (app *App) AddBTCTransactionToDBAndCheckStatus(
 	stakerAddr btcutil.Address,
 	stkTx *wire.MsgTx,
-	parsedStakingTx *btcstaking.ParsedV0StakingTx,
+	parsedStakingTx *staking.ParsedV0StakingTx,
 ) error {
 	pop, err := app.createPop(stakerAddr)
 	if err != nil {
