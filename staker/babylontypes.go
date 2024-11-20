@@ -169,6 +169,7 @@ func (app *App) buildDelegation(
 		)
 		return dg, nil
 	}
+
 	return app.buildOwnedDelegation(
 		req,
 		stakerAddress,

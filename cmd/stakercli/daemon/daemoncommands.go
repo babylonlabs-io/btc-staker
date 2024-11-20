@@ -3,11 +3,14 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
+	"github.com/babylonlabs-io/networks/parameters/parser"
+	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 )
 
@@ -358,7 +361,7 @@ func stake(ctx *cli.Context) error {
 
 func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -369,44 +372,28 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	if len(stakingTransactionHash) == 0 {
 		return errors.New("staking tx hash hex is empty")
 	}
-	// staking details is not good, because it loads from db, not BTC
-	// stakingTx, err := client.StakingDetails(sctx, stakingTransactionHash)
 
-	// stakingTx.
+	inputGlobalParamsFilePath := ctx.Args().First()
+	if len(inputGlobalParamsFilePath) == 0 {
+		return errors.New("json file input is empty")
+	}
 
-	// sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
+	if !os.FileExists(inputGlobalParamsFilePath) {
+		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
+	}
 
-	// if err != nil {
-	// 	return nil, err
-	// }
+	// QUEST: should the params be loaded from the chain?
+	// maybe it is good to still use the global as input as this is actually
+	// a phase1 tx being transitioned, so the user would already have the global
+	// params in hand to create the BTC staking tx
+	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
+	if err != nil {
+		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
+	}
 
-	// pop, err := cl.NewBabylonBip322Pop(
-	// 	babylonAddrHash,
-	// 	sig,
-	// 	stakerAddress,
-	// )
-
-	// if err := app.txTracker.AddTransactionSentToBTC(
-	// 	stakingTx,
-	// 	stakingOutputIdx,
-	// 	cmd.stakingTime,
-	// 	cmd.fpBtcPks,
-	// 	babylonPopToDbPop(cmd.pop),
-	// 	cmd.stakerAddress,
-	// ); err != nil {
-	// 	return nil, err
-	// }
-
-	// results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// client.WatchStaking()
-
-	// helpers.PrintRespJSON(results)
-
-	return nil
+	stakerAddress := ctx.String(stakerAddressFlag)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, globalParams)
+	return err
 }
 
 func unstake(ctx *cli.Context) error {

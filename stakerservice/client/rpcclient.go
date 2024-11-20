@@ -4,6 +4,7 @@ import (
 	"context"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
+	"github.com/babylonlabs-io/networks/parameters/parser"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 
@@ -79,6 +80,26 @@ func (c *StakerServiceJSONRPCClient) Stake(
 	params["sendToBabylonFirst"] = sendToBabylonFirst
 
 	_, err := c.client.Call(ctx, "stake", params, result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
+	ctx context.Context,
+	stakerAddress string,
+	btcStkTxHash string,
+	globalParams *parser.ParsedGlobalParams,
+) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
+	result := new(service.ResultBtcDelegationFromBtcStakingTx)
+
+	params := make(map[string]interface{})
+	params["stakerAddress"] = stakerAddress
+	params["btcStkTxHash"] = btcStkTxHash
+	params["globalParams"] = globalParams
+
+	_, err := c.client.Call(ctx, "btc_delegation_from_btc_staking_tx", params, result)
 	if err != nil {
 		return nil, err
 	}

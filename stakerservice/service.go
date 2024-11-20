@@ -12,13 +12,16 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	str "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cometbft/cometbft/libs/log"
@@ -125,20 +128,56 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
-func (s *StakerService) bbnStakeFromBTCStakingTx(_ *rpctypes.Context,
+func (s *StakerService) btcDelegationFromBtcStakingTx(
+	_ *rpctypes.Context,
+	stakerAddress string,
 	btcStkTxHash string,
-) (*struct{}, error) {
+	globalParams *parser.ParsedGlobalParams,
+) (*ResultBtcDelegationFromBtcStakingTx, error) {
 	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
 	if err != nil {
 		return nil, err
 	}
 
-	tx, _, err := s.staker.TxDetailsBTC(stkTxHash)
+	stkTx, err := s.staker.TxDetailsBTC(stkTxHash)
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
+	if err != nil {
+		return nil, err
+	}
+
+	wireStkTx := stkTx.MsgTx()
+	parsedStakingTx, err := parseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.staker.AddBTCTransactionToDbAndCheckStatus(stakerAddr, wireStkTx, parsedStakingTx); err != nil {
+		return nil, err
+	}
+
+	return &ResultBtcDelegationFromBtcStakingTx{}, nil
+}
+
+func parseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chaincfg.Params, wireStkTx *wire.MsgTx) (*btcstaking.ParsedV0StakingTx, error) {
+	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
+		params := globalParams.Versions[i]
+		parsedStakingTx, err := btcstaking.ParseV0StakingTx(
+			wireStkTx,
+			params.Tag,
+			params.CovenantPks,
+			params.CovenantQuorum,
+			btcParams,
+		)
+		if err != nil {
+			continue
+		}
+		return parsedStakingTx, nil
+	}
+	return nil, fmt.Errorf("failed to parse BTC staking tx %s using the global params %+v", wireStkTx.TxHash().String(), globalParams)
 }
 
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,
@@ -562,13 +601,13 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		// info AP
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                     rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
-		"bbnStakeFromBTCStakingTx":  rpc.NewRPCFunc(s.bbnStakeFromBTCStakingTx, "btcStkTxHash"),
-		"staking_details":           rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
-		"spend_stake":               rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
-		"list_staking_transactions": rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
-		"unbond_staking":            rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"withdrawable_transactions": rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
+		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,globalParams"),
+		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
+		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
+		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		// watch api
 		"watch_staking_tx": rpc.NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
 

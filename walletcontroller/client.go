@@ -268,19 +268,14 @@ func (w *RPCWalletController) getTxDetails(req notifier.ConfRequest, msg string)
 	return res, nofitierStateToWalletState(state), nil
 }
 
-// Tx implements WalletController.
-func (w *RpcWalletController) Tx(txHash *chainhash.Hash) (*btcjson.GetTransactionResult, *btcutil.Tx, error) {
-	tx, err := w.Client.GetTransaction(txHash)
-	if err != nil {
-		return nil, nil, err
-	}
-
+// Tx returns the raw transaction based on the transaction hash
+func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*btcutil.Tx, error) {
 	rawTx, err := w.Client.GetRawTransaction(txHash)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return tx, rawTx, nil
+	return rawTx, nil
 }
 
 // Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index
