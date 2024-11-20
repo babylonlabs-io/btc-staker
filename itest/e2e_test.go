@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 
+	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
@@ -853,7 +855,6 @@ func TestStakeFromPhase1(t *testing.T) {
 	require.NoError(t, err)
 
 	tmBTC := StartManagerBtc(t, ctx, numMatureOutputsInWallet, manager)
-	// defer tm.Stop(t, cancel)
 	defer func() {
 		cancel()
 		manager.ClearResources()
@@ -862,8 +863,33 @@ func TestStakeFromPhase1(t *testing.T) {
 	minStakingTime := uint16(100)
 	stakerAddr := datagen.GenRandomAccount().GetAddress()
 	testStakingData := GetTestStakingData(t, tmBTC.WalletPubKey, minStakingTime, 10000, 1, stakerAddr)
-	fpKey := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[0]))
 
-	require.NotNil(t, fpKey)
+	fpPkHex := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[0]))
+	btcStakerPkHex := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.StakerKey))
+
+	appCli := testutil.TestApp()
+	tagHex := datagen.GenRandomHexStr(r, btcstaking.TagLen)
+
+	covenants := genCovenants(t, 1)
+
+	covenantPkHex := hex.EncodeToString(schnorr.SerializePubKey(covenants[0].PubKey()))
+
+	commonFlags := []string{
+		fmt.Sprintf("--covenant-committee-pks=%s", covenantPkHex),
+		fmt.Sprintf("--tag=%s", tagHex),
+		"--covenant-quorum=1", "--network=regtest",
+	}
+
+	fpDepositStakingAmount := 5000000 // 0.05BTC
+	fpStakingTimeLock := 52560        // 1 year
+
+	createTxCmdArgs := []string{
+		fmt.Sprintf("--staker-pk=%s", btcStakerPkHex),
+		fmt.Sprintf("--finality-provider-pk=%s", fpPkHex),
+		fmt.Sprintf("--staking-amount=%d", fpDepositStakingAmount),
+		fmt.Sprintf("--staking-time=%d", fpStakingTimeLock),
+	}
+	res := testutil.AppRunCreatePhase1StakingTx(r, t, appCli, append(createTxCmdArgs, commonFlags...))
+	require.NotNil(t, res)
 	// tm.createAndRegisterFinalityProviders(t, testStakingData)
 }

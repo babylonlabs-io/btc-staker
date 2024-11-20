@@ -159,7 +159,6 @@ type TestManager struct {
 }
 
 type TestManagerBTC struct {
-	RawAddr          string
 	MinerAddr        btcutil.Address
 	BitcoindHandler  *BitcoindTestHandler
 	Bitcoind         *dockertest.Resource
@@ -267,16 +266,31 @@ func StartManagerBtc(
 	minerAddressDecoded, err := btcutil.DecodeAddress(br.Address, regtestParams)
 	require.NoError(t, err)
 
+	bitcoindHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	rpcBtc := btcRpcTestClient(t, bitcoindHost)
+
+	err = rpcBtc.WalletPassphrase(passphrase, 20)
+	require.NoError(t, err)
+
+	info, err := rpcBtc.GetAddressInfo(br.Address)
+	require.NoError(t, err)
+
+	pubKeyHex := *info.PubKey
+	pubKeyBytes, err := hex.DecodeString(pubKeyHex)
+	require.NoError(t, err)
+
+	walletPubKey, err := btcec.ParsePubKey(pubKeyBytes)
+	require.NoError(t, err)
+
 	return &TestManagerBTC{
-		RawAddr:          br.Address,
 		MinerAddr:        minerAddressDecoded,
 		BitcoindHandler:  bitcoindHandler,
 		Bitcoind:         bitcoind,
 		WalletName:       walletName,
 		WalletPassphrase: passphrase,
-		// BitcoindHost:     bitcoindHost,
-		// WalletPubKey:     walletPubKey,
-		// TestRpcBtcClient: rpcBtc,
+		BitcoindHost:     bitcoindHost,
+		WalletPubKey:     walletPubKey,
+		TestRpcBtcClient: rpcBtc,
 	}
 }
 
@@ -291,13 +305,7 @@ func StartManager(
 	tmBTC := StartManagerBtc(t, ctx, numMatureOutputsInWallet, manager)
 
 	quorum := 2
-	numCovenants := 3
-	var coventantPrivKeys []*btcec.PrivateKey
-	for i := 0; i < numCovenants; i++ {
-		covenantPrivKey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		coventantPrivKeys = append(coventantPrivKeys, covenantPrivKey)
-	}
+	coventantPrivKeys := genCovenants(t, 3)
 
 	var buff bytes.Buffer
 	err = regtestParams.GenesisBlock.Header.Serialize(&buff)
@@ -321,11 +329,7 @@ func StartManager(
 	)
 	require.NoError(t, err)
 
-	rpcBtcHost := fmt.Sprintf("127.0.0.1:%s", tmBTC.Bitcoind.GetPort("18443/tcp"))
-	cfg, c := defaultStakerConfigAndBtc(t, tmBTC.WalletName, tmBTC.WalletPassphrase, rpcBtcHost)
-	cfg.BtcNodeBackendConfig.Bitcoind.RPCHost = rpcBtcHost
-	cfg.WalletRPCConfig.Host = fmt.Sprintf("127.0.0.1:%s", tmBTC.Bitcoind.GetPort("18443/tcp"))
-
+	cfg := defaultStakerConfig(t, tmBTC.WalletName, tmBTC.WalletPassphrase, tmBTC.BitcoindHost)
 	// update port with the dynamically allocated one from docker
 	cfg.BabylonConfig.RPCAddr = fmt.Sprintf("http://localhost:%s", babylond.GetPort("26657/tcp"))
 	cfg.BabylonConfig.GRPCAddr = fmt.Sprintf("https://localhost:%s", babylond.GetPort("9090/tcp"))
@@ -360,20 +364,6 @@ func StartManager(
 	bl, err := babylonclient.NewBabylonController(cfg.BabylonConfig, &cfg.ActiveNetParams, logger, zapLogger)
 	require.NoError(t, err)
 
-	walletClient := stakerApp.Wallet()
-
-	err = walletClient.UnlockWallet(20)
-	require.NoError(t, err)
-
-	info, err := c.GetAddressInfo(tmBTC.RawAddr)
-	require.NoError(t, err)
-
-	pubKeyHex := *info.PubKey
-	pubKeyBytes, err := hex.DecodeString(pubKeyHex)
-	require.NoError(t, err)
-	walletPubKey, err := btcec.ParsePubKey(pubKeyBytes)
-	require.NoError(t, err)
-
 	addressString := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	addrPort := netip.MustParseAddrPort(addressString)
 	address := net.TCPAddrFromAddrPort(addrPort)
@@ -401,9 +391,6 @@ func StartManager(
 	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
-	tmBTC.TestRpcBtcClient = c
-	tmBTC.WalletPubKey = walletPubKey
-	tmBTC.BitcoindHost = rpcBtcHost
 	return &TestManager{
 		Config:           cfg,
 		Db:               dbbackend,
@@ -416,6 +403,16 @@ func StartManager(
 		manager:          manager,
 		TestManagerBTC:   *tmBTC,
 	}
+}
+
+func genCovenants(t *testing.T, numCovenants int) []*btcec.PrivateKey {
+	var coventantPrivKeys []*btcec.PrivateKey
+	for i := 0; i < numCovenants; i++ {
+		covenantPrivKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		coventantPrivKeys = append(coventantPrivKeys, covenantPrivKey)
+	}
+	return coventantPrivKeys
 }
 
 func (tm *TestManager) Stop(t *testing.T, cancelFunc context.CancelFunc) {
