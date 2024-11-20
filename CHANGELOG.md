@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Improvements
+
+* [#90](https://github.com/babylonlabs-io/btc-staker/pull/90) Add CLI to create
+babylon BTC delegation from phase-1 BTC staking transaction.
+
 ## v0.11.0
 
 ### Improvements
