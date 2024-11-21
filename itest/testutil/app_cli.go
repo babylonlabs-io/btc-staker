@@ -111,13 +111,17 @@ func readFromFile(t *testing.T, f *os.File) string {
 	return buf.String()
 }
 
-func CreateTempFileWithParams(f require.TestingT) string {
-	file, err := os.CreateTemp("", "tmpParams-*.json")
-	require.NoError(f, err)
+func CreateTempFileWithParams(t require.TestingT) string {
+	return CreateTempFileWithData(t, "tmpParams-*.json", paramsMarshalled)
+}
+
+func CreateTempFileWithData(t require.TestingT, pattern string, data []byte) string {
+	file, err := os.CreateTemp("", pattern)
+	require.NoError(t, err)
 	defer file.Close()
-	_, err = file.Write(paramsMarshalled)
-	require.NoError(f, err)
+	_, err = file.Write(data)
+	require.NoError(t, err)
 	info, err := file.Stat()
-	require.NoError(f, err)
+	require.NoError(t, err)
 	return filepath.Join(os.TempDir(), info.Name())
 }

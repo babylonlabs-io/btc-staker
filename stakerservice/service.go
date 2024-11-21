@@ -136,33 +136,38 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 ) (*ResultBtcDelegationFromBtcStakingTx, error) {
 	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
 	if err != nil {
+		s.logger.WithError(err).Info("err parse tx hash")
 		return nil, err
 	}
 
 	stkTx, err := s.staker.TxDetailsBTC(stkTxHash)
 	if err != nil {
+		s.logger.WithError(err).Info("err get tx details")
 		return nil, err
 	}
 
 	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
 	if err != nil {
+		s.logger.WithError(err).Info("err decode staker addr")
 		return nil, err
 	}
 
 	wireStkTx := stkTx.MsgTx()
-	parsedStakingTx, err := parseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
+	parsedStakingTx, err := ParseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
 	if err != nil {
+		s.logger.WithError(err).Info("err parse staking Tx with global params")
 		return nil, err
 	}
 
 	if err := s.staker.AddBTCTransactionToDBAndCheckStatus(stakerAddr, wireStkTx, parsedStakingTx); err != nil {
+		s.logger.WithError(err).Info("err failing to add tx to DB and check status in app")
 		return nil, err
 	}
 
 	return &ResultBtcDelegationFromBtcStakingTx{}, nil
 }
 
-func parseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chaincfg.Params, wireStkTx *wire.MsgTx) (*btcstaking.ParsedV0StakingTx, error) {
+func ParseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chaincfg.Params, wireStkTx *wire.MsgTx) (*btcstaking.ParsedV0StakingTx, error) {
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
 		params := globalParams.Versions[i]
 		parsedStakingTx, err := btcstaking.ParseV0StakingTx(
@@ -650,7 +655,10 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	}
 
 	defer func() {
-		_ = s.staker.Stop()
+		err := s.staker.Stop()
+		if err != nil {
+			s.logger.WithError(err).Info("staker stop with error")
+		}
 		s.logger.Info("staker stop complete")
 	}()
 
@@ -688,7 +696,7 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 		// TODO: Add additional middleware, like CORS, TLS, etc.
 		// TODO: Consider we need some websockets for some notications
 		go func() {
-			s.logger.Debug("Starting Json RPC HTTP server ", "address", listenAddressStr)
+			s.logger.Debug("Starting Json RPC HTTP server ", "address: ", listenAddressStr)
 
 			err := rpc.Serve(
 				listener,
@@ -696,8 +704,10 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 				rpcLogger,
 				config,
 			)
-
-			s.logger.Error("Json RPC HTTP server stopped ", "err", err)
+			if err != nil {
+				s.logger.WithError(err).Error("problem at JSON RPC HTTP server")
+			}
+			s.logger.Info("Json RPC HTTP server stopped ")
 		}()
 
 		listeners[i] = listener

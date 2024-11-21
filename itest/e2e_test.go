@@ -7,12 +7,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
+	"github.com/babylonlabs-io/btc-staker/stakerservice"
+	"github.com/babylonlabs-io/networks/parameters/parser"
 
 	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
@@ -872,18 +875,45 @@ func TestStakeFromPhase1(t *testing.T) {
 	appCli := testutil.TestApp()
 	tagHex := datagen.GenRandomHexStr(r, btcstaking.TagLen)
 
-	covenants := genCovenants(t, 1)
-
-	covenantPkHex := hex.EncodeToString(schnorr.SerializePubKey(covenants[0].PubKey()))
+	coventantPrivKeys := genCovenants(t, 1)
+	covenantPkSerializedHex := hex.EncodeToString(schnorr.SerializePubKey(coventantPrivKeys[0].PubKey()))
+	covenantPkHex := hex.EncodeToString(coventantPrivKeys[0].PubKey().SerializeCompressed())
 
 	commonFlags := []string{
-		fmt.Sprintf("--covenant-committee-pks=%s", covenantPkHex),
+		fmt.Sprintf("--covenant-committee-pks=%s", covenantPkSerializedHex),
 		fmt.Sprintf("--tag=%s", tagHex),
 		"--covenant-quorum=1", "--network=regtest",
 	}
 
-	paramsFilePath := testutil.CreateTempFileWithParams(t)
-	lastParams := testutil.GlobalParams.Versions[len(testutil.GlobalParams.Versions)-1]
+	lastParams := &parser.VersionedGlobalParams{
+		Version:          0,
+		ActivationHeight: 100,
+		StakingCap:       3000000,
+		CapHeight:        0,
+		Tag:              "01020304",
+		CovenantPks: []string{
+			covenantPkHex,
+		},
+		CovenantQuorum:    1,
+		UnbondingTime:     1000,
+		UnbondingFee:      1000,
+		MaxStakingAmount:  300000,
+		MinStakingAmount:  3000,
+		MaxStakingTime:    10000,
+		MinStakingTime:    100,
+		ConfirmationDepth: 10,
+	}
+
+	globalParams := parser.GlobalParams{
+		Versions: []*parser.VersionedGlobalParams{
+			lastParams,
+		},
+	}
+
+	globalParamsMarshalled, err := json.Marshal(globalParams)
+	require.NoError(t, err)
+
+	paramsFilePath := testutil.CreateTempFileWithData(t, "tmpParams-*.json", globalParamsMarshalled)
 	fpDepositStakingAmount := lastParams.MinStakingAmount
 	inclusionHeight := lastParams.ActivationHeight + 1
 	stakingTime := lastParams.MaxStakingTime
@@ -926,13 +956,43 @@ func TestStakeFromPhase1(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, txHash)
 
-	tmBTC.BitcoindHandler.GenerateBlocks(5)
+	tmBTC.BitcoindHandler.GenerateBlocks(15)
 
 	stkTxResult, err := rpcBtc.GetTransaction(txHash)
 	require.NoError(t, err)
 	require.NotNil(t, stkTxResult)
 
+	parsedGlobalParams, err := parser.ParseGlobalParams(&globalParams)
+	require.NoError(t, err)
+
+	// just to make sure it is able to parse the staking tx
+	paserdStkTx, err := stakerservice.ParseV0StakingTx(parsedGlobalParams, regtestParams, signedStkTx)
+	require.NoError(t, err)
+	require.NotNil(t, paserdStkTx)
+
 	// at this point the BTC staking transaction is confirmed and was mined in BTC
 	// so the babylon chain can start and try to transition this staking BTC tx
 	// into a babylon BTC delegation in the cosmos side.
+	tmStakerApp := StartManagerStakerApp(t, ctx, tmBTC, manager, 1, coventantPrivKeys)
+
+	tm := &TestManager{
+		manager:              manager,
+		TestManagerStakerApp: *tmStakerApp,
+		TestManagerBTC:       *tmBTC,
+	}
+	defer tm.Stop(t, cancel)
+
+	_, _, err = tm.manager.BabylondTxBankMultiSend(t, "node0", "1000000ubbn", testStakingData.FinalityProviderBabylonAddrs[0].String())
+	require.NoError(t, err)
+
+	tm.insertAllMinedBlocksToBabylon(t)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	stakerAddrStr := tmBTC.MinerAddr.String()
+	stkTxHash := txHash.String()
+	// miner address and the staker addr are the same guy
+	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, parsedGlobalParams)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
 }

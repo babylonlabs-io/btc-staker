@@ -732,7 +732,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 		Pop:         pop,
 	}
 
-	fpPrivKeyBBN.PubKey()
 	relayerMsgs := bbnclient.ToProviderMsgs([]sdk.Msg{registerMsg})
 
 	_, err := bc.bbnClient.SendMessageWithSigner(context.Background(), fpAddr, fpPrivKeyBBN, relayerMsgs)

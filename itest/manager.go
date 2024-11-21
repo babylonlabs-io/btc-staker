@@ -309,8 +309,8 @@ func StartManager(
 	tmBTC := StartManagerBtc(t, ctx, numMatureOutputsInWallet, manager)
 
 	quorum := 2
-	covenantsNum := 3
-	tmStakerApp := StartManagerStakerApp(t, ctx, tmBTC, manager, quorum, covenantsNum)
+	coventantPrivKeys := genCovenants(t, 3)
+	tmStakerApp := StartManagerStakerApp(t, ctx, tmBTC, manager, quorum, coventantPrivKeys)
 
 	return &TestManager{
 		manager:              manager,
@@ -325,10 +325,9 @@ func StartManagerStakerApp(
 	tmBTC *TestManagerBTC,
 	manager *containers.Manager,
 	covenantQuorum int,
-	covenantNum int,
+	coventantPrivKeys []*btcec.PrivateKey,
 ) *TestManagerStakerApp {
-	coventantPrivKeys := genCovenants(t, covenantNum)
-	coventantPubKeys := make([]*btcec.PublicKey, covenantNum)
+	coventantPubKeys := make([]*btcec.PublicKey, len(coventantPrivKeys))
 	for i, cvPrivKey := range coventantPrivKeys {
 		coventantPubKeys[i] = cvPrivKey.PubKey()
 	}
@@ -414,6 +413,8 @@ func StartManagerStakerApp(
 
 	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
+
+	fmt.Printf("\n log config %+v", cfg)
 
 	return &TestManagerStakerApp{
 		Config:           cfg,
