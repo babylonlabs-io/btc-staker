@@ -179,19 +179,11 @@ func (m *Manager) RunBabylondResource(
 	coventantQuorum int,
 	baseHeaderHex string,
 	slashingPkScript string,
-	covenantPk1 *btcec.PublicKey,
-	covenantPk2 *btcec.PublicKey,
-	covenantPk3 *btcec.PublicKey,
+	covenantPks ...*btcec.PublicKey,
 ) (*dockertest.Resource, error) {
-	covenantPks := []*bbn.BIP340PubKey{
-		bbn.NewBIP340PubKeyFromBTCPK(covenantPk1),
-		bbn.NewBIP340PubKeyFromBTCPK(covenantPk2),
-		bbn.NewBIP340PubKeyFromBTCPK(covenantPk3),
-	}
-
-	var covenantPksStr []string
-	for _, pk := range covenantPks {
-		covenantPksStr = append(covenantPksStr, pk.MarshalHex())
+	covenantPksStr := make([]string, len(covenantPks))
+	for i, cvPk := range covenantPks {
+		covenantPksStr[i] = bbn.NewBIP340PubKeyFromBTCPK(cvPk).MarshalHex()
 	}
 
 	cmd := []string{

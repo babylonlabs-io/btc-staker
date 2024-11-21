@@ -146,6 +146,12 @@ func btcRpcTestClient(t *testing.T, bitcoindHost string) *rpcclient.Client {
 }
 
 type TestManager struct {
+	manager *containers.Manager
+	TestManagerStakerApp
+	TestManagerBTC
+}
+
+type TestManagerStakerApp struct {
 	Config           *stakercfg.Config
 	Db               kvdb.Backend
 	Sa               *staker.App
@@ -154,8 +160,6 @@ type TestManager struct {
 	serviceAddress   string
 	StakerClient     *dc.StakerServiceJSONRPCClient
 	CovenantPrivKeys []*btcec.PrivateKey
-	manager          *containers.Manager
-	TestManagerBTC
 }
 
 type TestManagerBTC struct {
@@ -305,10 +309,32 @@ func StartManager(
 	tmBTC := StartManagerBtc(t, ctx, numMatureOutputsInWallet, manager)
 
 	quorum := 2
-	coventantPrivKeys := genCovenants(t, 3)
+	covenantsNum := 3
+	tmStakerApp := StartManagerStakerApp(t, ctx, tmBTC, manager, quorum, covenantsNum)
+
+	return &TestManager{
+		manager:              manager,
+		TestManagerStakerApp: *tmStakerApp,
+		TestManagerBTC:       *tmBTC,
+	}
+}
+
+func StartManagerStakerApp(
+	t *testing.T,
+	ctx context.Context,
+	tmBTC *TestManagerBTC,
+	manager *containers.Manager,
+	covenantQuorum int,
+	covenantNum int,
+) *TestManagerStakerApp {
+	coventantPrivKeys := genCovenants(t, covenantNum)
+	coventantPubKeys := make([]*btcec.PublicKey, covenantNum)
+	for i, cvPrivKey := range coventantPrivKeys {
+		coventantPubKeys[i] = cvPrivKey.PubKey()
+	}
 
 	var buff bytes.Buffer
-	err = regtestParams.GenesisBlock.Header.Serialize(&buff)
+	err := regtestParams.GenesisBlock.Header.Serialize(&buff)
 	require.NoError(t, err)
 	baseHeaderHex := hex.EncodeToString(buff.Bytes())
 
@@ -320,12 +346,10 @@ func StartManager(
 	babylond, err := manager.RunBabylondResource(
 		t,
 		tmpDir,
-		quorum,
+		covenantQuorum,
 		baseHeaderHex,
 		hex.EncodeToString(pkScript), // all slashing will be sent back to wallet
-		coventantPrivKeys[0].PubKey(),
-		coventantPrivKeys[1].PubKey(),
-		coventantPrivKeys[2].PubKey(),
+		coventantPubKeys...,
 	)
 	require.NoError(t, err)
 
@@ -391,7 +415,7 @@ func StartManager(
 	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
-	return &TestManager{
+	return &TestManagerStakerApp{
 		Config:           cfg,
 		Db:               dbbackend,
 		Sa:               stakerApp,
@@ -400,8 +424,6 @@ func StartManager(
 		serviceAddress:   addressString,
 		StakerClient:     stakerClient,
 		CovenantPrivKeys: coventantPrivKeys,
-		manager:          manager,
-		TestManagerBTC:   *tmBTC,
 	}
 }
 

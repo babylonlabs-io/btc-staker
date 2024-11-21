@@ -70,9 +70,6 @@ var (
 		Versions: []*parser.VersionedGlobalParams{&defaultParam},
 	}
 
-	//nolint:errchkjson
-	paramsMarshalled, _ = json.Marshal(globalParams)
-
 	parsedGlobalParams, _ = parser.ParseGlobalParams(&globalParams)
 	lastParams            = parsedGlobalParams.Versions[len(parsedGlobalParams.Versions)-1]
 )
@@ -189,8 +186,8 @@ func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, ar
 	return data
 }
 
-func randRange(_ *rand.Rand, min, max int) int {
-	return rand.Intn(max+1-min) + min
+func randRange(_ *rand.Rand, minV, maxV int) int {
+	return rand.Intn(maxV+1-minV) + minV
 }
 
 type StakeParameters struct {

@@ -931,5 +931,8 @@ func TestStakeFromPhase1(t *testing.T) {
 	stkTxResult, err := rpcBtc.GetTransaction(txHash)
 	require.NoError(t, err)
 	require.NotNil(t, stkTxResult)
-	// tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	// at this point the BTC staking transaction is confirmed and was mined in BTC
+	// so the babylon chain can start and try to transition this staking BTC tx
+	// into a babylon BTC delegation in the cosmos side.
 }
