@@ -168,6 +168,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 }
 
 func ParseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chaincfg.Params, wireStkTx *wire.MsgTx) (*btcstaking.ParsedV0StakingTx, error) {
+	var lastErr error
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
 		params := globalParams.Versions[i]
 		parsedStakingTx, err := btcstaking.ParseV0StakingTx(
@@ -178,11 +179,12 @@ func ParseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chainc
 			btcParams,
 		)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		return parsedStakingTx, nil
 	}
-	return nil, fmt.Errorf("failed to parse BTC staking tx %s using the global params %+v", wireStkTx.TxHash().String(), globalParams)
+	return nil, fmt.Errorf("err: %s failed to parse BTC staking tx %s using the global params %+v", lastErr.Error(), wireStkTx.TxHash().String(), globalParams)
 }
 
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,

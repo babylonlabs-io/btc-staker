@@ -44,6 +44,7 @@ import (
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -170,6 +171,7 @@ type TestManagerBTC struct {
 	WalletPassphrase string
 	BitcoindHost     string
 	WalletPubKey     *btcec.PublicKey
+	WalletAddrInfo   *btcjson.GetAddressInfoResult
 	TestRpcBtcClient *rpcclient.Client
 }
 
@@ -294,6 +296,7 @@ func StartManagerBtc(
 		WalletPassphrase: passphrase,
 		BitcoindHost:     bitcoindHost,
 		WalletPubKey:     walletPubKey,
+		WalletAddrInfo:   info,
 		TestRpcBtcClient: rpcBtc,
 	}
 }

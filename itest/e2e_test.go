@@ -17,7 +17,6 @@ import (
 	"github.com/babylonlabs-io/btc-staker/stakerservice"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 
-	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
@@ -860,10 +859,6 @@ func TestStakeFromPhase1(t *testing.T) {
 	require.NoError(t, err)
 
 	tmBTC := StartManagerBtc(t, ctx, numMatureOutputsInWallet, manager)
-	defer func() {
-		cancel()
-		manager.ClearResources()
-	}()
 
 	minStakingTime := uint16(100)
 	stakerAddr := datagen.GenRandomAccount().GetAddress()
@@ -873,17 +868,10 @@ func TestStakeFromPhase1(t *testing.T) {
 	btcStakerPkHex := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.StakerKey))
 
 	appCli := testutil.TestApp()
-	tagHex := datagen.GenRandomHexStr(r, btcstaking.TagLen)
 
 	coventantPrivKeys := genCovenants(t, 1)
 	covenantPkSerializedHex := hex.EncodeToString(schnorr.SerializePubKey(coventantPrivKeys[0].PubKey()))
 	covenantPkHex := hex.EncodeToString(coventantPrivKeys[0].PubKey().SerializeCompressed())
-
-	commonFlags := []string{
-		fmt.Sprintf("--covenant-committee-pks=%s", covenantPkSerializedHex),
-		fmt.Sprintf("--tag=%s", tagHex),
-		"--covenant-quorum=1", "--network=regtest",
-	}
 
 	lastParams := &parser.VersionedGlobalParams{
 		Version:          0,
@@ -917,6 +905,12 @@ func TestStakeFromPhase1(t *testing.T) {
 	fpDepositStakingAmount := lastParams.MinStakingAmount
 	inclusionHeight := lastParams.ActivationHeight + 1
 	stakingTime := lastParams.MaxStakingTime
+
+	commonFlags := []string{
+		fmt.Sprintf("--covenant-committee-pks=%s", covenantPkSerializedHex),
+		fmt.Sprintf("--tag=%s", lastParams.Tag),
+		"--covenant-quorum=1", "--network=regtest",
+	}
 
 	createTxCmdArgs := []string{
 		paramsFilePath,
@@ -965,7 +959,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	parsedGlobalParams, err := parser.ParseGlobalParams(&globalParams)
 	require.NoError(t, err)
 
-	// just to make sure it is able to parse the staking tx
+	// Makes sure it is able to parse the staking tx
 	paserdStkTx, err := stakerservice.ParseV0StakingTx(parsedGlobalParams, regtestParams, signedStkTx)
 	require.NoError(t, err)
 	require.NotNil(t, paserdStkTx)
@@ -982,15 +976,26 @@ func TestStakeFromPhase1(t *testing.T) {
 	}
 	defer tm.Stop(t, cancel)
 
+	// verify that the chain is healthy
+	require.Eventually(t, func() bool {
+		_, err := tm.BabylonClient.Params()
+		return err == nil
+	}, time.Minute, 200*time.Millisecond)
+
+	// funds the fpd
 	_, _, err = tm.manager.BabylondTxBankMultiSend(t, "node0", "1000000ubbn", testStakingData.FinalityProviderBabylonAddrs[0].String())
 	require.NoError(t, err)
 
 	tm.insertAllMinedBlocksToBabylon(t)
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
+	// tmBTC.WalletAddrInfo.
 	stakerAddrStr := tmBTC.MinerAddr.String()
-	stkTxHash := txHash.String()
-	// miner address and the staker addr are the same guy
+	// stakerAddrStr := tmBTC.WalletPubKey
+	// stakerAddrStr := btcStakerPkHex
+	stkTxHash := signedStkTx.TxHash().String()
+
+	// miner address and the staker addr are the same guy, maybe not
 	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, parsedGlobalParams)
 	require.NoError(t, err)
 	require.NotNil(t, res)
