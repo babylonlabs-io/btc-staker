@@ -66,7 +66,7 @@ type WalletController interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
 	ListOutputs(onlySpendable bool) ([]Utxo, error)
 	TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error)
-	Tx(txHash *chainhash.Hash) (*btcutil.Tx, error)
+	Tx(txHash *chainhash.Hash) (*wire.MsgTx, error)
 	SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error)
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.

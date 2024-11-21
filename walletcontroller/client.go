@@ -269,13 +269,24 @@ func (w *RPCWalletController) getTxDetails(req notifier.ConfRequest, msg string)
 }
 
 // Tx returns the raw transaction based on the transaction hash
-func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*btcutil.Tx, error) {
-	rawTx, err := w.Client.GetRawTransaction(txHash)
+func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*wire.MsgTx, error) {
+	rawTxRes, err := w.Client.GetRawTransactionVerbose(txHash)
 	if err != nil {
 		return nil, err
 	}
 
-	return rawTx, nil
+	// Deserialize the hex-encoded transaction to include it in the
+	// confirmation details.
+	rawTx, err := hex.DecodeString(rawTxRes.Hex)
+	if err != nil {
+		return nil, fmt.Errorf("unable to deserialize tx %v: %v", rawTxRes.Txid, err)
+	}
+	var tx wire.MsgTx
+	if err := tx.Deserialize(bytes.NewReader(rawTx)); err != nil {
+		return nil, fmt.Errorf("unable to deserialize tx %v: %v", rawTxRes.Txid, err)
+	}
+
+	return &tx, nil
 }
 
 // Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index

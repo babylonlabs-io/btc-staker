@@ -2242,7 +2242,7 @@ func (app *App) BtcParams() *chaincfg.Params {
 	return app.network
 }
 
-func (app *App) TxDetailsBTC(stakingTxHash *chainhash.Hash) (*btcutil.Tx, error) {
+func (app *App) TxDetailsBTC(stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
 	return app.wc.Tx(stakingTxHash)
 }
 

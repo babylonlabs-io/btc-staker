@@ -140,7 +140,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, err
 	}
 
-	stkTx, err := s.staker.TxDetailsBTC(stkTxHash)
+	stkTxTaaao, err := s.staker.TxDetailsBTC(stkTxHash)
 	if err != nil {
 		s.logger.WithError(err).Info("err get tx details")
 		return nil, err
@@ -152,7 +152,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, err
 	}
 
-	wireStkTx := stkTx.MsgTx()
+	wireStkTx := stkTxTaaao
 	parsedStakingTx, err := ParseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
 	if err != nil {
 		s.logger.WithError(err).Info("err parse staking Tx with global params")
