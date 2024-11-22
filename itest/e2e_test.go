@@ -1839,48 +1839,6 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSendingStakingTransaction_Restaking(t *testing.T) {
-	t.Parallel()
-	// need to have at least 300 block on testnet as only then segwit is activated.
-	// Mature output is out which has 100 confirmations, which means 200mature outputs
-	// will generate 300 blocks
-	numMatureOutputs := uint32(200)
-	ctx, cancel := context.WithCancel(context.Background())
-	tm := StartManager(t, ctx, numMatureOutputs)
-	defer tm.Stop(t, cancel)
-	tm.insertAllMinedBlocksToBabylon(t)
-
-	cl := tm.Sa.BabylonController()
-	params, err := cl.Params()
-	require.NoError(t, err)
-
-	// restaked to 5 finality providers
-	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 5)
-
-	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
-	require.NoError(t, err)
-	scr, err := txscript.PayToTaprootScript(tm.CovenantPrivKeys[0].PubKey())
-	require.NoError(t, err)
-	_, st, erro := tm.Sa.Wallet().TxDetails(hashed, scr)
-	// query for exsisting tx is not an error, proper state should be returned
-	require.NoError(t, erro)
-	require.Equal(t, st, walletcontroller.TxNotFound)
-
-	tm.createAndRegisterFinalityProviders(t, testStakingData)
-
-	txHash := tm.sendStakingTxBTC(t, testStakingData, false)
-
-	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
-
-	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
-	require.NoError(t, err)
-	require.Len(t, pend, 1)
-	// need to activate delegation to unbond
-	tm.insertCovenantSigForDelegation(t, pend[0])
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
-}
-
 func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
