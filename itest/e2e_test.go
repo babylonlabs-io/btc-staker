@@ -14,9 +14,9 @@ import (
 
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/babylonlabs-io/btc-staker/stakerservice"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 
+	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
@@ -902,7 +902,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	require.NoError(t, err)
 
 	paramsFilePath := testutil.CreateTempFileWithData(t, "tmpParams-*.json", globalParamsMarshalled)
-	fpDepositStakingAmount := lastParams.MinStakingAmount
+	stakingAmount := lastParams.MaxStakingAmount - 1
 	inclusionHeight := lastParams.ActivationHeight + 1
 	stakingTime := lastParams.MaxStakingTime
 
@@ -916,7 +916,7 @@ func TestStakeFromPhase1(t *testing.T) {
 		paramsFilePath,
 		fmt.Sprintf("--staker-pk=%s", btcStakerPkHex),
 		fmt.Sprintf("--finality-provider-pk=%s", fpPkHex),
-		fmt.Sprintf("--staking-amount=%d", fpDepositStakingAmount),
+		fmt.Sprintf("--staking-amount=%d", stakingAmount),
 		fmt.Sprintf("--tx-inclusion-height=%d", inclusionHeight),
 		fmt.Sprintf("--staking-time=%d", stakingTime),
 	}
@@ -949,6 +949,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	txHash, err := rpcBtc.SendRawTransaction(signedStkTx, false)
 	require.NoError(t, err)
 	require.NotNil(t, txHash)
+	require.Equal(t, txHash.String(), signedStkTx.TxHash().String())
 
 	tmBTC.BitcoindHandler.GenerateBlocks(15)
 
@@ -959,8 +960,16 @@ func TestStakeFromPhase1(t *testing.T) {
 	parsedGlobalParams, err := parser.ParseGlobalParams(&globalParams)
 	require.NoError(t, err)
 
+	lastParamsVersioned := parsedGlobalParams.Versions[len(parsedGlobalParams.Versions)-1]
+
 	// Makes sure it is able to parse the staking tx
-	paserdStkTx, err := stakerservice.ParseV0StakingTx(parsedGlobalParams, regtestParams, signedStkTx)
+	paserdStkTx, err := btcstaking.ParseV0StakingTx(
+		signedStkTx,
+		lastParamsVersioned.Tag,
+		lastParamsVersioned.CovenantPks,
+		lastParamsVersioned.CovenantQuorum,
+		regtestParams,
+	)
 	require.NoError(t, err)
 	require.NotNil(t, paserdStkTx)
 
@@ -996,8 +1005,26 @@ func TestStakeFromPhase1(t *testing.T) {
 	stkTxHash := signedStkTx.TxHash().String()
 
 	// miner address and the staker addr are the same guy, maybe not
-	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, parsedGlobalParams)
+	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, lastParamsVersioned)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
+	// wait for BTC delegation to become active
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	// need to activate delegation to unbond
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+
+	delInfo, err := tm.BabylonClient.QueryDelegationInfo(txHash)
+	require.NoError(t, err)
+	require.True(t, delInfo.Active)
 }

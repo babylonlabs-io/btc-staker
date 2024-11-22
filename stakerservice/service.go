@@ -12,16 +12,13 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	str "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
-	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/cometbft/cometbft/libs/log"
@@ -132,17 +129,13 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	_ *rpctypes.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	globalParams *parser.ParsedGlobalParams,
+	tag []byte,
+	covenantPksHex []string,
+	covenantQuorum uint32,
 ) (*ResultBtcDelegationFromBtcStakingTx, error) {
 	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
 	if err != nil {
 		s.logger.WithError(err).Info("err parse tx hash")
-		return nil, err
-	}
-
-	stkTx, err := s.staker.TxDetailsBTC(stkTxHash)
-	if err != nil {
-		s.logger.WithError(err).Info("err get tx details")
 		return nil, err
 	}
 
@@ -152,39 +145,48 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, err
 	}
 
-	wireStkTx := stkTx.MsgTx()
-	parsedStakingTx, err := ParseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
+	covenantPks, err := parseCovenantsPubKeyFromHex(covenantPksHex...)
 	if err != nil {
-		s.logger.WithError(err).Info("err parse staking Tx with global params")
+		s.logger.WithError(err).Infof("err decode covenant pks %s", covenantPksHex)
 		return nil, err
 	}
 
-	if err := s.staker.AddBTCTransactionToDBAndCheckStatus(stakerAddr, wireStkTx, parsedStakingTx); err != nil {
-		s.logger.WithError(err).Info("err failing to add tx to DB and check status in app")
+	err = s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
+	if err != nil {
+		s.logger.WithError(err).Info("err to send phase 1 tx")
 		return nil, err
 	}
 
 	return &ResultBtcDelegationFromBtcStakingTx{}, nil
 }
 
-func ParseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chaincfg.Params, wireStkTx *wire.MsgTx) (*btcstaking.ParsedV0StakingTx, error) {
-	var lastErr error
-	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
-		params := globalParams.Versions[i]
-		parsedStakingTx, err := btcstaking.ParseV0StakingTx(
-			wireStkTx,
-			params.Tag,
-			params.CovenantPks,
-			params.CovenantQuorum,
-			btcParams,
-		)
+func parseCovenantsPubKeyFromHex(covenantPksHex ...string) ([]*btcec.PublicKey, error) {
+	covenantPks := make([]*btcec.PublicKey, len(covenantPksHex))
+	for i, covenantPkHex := range covenantPksHex {
+		covPk, err := parseCovenantPubKeyFromHex(covenantPkHex)
 		if err != nil {
-			lastErr = err
-			continue
+			return nil, err
 		}
-		return parsedStakingTx, nil
+		covenantPks[i] = covPk
 	}
-	return nil, fmt.Errorf("err: %s failed to parse BTC staking tx %s using the global params %+v", lastErr.Error(), wireStkTx.TxHash().String(), globalParams)
+
+	return covenantPks, nil
+}
+
+// parseCovenantPubKeyFromHex parses public key string to btc public key
+// the input should be 33 bytes
+func parseCovenantPubKeyFromHex(pkStr string) (*btcec.PublicKey, error) {
+	pkBytes, err := hex.DecodeString(pkStr)
+	if err != nil {
+		return nil, err
+	}
+
+	pk, err := btcec.ParsePubKey(pkBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return pk, nil
 }
 
 func (s *StakerService) stakingDetails(_ *rpctypes.Context,
@@ -609,7 +611,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
-		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,globalParams"),
+		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
 		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),

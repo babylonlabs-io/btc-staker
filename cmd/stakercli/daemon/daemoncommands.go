@@ -42,6 +42,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	txInclusionHeightFlag      = "tx-inclusion-height"
 )
 
 var (
@@ -152,6 +153,16 @@ var stakeFromPhase1Cmd = cli.Command{
 		cli.StringFlag{
 			Name:     stakingTransactionHashFlag,
 			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakerAddressFlag,
+			Usage:    "BTC address of the staker in hex",
+			Required: true,
+		},
+		cli.Uint64Flag{
+			Name:     txInclusionHeightFlag,
+			Usage:    "Expected BTC height at which transaction was included. This value is important to choose correct global parameters for transaction",
 			Required: true,
 		},
 	},
@@ -392,8 +403,14 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
 	}
 
+	stakingTxInclusionHeight := ctx.Uint64(txInclusionHeightFlag)
+	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
+	if paramsForHeight == nil {
+		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, stakingTxInclusionHeight)
+	}
+
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, globalParams)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
 	return err
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"go.uber.org/zap"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -506,31 +507,60 @@ func (app *App) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
 	}
 }
 
-// AddBTCTransactionToDBAndCheckStatus receives a BTC staking transaction that should be
-// already included in the BTC network
-func (app *App) AddBTCTransactionToDBAndCheckStatus(
+// SendPhase1Transaction receives the BTC staking transaction hash that
+// should be already in BTC and creates the necessary data to submit
+// the BTC delegation into the consumer chain
+func (app *App) SendPhase1Transaction(
 	stakerAddr btcutil.Address,
-	stkTx *wire.MsgTx,
-	parsedStakingTx *staking.ParsedV0StakingTx,
+	stkTxHash *chainhash.Hash,
+	tag []byte,
+	covenantPks []*secp256k1.PublicKey,
+	covenantQuorum uint32,
 ) error {
+	stkTx, err := app.wc.Tx(stkTxHash)
+	if err != nil {
+		app.logger.WithError(err).Info("err get tx details")
+		return err
+	}
+
+	wireStkTx := stkTx.MsgTx()
+	parsedStakingTx, err := staking.ParseV0StakingTx(wireStkTx, tag, covenantPks, covenantQuorum, app.network)
+	if err != nil {
+		app.logger.WithError(err).Info("err parse staking Tx with global params")
+		return err
+	}
+
+	// unlock wallet to generate pop
+	// TODO: consider unlock/lock with defer
+	err = app.wc.UnlockWallet(defaultWalletUnlockTimeout)
+	if err != nil {
+		return err
+	}
+
 	pop, err := app.createPop(stakerAddr)
 	if err != nil {
 		return err
 	}
 
-	if err := app.addTransactionSentToBTC(
-		stkTx,
+	if err := app.txTracker.AddTransactionSentToBTC(
+		wireStkTx,
 		uint32(parsedStakingTx.StakingOutputIdx),
 		parsedStakingTx.OpReturnData.StakingTime,
 		[]*btcec.PublicKey{parsedStakingTx.OpReturnData.FinalityProviderPublicKey.PubKey},
 		babylonPopToDBPop(pop),
 		stakerAddr,
 	); err != nil {
+		app.logger.WithError(err).Info("err to set tx as sent on BTC")
 		return err
 	}
 
-	// not fun to call check transaction, because there is no request and way to get the tx result
-	return app.checkTransactionsStatus()
+	stakingParams, err := app.babylonClient.Params()
+	if err != nil {
+		return err
+	}
+
+	// pushes the confirmation into the btc-staker mechanism and verifies if it is deep enough
+	return app.waitForStakingTransactionConfirmation(stkTxHash, parsedStakingTx.StakingOutput.PkScript, stakingParams.ConfirmationTimeBlocks, app.currentBestBlockHeight.Load())
 }
 
 // TODO: We should also handle case when btc node or babylon node lost data and start from scratch
@@ -1356,7 +1386,6 @@ func (app *App) handlePostApprovalCmd(
 	}
 
 	tx, fullySignd, err := app.wc.SignRawTransaction(stakingTx)
-
 	if err != nil {
 		return nil, err
 	}
@@ -2218,32 +2247,6 @@ func (app *App) UnbondStaking(
 
 	unbondingTxHash := tx.UnbondingTxData.UnbondingTx.TxHash()
 	return &unbondingTxHash, nil
-}
-
-func (app *App) addTransactionSentToBTC(
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *stakerdb.ProofOfPossession,
-	btcStakerAddr btcutil.Address,
-) error {
-	return app.txTracker.AddTransactionSentToBTC(
-		stakingTx,
-		stakingOutputIdx,
-		stakingTime,
-		fpPubKeys,
-		pop,
-		btcStakerAddr,
-	)
-}
-
-func (app *App) BtcParams() *chaincfg.Params {
-	return app.network
-}
-
-func (app *App) TxDetailsBTC(stakingTxHash *chainhash.Hash) (*btcutil.Tx, error) {
-	return app.wc.Tx(stakingTxHash)
 }
 
 func (app *App) createPop(stakerAddress btcutil.Address) (*cl.BabylonPop, error) {
