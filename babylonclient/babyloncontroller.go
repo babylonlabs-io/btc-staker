@@ -171,15 +171,6 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
-	minUnbondingTimeU64 := sdkmath.Max[uint32](
-		bccParams.CheckpointFinalizationTimeout,
-		uint32(stakingTrackerParams.MinUnbondingTime),
-	)
-
-	if minUnbondingTimeU64 > math.MaxUint16 {
-		return nil, fmt.Errorf("minimum unbonding time should fit in a uint16")
-	}
-
 	return &StakingParams{
 		ConfirmationTimeBlocks:    bccParams.BtcConfirmationDepth,
 		FinalizationTimeoutBlocks: bccParams.CheckpointFinalizationTimeout,
@@ -188,7 +179,7 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
 		SlashingRate:              stakingTrackerParams.SlashingRate,
 		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		MinUnbondingTime:          uint16(minUnbondingTimeU64),
+		MinUnbondingTime:          stakingTrackerParams.MinUnbondingTime,
 		UnbondingFee:              stakingTrackerParams.UnbondingFee,
 		MinStakingTime:            stakingTrackerParams.MinStakingTime,
 		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
