@@ -37,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
+
+* [#92](https://github.com/babylonlabs-io/btc-staker/pull/92) CI: Enable Dockerfile and image scanning
 * [#99](https://github.com/babylonlabs-io/btc-staker/pull/99) Bump babylon version
 and adapt staker to the changes
 
