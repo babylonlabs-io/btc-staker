@@ -71,7 +71,7 @@ func (app *App) buildOwnedDelegation(
 		externalData.babylonParams.SlashingPkScript,
 		externalData.babylonParams.UnbondingFee,
 		// TODO: Possiblity to customize finalization time
-		externalData.babylonParams.MinUnbondingTime+1,
+		externalData.babylonParams.MinUnbondingTime,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		app.network,
