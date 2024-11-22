@@ -20,7 +20,7 @@ jobs:
 
   docker_pipeline:
     needs: ["lint_test"]
-    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@huy/add-docker-sec
+    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@v0.10.2
     permissions:
       # required for all workflows
       security-events: write
