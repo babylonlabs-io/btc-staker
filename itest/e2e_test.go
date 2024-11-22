@@ -793,7 +793,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 	testStakingData *testStakingData,
 	params *babylonclient.StakingParams,
 ) *chainhash.Hash {
-	unbondingTme := uint16(params.FinalizationTimeoutBlocks) + 1
+	unbondingTme := params.MinUnbondingTime
 
 	stakingInfo, err := staking.BuildStakingInfo(
 		testStakingData.StakerKey,
@@ -1355,8 +1355,8 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, withdrawableTransactionsResp.Transactions, 1)
 
-	// We can spend unbonding tx immediately as in e2e test, finalization time is 4 blocks and we locked it
-	// finalization time + 1 i.e 5 blocks, but to consider unboning tx as confirmed we need to wait for 6 blocks
+	// We can spend unbonding tx immediately as in e2e test, min unbonding time is 5 blocks and we locked it
+	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
 	// so at this point time lock should already have passed
 	tm.spendStakingTxWithHash(t, txHash)
 	go tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
@@ -1648,8 +1648,8 @@ func TestStakingUnbonding(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, withdrawableTransactionsResp.Transactions, 1)
 
-	// We can spend unbonding tx immediately as in e2e test, finalization time is 4 blocks and we locked it
-	// finalization time + 1 i.e 5 blocks, but to consider unboning tx as confirmed we need to wait for 6 blocks
+	// We can spend unbonding tx immediately as in e2e test, min unbonding time is 5 blocks and we locked it
+	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
 	// so at this point time lock should already have passed
 	tm.spendStakingTxWithHash(t, txHash)
 	go tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
