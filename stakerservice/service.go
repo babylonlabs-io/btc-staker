@@ -132,7 +132,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	_ *rpctypes.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	globalParams *parser.ParsedGlobalParams,
+	globalParams *parser.GlobalParams,
 ) (*ResultBtcDelegationFromBtcStakingTx, error) {
 	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
 	if err != nil {
@@ -153,7 +153,14 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	}
 
 	wireStkTx := stkTx.MsgTx()
-	parsedStakingTx, err := ParseV0StakingTx(globalParams, s.staker.BtcParams(), wireStkTx)
+
+	parsedGlobalParams, err := parser.ParseGlobalParams(globalParams)
+	if err != nil {
+		s.logger.WithError(err).Info("err parse global params")
+		return nil, err
+	}
+
+	parsedStakingTx, err := ParseV0StakingTx(parsedGlobalParams, s.staker.BtcParams(), wireStkTx)
 	if err != nil {
 		s.logger.WithError(err).Info("err parse staking Tx with global params")
 		return nil, err
@@ -171,6 +178,11 @@ func ParseV0StakingTx(globalParams *parser.ParsedGlobalParams, btcParams *chainc
 	var lastErr error
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
 		params := globalParams.Versions[i]
+		fmt.Printf("Parsing the v0 staking tx with the following covenant pks: \n")
+		for _, pk := range params.CovenantPks {
+			fmt.Printf("pk: %s\n", hex.EncodeToString(schnorr.SerializePubKey(pk)))
+		}
+
 		parsedStakingTx, err := btcstaking.ParseV0StakingTx(
 			wireStkTx,
 			params.Tag,

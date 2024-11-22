@@ -873,6 +873,8 @@ func TestStakeFromPhase1(t *testing.T) {
 	covenantPkSerializedHex := hex.EncodeToString(schnorr.SerializePubKey(coventantPrivKeys[0].PubKey()))
 	covenantPkHex := hex.EncodeToString(coventantPrivKeys[0].PubKey().SerializeCompressed())
 
+	fmt.Printf("covenantPkSerializedHex: %s\n", covenantPkSerializedHex)
+
 	lastParams := &parser.VersionedGlobalParams{
 		Version:          0,
 		ActivationHeight: 100,
@@ -996,7 +998,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	stkTxHash := signedStkTx.TxHash().String()
 
 	// miner address and the staker addr are the same guy, maybe not
-	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, parsedGlobalParams)
+	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, &globalParams)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 

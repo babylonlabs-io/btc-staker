@@ -90,7 +90,7 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	globalParams *parser.ParsedGlobalParams,
+	globalParams *parser.GlobalParams,
 ) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
 	result := new(service.ResultBtcDelegationFromBtcStakingTx)
 

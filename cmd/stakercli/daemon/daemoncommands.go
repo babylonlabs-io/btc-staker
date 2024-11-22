@@ -391,9 +391,11 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
 	}
+	fmt.Printf("globalParams: %v\n", globalParams)
 
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, globalParams)
+	// TODO: pass global params and not nill
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, nil)
 	return err
 }
 
