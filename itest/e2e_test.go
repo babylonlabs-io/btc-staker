@@ -956,13 +956,8 @@ func TestStakeFromPhase1(t *testing.T) {
 	tm.insertAllMinedBlocksToBabylon(t)
 	tm.createAndRegisterFinalityProviders(t, testStakingData)
 
-	// tmBTC.WalletAddrInfo.
 	stakerAddrStr := tmBTC.MinerAddr.String()
-	// stakerAddrStr := tmBTC.WalletPubKey
-	// stakerAddrStr := btcStakerPkHex
 	stkTxHash := signedStkTx.TxHash().String()
-
-	// miner address and the staker addr are the same guy, maybe not
 	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, lastParamsVersioned)
 	require.NoError(t, err)
 	require.NotNil(t, res)
@@ -978,7 +973,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
 	require.NoError(t, err)
 	require.Len(t, pend, 1)
-	// need to activate delegation to unbond
+
 	tm.insertCovenantSigForDelegation(t, pend[0])
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
 

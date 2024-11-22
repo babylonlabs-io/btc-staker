@@ -140,10 +140,11 @@ var stakeCmd = cli.Command{
 }
 
 var stakeFromPhase1Cmd = cli.Command{
-	Name:        "stake-from-phase1",
-	ShortName:   "stfp1",
-	Usage:       "stakercli stake-from-phase1 [fullpath/to/global_parameters.json]",
-	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking tx",
+	Name:      "stake-from-phase1",
+	ShortName: "stfp1",
+	Usage: "\nstakercli daemon stake-from-phase1 [fullpath/to/global_parameters.json]" +
+		" --staking-transaction-hash [txHashHex] --staker-address [btcStakerAddrHex] --tx-inclusion-height [blockHeightTxInclusion]",
+	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking transaction",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:  stakingDaemonAddressFlag,
@@ -379,7 +380,6 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	}
 
 	sctx := context.Background()
-
 	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
 	if len(stakingTransactionHash) == 0 {
 		return errors.New("staking tx hash hex is empty")
@@ -394,10 +394,6 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
 	}
 
-	// QUEST: should the params be loaded from the chain?
-	// maybe it is good to still use the global as input as this is actually
-	// a phase1 tx being transitioned, so the user would already have the global
-	// params in hand to create the BTC staking tx
 	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
