@@ -1,7 +1,8 @@
 FROM golang:1.23.1 AS builder
 
 # Install cli tools for building and final image
-RUN apt-get update && apt-get install -y make git bash gcc curl jq
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install --no-install-recommends -y make git bash gcc curl jq && rm -rf /var/lib/apt/lists/*
 
 # Build
 WORKDIR /go/src/github.com/babylonlabs-io/btc-staker
@@ -18,17 +19,19 @@ RUN BUILD_TAGS=netgo \
 
 # FINAL IMAGE
 FROM debian:bookworm-slim AS run
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN addgroup --gid 1138 --system btcstaker && adduser --uid 1138 --system --home /home/btcstaker btcstaker
-RUN apt-get update && apt-get install -y bash curl jq wget
+# hadolint ignore=DL3008
+RUN apt-get update && apt-get install --no-install-recommends -y ca-certificates bash curl jq wget && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/go.mod /tmp
 RUN WASMVM_VERSION=$(grep github.com/CosmWasm/wasmvm /tmp/go.mod | cut -d' ' -f2) && \
-    wget https://github.com/CosmWasm/wasmvm/releases/download/$WASMVM_VERSION/libwasmvm.$(uname -m).so \
-        -O /lib/libwasmvm.$(uname -m).so && \
+    wget --progress=dot:giga https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/libwasmvm."$(uname -m)".so \
+    -O /lib/libwasmvm."$(uname -m)".so && \
     # verify checksum
-    wget https://github.com/CosmWasm/wasmvm/releases/download/$WASMVM_VERSION/checksums.txt -O /tmp/checksums.txt && \
-    sha256sum /lib/libwasmvm.$(uname -m).so | grep $(cat /tmp/checksums.txt | grep libwasmvm.$(uname -m) | cut -d ' ' -f 1)
+    wget --progress=dot:giga https://github.com/CosmWasm/wasmvm/releases/download/"$WASMVM_VERSION"/checksums.txt -O /tmp/checksums.txt && \
+    sha256sum /lib/libwasmvm."$(uname -m)".so | grep "$(cat /tmp/checksums.txt | grep libwasmvm."$(uname -m)" | cut -d ' ' -f 1)"
 RUN rm -f /tmp/go.mod
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/build/stakerd /bin/stakerd
