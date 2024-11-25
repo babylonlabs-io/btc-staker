@@ -1101,7 +1101,6 @@ func (c *TrackedTransactionStore) GetTransaction(txHash *chainhash.Hash) (*Store
 		}
 
 		txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
-
 		if err != nil {
 			return err
 		}

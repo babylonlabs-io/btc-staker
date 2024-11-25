@@ -2,7 +2,9 @@ package stakerservice
 
 type ResultHealth struct{}
 
-type ResultBtcDelegationFromBtcStakingTx struct{}
+type ResultBtcDelegationFromBtcStakingTx struct {
+	TxHashDelegationBTC string `json:"tx_hash_delegation_btc"`
+}
 
 type ResultStake struct {
 	TxHash string `json:"tx_hash"`

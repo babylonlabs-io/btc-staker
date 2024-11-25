@@ -151,13 +151,15 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, err
 	}
 
-	err = s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
+	btcDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
 	if err != nil {
 		s.logger.WithError(err).Info("err to send phase 1 tx")
 		return nil, err
 	}
 
-	return &ResultBtcDelegationFromBtcStakingTx{}, nil
+	return &ResultBtcDelegationFromBtcStakingTx{
+		TxHashDelegationBTC: btcDelegationTxHash,
+	}, nil
 }
 
 func parseCovenantsPubKeyFromHex(covenantPksHex ...string) ([]*btcec.PublicKey, error) {
