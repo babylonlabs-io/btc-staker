@@ -186,8 +186,8 @@ func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, ar
 	return data
 }
 
-func randRange(_ *rand.Rand, minV, maxV int) int {
-	return rand.Intn(maxV+1-minV) + minV
+func randRange(r *rand.Rand, minV, maxV int) int {
+	return r.Intn(maxV+1-minV) + minV
 }
 
 type StakeParameters struct {

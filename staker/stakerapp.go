@@ -537,6 +537,7 @@ func (app *App) SendPhase1Transaction(
 		return err
 	}
 
+	// pop only works for native segwit address
 	pop, err := app.createPop(stakerAddr)
 	if err != nil {
 		return err
