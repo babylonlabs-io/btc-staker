@@ -1,6 +1,7 @@
 package staker
 
 import (
+	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -8,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -130,4 +132,29 @@ func (req *stakingRequestCmd) EventID() chainhash.Hash {
 
 func (req *stakingRequestCmd) EventDesc() string {
 	return "STAKING_REQUESTED_CMD"
+}
+
+type migrateStakingCmd struct {
+	stakerAddr        btcutil.Address
+	notifierTx        *notifier.TxConfirmation
+	parsedStakingTx   *staking.ParsedV0StakingTx
+	pop               *cl.BabylonPop
+	errChan           chan error
+	successChanTxHash chan string
+}
+
+func newMigrateStakingCmd(
+	stakerAddr btcutil.Address,
+	notifierTx *notifier.TxConfirmation,
+	parsedStakingTx *staking.ParsedV0StakingTx,
+	pop *cl.BabylonPop,
+) *migrateStakingCmd {
+	return &migrateStakingCmd{
+		stakerAddr:        stakerAddr,
+		notifierTx:        notifierTx,
+		parsedStakingTx:   parsedStakingTx,
+		pop:               pop,
+		errChan:           make(chan error, 1),
+		successChanTxHash: make(chan string, 1),
+	}
 }

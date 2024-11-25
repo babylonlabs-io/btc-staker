@@ -125,7 +125,7 @@ type App struct {
 	m                *metrics.StakerMetrics
 
 	stakingRequestedCmdChan                       chan *stakingRequestCmd
-	migrateStakingCmd                             chan *stakingRequestCmd
+	migrateStakingCmd                             chan *migrateStakingCmd
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
 	delegationActivatedPostApprovalEvChan         chan *delegationActivatedPostApprovalEvent
@@ -233,7 +233,7 @@ func NewStakerAppFromDeps(
 		quit:                    make(chan struct{}),
 		stakingRequestedCmdChan: make(chan *stakingRequestCmd),
 		// channel to receive requests of transition of BTC staking tx to consumer BTC delegation
-		migrateStakingCmd: make(chan *stakingRequestCmd),
+		migrateStakingCmd: make(chan *migrateStakingCmd),
 		// event for when transaction is confirmed on BTC
 		stakingTxBtcConfirmedEvChan: make(chan *stakingTxBtcConfirmedEvent),
 
@@ -521,6 +521,13 @@ func (app *App) SendPhase1Transaction(
 	covenantPks []*secp256k1.PublicKey,
 	covenantQuorum uint32,
 ) (btcDelegationTxHash string, err error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return "", nil
+	default:
+	}
+
 	parsedStakingTx, notifierTx, status, err := walletcontroller.StkTxV0ParsedWithBlock(app.wc, app.network, stkTxHash, tag, covenantPks, covenantQuorum)
 	if err != nil {
 		app.logger.WithError(err).Info("err getting tx details")
@@ -531,70 +538,32 @@ func (app *App) SendPhase1Transaction(
 		return "", err
 	}
 
-	// check if the BTC tx is deep enough
-	// build the babylon delegation
-	// send delegation to babylon
-
 	pop, err := app.unlockAndCreatePop(stakerAddr)
 	if err != nil {
 		return "", err
 	}
 
-	if err := app.txTracker.AddTransactionSentToBTC(
-		notifierTx.Tx,
-		uint32(parsedStakingTx.StakingOutputIdx),
-		parsedStakingTx.OpReturnData.StakingTime,
-		[]*btcec.PublicKey{parsedStakingTx.OpReturnData.FinalityProviderPublicKey.PubKey},
-		babylonPopToDBPop(pop),
-		stakerAddr,
-	); err != nil {
-		app.logger.WithError(err).Info("err to set tx as sent on BTC")
-		return "", err
-	}
+	req := newMigrateStakingCmd(stakerAddr, notifierTx, parsedStakingTx, pop)
 
-	stakingParams, err := app.babylonClient.Params()
-	if err != nil {
-		return "", err
-	}
-
-	if err := checkConfirmationDepth(app.currentBestBlockHeight.Load(), notifierTx.BlockHeight, stakingParams.ConfirmationTimeBlocks); err != nil {
-		app.logger.WithError(err).Info("err to check confirmation depth of tx")
-		return "", err
-	}
-
-	if err := app.txTracker.SetTxConfirmed(stkTxHash, notifierTx.BlockHash, notifierTx.BlockHeight); err != nil {
-		return "", err
-	}
-
-	req := newSendDelegationRequest(
-		stkTxHash,
-		app.newBtcInclusionInfo(notifierTx),
-		stakingParams.ConfirmationTimeBlocks,
+	utils.PushOrQuit[*migrateStakingCmd](
+		app.migrateStakingCmd,
+		req,
+		app.quit,
 	)
 
-	ts, err := app.txTracker.GetTransaction(stkTxHash)
-	if err != nil {
-		app.logger.WithError(err).Errorf("Error getting transaction state for tx %s", stkTxHash)
-		return "", err
-	}
-
-	delData, resp, err := app.sendDelegationToBabylonTaskWithRetry(req, stakerAddr, ts)
-	if err != nil {
+	select {
+	case reqErr := <-req.errChan:
 		app.logger.WithFields(logrus.Fields{
-			"btcTxHash": stakerAddr,
-			"err":       err,
-		}).Debugf("Sending BTC delegation failed")
-		return "", err
-	}
+			"stakerAddress": stakerAddr,
+			"err":           reqErr,
+		}).Debugf("Sending staking tx failed")
 
-	if err := app.txTracker.SetTxSentToBabylon(stkTxHash, delData.Ud.UnbondingTransaction, delData.Ud.UnbondingTxUnbondingTime); err != nil {
-		return "", err
+		return "", reqErr
+	case hash := <-req.successChanTxHash:
+		return hash, nil
+	case <-app.quit:
+		return "", nil
 	}
-
-	app.logger.WithFields(logrus.Fields{
-		"consumerBtcDelegationTxHash": resp.TxHash,
-	}).Debugf("Sending BTC delegation was a sucess")
-	return resp.TxHash, nil
 }
 
 // TODO: We should also handle case when btc node or babylon node lost data and start from scratch
@@ -1552,6 +1521,70 @@ func (app *App) handleStakingCommands() {
 				)
 			}
 			app.logStakingEventProcessed(cmd)
+		case cmd := <-app.migrateStakingCmd:
+			if err := app.txTracker.AddTransactionSentToBTC(
+				cmd.notifierTx.Tx,
+				uint32(cmd.parsedStakingTx.StakingOutputIdx),
+				cmd.parsedStakingTx.OpReturnData.StakingTime,
+				[]*btcec.PublicKey{cmd.parsedStakingTx.OpReturnData.FinalityProviderPublicKey.PubKey},
+				babylonPopToDBPop(cmd.pop),
+				cmd.stakerAddr,
+			); err != nil {
+				app.logger.WithError(err).Info("err to set tx as sent on BTC")
+				cmd.errChan <- err
+				continue
+			}
+
+			stakingParams, err := app.babylonClient.Params()
+			if err != nil {
+				cmd.errChan <- err
+				continue
+			}
+
+			if err := checkConfirmationDepth(app.currentBestBlockHeight.Load(), cmd.notifierTx.BlockHeight, stakingParams.ConfirmationTimeBlocks); err != nil {
+				app.logger.WithError(err).Info("err to check confirmation depth of tx")
+				cmd.errChan <- err
+				continue
+			}
+
+			stkTxHash := cmd.notifierTx.Tx.TxHash()
+			if err := app.txTracker.SetTxConfirmed(&stkTxHash, cmd.notifierTx.BlockHash, cmd.notifierTx.BlockHeight); err != nil {
+				cmd.errChan <- err
+				continue
+			}
+
+			req := newSendDelegationRequest(
+				&stkTxHash,
+				app.newBtcInclusionInfo(cmd.notifierTx),
+				stakingParams.ConfirmationTimeBlocks,
+			)
+
+			ts, err := app.txTracker.GetTransaction(&stkTxHash)
+			if err != nil {
+				app.logger.WithError(err).Errorf("Error getting transaction state for tx %s", stkTxHash.String())
+				cmd.errChan <- err
+				continue
+			}
+
+			delData, resp, err := app.sendDelegationToBabylonTaskWithRetry(req, cmd.stakerAddr, ts)
+			if err != nil {
+				app.logger.WithFields(logrus.Fields{
+					"btcTxHash": cmd.stakerAddr,
+					"err":       err,
+				}).Debugf("Sending BTC delegation failed")
+				cmd.errChan <- err
+				continue
+			}
+
+			if err := app.txTracker.SetTxSentToBabylon(&stkTxHash, delData.Ud.UnbondingTransaction, delData.Ud.UnbondingTxUnbondingTime); err != nil {
+				cmd.errChan <- err
+				continue
+			}
+
+			app.logger.WithFields(logrus.Fields{
+				"consumerBtcDelegationTxHash": resp.TxHash,
+			}).Debugf("Sending BTC delegation was a sucess")
+			cmd.successChanTxHash <- resp.TxHash
 		case <-app.quit:
 			return
 		}
