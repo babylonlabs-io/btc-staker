@@ -1535,6 +1535,7 @@ func (app *App) handleStakingCommands() {
 				continue
 			}
 
+			// TODO: modify to handle it as channel
 			stakingParams, err := app.babylonClient.Params()
 			if err != nil {
 				cmd.errChan <- err
