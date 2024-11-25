@@ -837,14 +837,12 @@ func (c *TrackedTransactionStore) AddWatchedTransaction(
 	}
 
 	serializedSig := slashingTxSig.Serialize()
-
 	serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
 	if err != nil {
 		return err
 	}
 
 	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
-
 	if err != nil {
 		return err
 	}

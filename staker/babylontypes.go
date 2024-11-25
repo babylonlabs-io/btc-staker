@@ -32,6 +32,13 @@ type sendDelegationRequest struct {
 	// the inclusion proof
 	inclusionInfo               *inclusionInfo
 	requiredInclusionBlockDepth uint32
+	// response of the BTC delegation request sent
+	response chan *sendDelegationResponse
+}
+
+type sendDelegationResponse struct {
+	txHashConsumerChain string
+	err                 error
 }
 
 func (app *App) buildOwnedDelegation(
