@@ -186,8 +186,8 @@ func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, ar
 	return data
 }
 
-func randRange(r *rand.Rand, minV, maxV int) int {
-	return r.Intn(maxV+1-minV) + minV
+func randRange(minV, maxV int) int {
+	return rand.Intn(maxV+1-minV) + minV
 }
 
 type StakeParameters struct {
@@ -211,8 +211,8 @@ func createCustomValidStakeParams(
 	require.NoError(t, err)
 	fpKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	stakingTime := randRange(r, int(lastParams.MinStakingTime), int(lastParams.MaxStakingTime))
-	stakingAmount := btcutil.Amount(randRange(r, int(lastParams.MinStakingAmount), int(lastParams.MaxStakingAmount)))
+	stakingTime := randRange(int(lastParams.MinStakingTime), int(lastParams.MaxStakingTime))
+	stakingAmount := btcutil.Amount(randRange(int(lastParams.MinStakingAmount), int(lastParams.MaxStakingAmount)))
 
 	var args []string
 	args = append(args, fmt.Sprintf("--staker-pk=%s", hex.EncodeToString(schnorr.SerializePubKey(stakerKey.PubKey()))))
