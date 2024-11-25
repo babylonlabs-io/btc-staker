@@ -3,3 +3,6 @@ CVE-2024-27304
 GHSA-7jwh-3vrq-q3m8
 CVE-2024-27289
 CVE-2024-38359
+
+# Go-ethereum related
+CVE-2024-32972
