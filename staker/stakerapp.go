@@ -913,7 +913,6 @@ func (app *App) waitForStakingTxConfirmation(
 				"btcTxHash": txHash,
 				"confLeft":  u,
 			}).Debugf("Staking transaction received confirmation")
-
 		}
 	}
 }
@@ -1584,7 +1583,7 @@ func (app *App) handleStakingCommands() {
 
 			app.logger.WithFields(logrus.Fields{
 				"consumerBtcDelegationTxHash": resp.TxHash,
-			}).Debugf("Sending BTC delegation was a sucess")
+			}).Debugf("Sending BTC delegation was a success")
 			cmd.successChanTxHash <- resp.TxHash
 		case <-app.quit:
 			return

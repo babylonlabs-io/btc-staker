@@ -34,11 +34,6 @@ type sendDelegationRequest struct {
 	requiredInclusionBlockDepth uint32
 }
 
-type sendDelegationResponse struct {
-	txHashConsumerChain string
-	err                 error
-}
-
 func (app *App) buildOwnedDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
