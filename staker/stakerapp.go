@@ -1548,28 +1548,30 @@ func (app *App) handleStakingCommands() {
 				continue
 			}
 
-			// eventually tx is send to babylon
-			storedTx, err := app.waitForTrackedTransactionState(stkTxHash, proto.TransactionState_SENT_TO_BABYLON, time.Second, 20)
-			if err != nil {
+			go func() {
+				// eventually tx is send to babylon and notifies the cmd request
+				storedTx, err := app.waitForTrackedTransactionState(stkTxHash, proto.TransactionState_SENT_TO_BABYLON, time.Second, 20)
+				if err != nil {
+					utils.PushOrQuit(
+						cmd.errChan,
+						err,
+						app.quit,
+					)
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stkTxHash,
+					}).Debugf("BTC delegation waited for too long to become active, check the status manually")
+					return
+				}
+
 				utils.PushOrQuit(
-					cmd.errChan,
-					err,
+					cmd.successChanTxHash,
+					storedTx.BtcDelegationTxHash,
 					app.quit,
 				)
 				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stkTxHash,
-				}).Debugf("BTC delegation waited for too long to become active, check the status manually")
-				continue
-			}
-
-			utils.PushOrQuit(
-				cmd.successChanTxHash,
-				storedTx.BtcDelegationTxHash,
-				app.quit,
-			)
-			app.logger.WithFields(logrus.Fields{
-				"consumerBtcDelegationTxHash": storedTx.BtcDelegationTxHash,
-			}).Debugf("Sending BTC delegation was a success")
+					"consumerBtcDelegationTxHash": storedTx.BtcDelegationTxHash,
+				}).Debugf("Sending BTC delegation was a success")
+			}()
 		case <-app.quit:
 			return
 		}
