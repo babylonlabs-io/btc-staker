@@ -1389,7 +1389,6 @@ func (app *App) handlePostApprovalCmd(
 	bestBlockHeight := app.currentBestBlockHeight.Load()
 
 	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
-
 	if err != nil {
 		return nil, err
 	}
@@ -1575,15 +1574,23 @@ func (app *App) handleStakingCommands() {
 				continue
 			}
 
-			if err := app.txTracker.SetTxSentToBabylon(&stkTxHash, delData.Ud.UnbondingTransaction, delData.Ud.UnbondingTxUnbondingTime); err != nil {
-				cmd.errChan <- err
-				continue
+			err = app.txTracker.SetTxSentToBabylon(&stkTxHash, resp.TxHash, delData.Ud.UnbondingTransaction, delData.Ud.UnbondingTxUnbondingTime)
+			if err != nil {
+				utils.PushOrQuit(
+					cmd.errChan,
+					err,
+					app.quit,
+				)
+			} else {
+				utils.PushOrQuit(
+					cmd.successChanTxHash,
+					resp.TxHash,
+					app.quit,
+				)
 			}
-
 			app.logger.WithFields(logrus.Fields{
 				"consumerBtcDelegationTxHash": resp.TxHash,
 			}).Debugf("Sending BTC delegation was a success")
-			cmd.successChanTxHash <- resp.TxHash
 		case <-app.quit:
 			return
 		}
@@ -1635,7 +1642,7 @@ func (app *App) handleStakingEvents() {
 
 		case ev := <-app.delegationSubmittedToBabylonEvChan:
 			app.logStakingEventReceived(ev)
-			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
+			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.btcDelegationTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
 				// TODO: handle this error somehow, it means we received confirmation for tx which we do not store
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)

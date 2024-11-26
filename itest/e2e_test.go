@@ -967,7 +967,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	params, err := cl.Params()
 	require.NoError(t, err)
 
-	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks+1, true)
 	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
 
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()

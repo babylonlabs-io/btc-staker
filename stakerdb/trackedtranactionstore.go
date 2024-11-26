@@ -974,11 +974,11 @@ func (c *TrackedTransactionStore) SetTxConfirmed(
 
 func (c *TrackedTransactionStore) SetTxSentToBabylon(
 	txHash *chainhash.Hash,
+	btcDelegationTxHash string,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
 ) error {
 	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-
 	if err != nil {
 		return err
 	}
@@ -990,6 +990,7 @@ func (c *TrackedTransactionStore) SetTxSentToBabylon(
 
 		tx.State = proto.TransactionState_SENT_TO_BABYLON
 		tx.UnbondingTxData = update
+		tx.BtcDelegationTxHash = btcDelegationTxHash
 		return nil
 	}
 

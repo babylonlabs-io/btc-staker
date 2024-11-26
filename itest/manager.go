@@ -1144,6 +1144,8 @@ func (tm *TestManager) insertCovenantSigForDelegation(
 		btcutil.Amount(btcDel.TotalSat),
 		regtestParams,
 	)
+	require.NoError(t, err)
+
 	slashingPathInfo, err := stakingInfo.SlashingPathSpendInfo()
 	require.NoError(t, err)
 
@@ -1159,6 +1161,7 @@ func (tm *TestManager) insertCovenantSigForDelegation(
 	// slash unbonding tx spends unbonding tx
 	unbondingMsgTx, _, err := bbntypes.NewBTCTxFromHex(btcDel.UndelegationResponse.UnbondingTxHex)
 	require.NoError(t, err)
+
 	unbondingInfo, err := staking.BuildUnbondingInfo(
 		btcDel.BtcPk.MustToBTCPK(),
 		fpBTCPKs,

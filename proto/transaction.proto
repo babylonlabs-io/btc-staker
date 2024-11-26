@@ -67,4 +67,5 @@ message TrackedTransaction {
     bool watched = 11;
    // this data is only filled if tracked transactions state is >= SENT_TO_BABYLON
     UnbondingTxData unbonding_tx_data = 12;
+    string btcDelegationTxHash = 13;
 }

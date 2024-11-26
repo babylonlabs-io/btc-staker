@@ -213,7 +213,7 @@ func TestStateTransitions(t *testing.T) {
 	require.Equal(t, height, storedTx.StakingTxConfirmationInfo.Height)
 
 	// Sent to Babylon
-	err = s.SetTxSentToBabylon(&txHash, tx.StakingTx, tx.StakingTime)
+	err = s.SetTxSentToBabylon(&txHash, hash.String(), tx.StakingTx, tx.StakingTime)
 	require.NoError(t, err)
 	storedTx, err = s.GetTransaction(&txHash)
 	require.NoError(t, err)
@@ -357,6 +357,7 @@ func FuzzQuerySpendableTx(f *testing.F) {
 			txHash := storedTx.StakingTx.TxHash()
 			err := s.SetTxSentToBabylon(
 				&txHash,
+				txHash.String(),
 				storedTx.StakingTx,
 				storedTx.StakingTime,
 			)
