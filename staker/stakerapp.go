@@ -2341,16 +2341,3 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		stakerAddress,
 	)
 }
-
-func checkConfirmationDepth(tipBlockHeight, txInclusionBlockHeight, confirmationTimeBlocks uint32) error {
-	if txInclusionBlockHeight >= tipBlockHeight {
-		return fmt.Errorf("inclusion block height: %d should be lower than current tip: %d", txInclusionBlockHeight, tipBlockHeight)
-	}
-	if (tipBlockHeight - txInclusionBlockHeight) < confirmationTimeBlocks {
-		return fmt.Errorf(
-			"BTC tx not deep enough, current tip: %d, tx inclusion height: %d, confirmations needed: %d",
-			tipBlockHeight, txInclusionBlockHeight, confirmationTimeBlocks,
-		)
-	}
-	return nil
-}
