@@ -544,7 +544,6 @@ func (app *App) SendPhase1Transaction(
 	}
 
 	req := newMigrateStakingCmd(stakerAddr, notifierTx, parsedStakingTx, pop)
-
 	utils.PushOrQuit[*migrateStakingCmd](
 		app.migrateStakingCmd,
 		req,
@@ -1505,7 +1504,6 @@ func (app *App) handleStakingCommands() {
 			}
 
 			stakingTxHash, err := app.handleStakingCmd(cmd)
-
 			if err != nil {
 				utils.PushOrQuit(
 					cmd.errChan,
@@ -1520,6 +1518,7 @@ func (app *App) handleStakingCommands() {
 				)
 			}
 			app.logStakingEventProcessed(cmd)
+
 		case cmd := <-app.migrateStakingCmd:
 			if err := app.txTracker.AddTransactionSentToBTC(
 				cmd.notifierTx.Tx,
