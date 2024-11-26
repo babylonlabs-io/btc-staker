@@ -125,10 +125,11 @@ type StoredTransaction struct {
 	Pop                       *ProofOfPossession
 	// Returning address as string, to avoid having to know how to decode address
 	// which requires knowing the network we are on
-	StakerAddress   string
-	State           proto.TransactionState
-	Watched         bool
-	UnbondingTxData *UnbondingStoreData
+	StakerAddress       string
+	State               proto.TransactionState
+	Watched             bool
+	UnbondingTxData     *UnbondingStoreData
+	BtcDelegationTxHash string
 }
 
 // StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
@@ -367,10 +368,11 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 			BtcSigType:            ttx.BtcSigType,
 			BtcSigOverBabylonAddr: ttx.BtcSigOverBbnStakerAddr,
 		},
-		StakerAddress:   ttx.StakerAddress,
-		State:           ttx.State,
-		Watched:         ttx.Watched,
-		UnbondingTxData: utd,
+		StakerAddress:       ttx.StakerAddress,
+		State:               ttx.State,
+		Watched:             ttx.Watched,
+		UnbondingTxData:     utd,
+		BtcDelegationTxHash: ttx.BtcDelegationTxHash,
 	}, nil
 }
 
