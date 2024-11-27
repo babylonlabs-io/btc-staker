@@ -895,6 +895,8 @@ func TestStakeFromPhase1(t *testing.T) {
 
 	resFundRawStkTx, err := rpcBtc.FundRawTransaction(&tx, btcjson.FundRawTransactionOpts{
 		FeeRate: btcjson.Float64(0.02),
+		// by setting the ChangePosition to 1 we make sure that the staking output will be at index 0
+		ChangePosition: btcjson.Int(1),
 	}, btcjson.Bool(false))
 	require.NoError(t, err)
 	require.NotNil(t, resFundRawStkTx)
