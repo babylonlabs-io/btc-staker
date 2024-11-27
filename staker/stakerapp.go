@@ -1386,6 +1386,7 @@ func (app *App) handleSendDelegationRequest(
 		stakerAddress,
 		delegationData.Ud.UnbondingTransaction,
 		delegationData.Ud.UnbondingTxUnbondingTime,
+		resp.TxHash,
 	)
 	if err != nil {
 		return nil, btcDelTxHash, err

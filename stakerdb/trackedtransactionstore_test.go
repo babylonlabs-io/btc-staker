@@ -413,6 +413,7 @@ func FuzzTrackInputs(f *testing.F) {
 				stakerAddr,
 				randomUnbondingTx,
 				unbodningTime,
+				"txHashBtcDelegation",
 			)
 			require.NoError(t, err)
 		}

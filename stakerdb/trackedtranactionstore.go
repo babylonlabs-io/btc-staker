@@ -677,6 +677,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	stakerAddress btcutil.Address,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
+	btcDelTxHash string,
 ) error {
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
@@ -720,6 +721,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		State:                        proto.TransactionState_SENT_TO_BABYLON,
 		Watched:                      false,
 		UnbondingTxData:              update,
+		BtcDelegationTxHash:          btcDelTxHash,
 	}
 
 	inputData, err := getInputData(btcTx)
