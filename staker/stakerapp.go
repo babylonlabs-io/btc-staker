@@ -2044,26 +2044,6 @@ func (app *App) ListUnspentOutputs() ([]walletcontroller.Utxo, error) {
 	return app.wc.ListOutputs(false)
 }
 
-func (app *App) waitForTrackedTransactionState(
-	txHash chainhash.Hash,
-	minState proto.TransactionState,
-	interval time.Duration,
-	tries uint,
-) (storedTx *stakerdb.StoredTransaction, err error) {
-	err = retry.Do(func() error {
-		storedTx, err = app.GetStoredTransaction(&txHash)
-		if err != nil {
-			return err
-		}
-
-		if storedTx.State < minState {
-			return fmt.Errorf("txHash %s is at state %s, should be at least %s", txHash.String(), storedTx.State.String(), minState.String())
-		}
-		return nil
-	}, retry.Attempts(tries), retry.Delay(interval))
-	return storedTx, err
-}
-
 func (app *App) waitForSpendConfirmation(stakingTxHash chainhash.Hash, ev *notifier.ConfirmationEvent) {
 	// check we are not shutting down
 	select {
