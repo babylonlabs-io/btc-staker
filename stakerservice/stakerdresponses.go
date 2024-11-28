@@ -1,5 +1,7 @@
 package stakerservice
 
+import "github.com/btcsuite/btcd/btcjson"
+
 type ResultHealth struct{}
 
 type ResultBtcDelegationFromBtcStakingTx struct {
@@ -56,4 +58,9 @@ type WithdrawableTransactionsResponse struct {
 	Transactions                     []StakingDetails `json:"transactions"`
 	LastWithdrawableTransactionIndex string           `json:"last_transaction_index"`
 	TotalTransactionCount            string           `json:"total_transaction_count"`
+}
+
+type BtcTxAndBlockResponse struct {
+	Tx  *btcjson.TxRawResult                 `json:"tx"`
+	Blk *btcjson.GetBlockHeaderVerboseResult `json:"blk"`
 }

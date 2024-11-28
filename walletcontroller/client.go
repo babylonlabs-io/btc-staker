@@ -270,12 +270,17 @@ func (w *RPCWalletController) getTxDetails(req notifier.ConfRequest, msg string)
 
 // Tx returns the raw transaction based on the transaction hash
 func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*btcutil.Tx, error) {
-	rawTx, err := w.Client.GetRawTransaction(txHash)
-	if err != nil {
-		return nil, err
-	}
+	return w.Client.GetRawTransaction(txHash)
+}
 
-	return rawTx, nil
+// TxVerbose returns the raw transaction verbose based on the transaction hash
+func (w *RPCWalletController) TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error) {
+	return w.Client.GetRawTransactionVerbose(txHash)
+}
+
+// BlockHeaderVerbose returns the block header data based on the block hash
+func (w *RPCWalletController) BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
+	return w.Client.GetBlockHeaderVerbose(blockHash)
 }
 
 // Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index

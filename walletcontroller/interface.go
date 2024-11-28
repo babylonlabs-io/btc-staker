@@ -4,6 +4,7 @@ import (
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -71,6 +72,8 @@ type WalletController interface {
 	ListOutputs(onlySpendable bool) ([]Utxo, error)
 	TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error)
 	Tx(txHash *chainhash.Hash) (*btcutil.Tx, error)
+	TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error)
+	BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error)
 	SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error)
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.

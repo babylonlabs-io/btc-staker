@@ -191,8 +191,30 @@ func parseCovenantPubKeyFromHex(pkStr string) (*btcec.PublicKey, error) {
 	return pk, nil
 }
 
-func (s *StakerService) stakingDetails(_ *rpctypes.Context,
-	stakingTxHash string) (*StakingDetails, error) {
+func (s *StakerService) btcTxBlkDetails(
+	_ *rpctypes.Context,
+	txHashStr string,
+) (*BtcTxAndBlockResponse, error) {
+	txHash, err := chainhash.NewHashFromStr(txHashStr)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, blk, err := s.staker.BtcTxAndBlock(txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BtcTxAndBlockResponse{
+		Tx:  tx,
+		Blk: blk,
+	}, nil
+}
+
+func (s *StakerService) stakingDetails(
+	_ *rpctypes.Context,
+	stakingTxHash string,
+) (*StakingDetails, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
 		return nil, err
@@ -619,6 +641,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
 		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 		// watch api
 		"watch_staking_tx": rpc.NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
 

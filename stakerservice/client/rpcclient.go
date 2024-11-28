@@ -110,6 +110,22 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	return result, nil
 }
 
+func (c *StakerServiceJSONRPCClient) BtcTxDetails(
+	ctx context.Context,
+	txHash string,
+) (*service.BtcTxAndBlockResponse, error) {
+	result := new(service.BtcTxAndBlockResponse)
+
+	params := make(map[string]interface{})
+	params["txHashStr"] = txHash
+
+	_, err := c.client.Call(ctx, "btc_tx_blk_details", params, result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func parseCovenantsPubKeyToHex(pks ...*btcec.PublicKey) []string {
 	pksHex := make([]string, len(pks))
 	for i, pk := range pks {

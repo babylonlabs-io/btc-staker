@@ -24,6 +24,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -2332,6 +2333,25 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		sig,
 		stakerAddress,
 	)
+}
+
+func (app *App) BtcTxAndBlock(txHash *chainhash.Hash) (*btcjson.TxRawResult, *btcjson.GetBlockHeaderVerboseResult, error) {
+	tx, err := app.wc.TxVerbose(txHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	blockHash, err := chainhash.NewHashFromStr(tx.BlockHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	blk, err := app.wc.BlockHeaderVerbose(blockHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return tx, blk, nil
 }
 
 func checkConfirmationDepth(tipBlockHeight, txInclusionBlockHeight, confirmationTimeBlocks uint32) error {
