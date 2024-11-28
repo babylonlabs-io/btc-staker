@@ -1566,12 +1566,12 @@ func (app *App) handleStakingCommands() {
 			if err != nil {
 				utils.PushOrQuit(
 					cmd.errChan,
-					err,
+					fmt.Errorf("sending tx to babylon failed: %w", err),
 					app.quit,
 				)
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stkTxHash,
-				}).Debugf("BTC delegation waited for too long to become active, check the status manually")
+				}).Errorf("BTC delegation transaction failed: %w", err)
 				return
 			}
 
