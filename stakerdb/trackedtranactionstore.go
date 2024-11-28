@@ -125,11 +125,11 @@ type StoredTransaction struct {
 	Pop                       *ProofOfPossession
 	// Returning address as string, to avoid having to know how to decode address
 	// which requires knowing the network we are on
-	StakerAddress       string
-	State               proto.TransactionState
-	Watched             bool
-	UnbondingTxData     *UnbondingStoreData
-	BtcDelegationTxHash string
+	StakerAddress              string
+	State                      proto.TransactionState
+	Watched                    bool
+	UnbondingTxData            *UnbondingStoreData
+	BabylonBTCDelegationTxHash string
 }
 
 // StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
@@ -368,11 +368,11 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 			BtcSigType:            ttx.BtcSigType,
 			BtcSigOverBabylonAddr: ttx.BtcSigOverBbnStakerAddr,
 		},
-		StakerAddress:       ttx.StakerAddress,
-		State:               ttx.State,
-		Watched:             ttx.Watched,
-		UnbondingTxData:     utd,
-		BtcDelegationTxHash: ttx.BtcDelegationTxHash,
+		StakerAddress:              ttx.StakerAddress,
+		State:                      ttx.State,
+		Watched:                    ttx.Watched,
+		UnbondingTxData:            utd,
+		BabylonBTCDelegationTxHash: ttx.BabylonBTCDelegationTxHash,
 	}, nil
 }
 
@@ -721,7 +721,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		State:                        proto.TransactionState_SENT_TO_BABYLON,
 		Watched:                      false,
 		UnbondingTxData:              update,
-		BtcDelegationTxHash:          btcDelTxHash,
+		BabylonBTCDelegationTxHash:   btcDelTxHash,
 	}
 
 	inputData, err := getInputData(btcTx)
@@ -978,7 +978,7 @@ func (c *TrackedTransactionStore) SetTxConfirmed(
 
 func (c *TrackedTransactionStore) SetTxSentToBabylon(
 	txHash *chainhash.Hash,
-	btcDelegationTxHash string,
+	babylonBTCDelegationTxHash string,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
 ) error {
@@ -994,7 +994,7 @@ func (c *TrackedTransactionStore) SetTxSentToBabylon(
 
 		tx.State = proto.TransactionState_SENT_TO_BABYLON
 		tx.UnbondingTxData = update
-		tx.BtcDelegationTxHash = btcDelegationTxHash
+		tx.BabylonBTCDelegationTxHash = babylonBTCDelegationTxHash
 		return nil
 	}
 

@@ -5,7 +5,7 @@ import "github.com/btcsuite/btcd/btcjson"
 type ResultHealth struct{}
 
 type ResultBtcDelegationFromBtcStakingTx struct {
-	TxHashDelegationBTC string `json:"tx_hash_delegation_btc"`
+	BabylonBTCDelegationTxHash string `json:"babylon_btc_delegation_tx_hash"`
 }
 
 type ResultStake struct {

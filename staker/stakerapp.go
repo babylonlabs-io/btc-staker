@@ -521,7 +521,7 @@ func (app *App) SendPhase1Transaction(
 	tag []byte,
 	covenantPks []*secp256k1.PublicKey,
 	covenantQuorum uint32,
-) (btcDelegationTxHash string, err error) {
+) (babylonBTCDelegationTxHash string, err error) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1272,10 +1272,10 @@ func (app *App) sendDelegationToBabylonTask(
 
 	// report success with the values we sent to Babylon
 	ev := &delegationSubmittedToBabylonEvent{
-		stakingTxHash:       req.btcTxHash,
-		btcDelegationTxHash: delegationTxResp.TxHash,
-		unbondingTx:         delegationData.Ud.UnbondingTransaction,
-		unbondingTime:       delegationData.Ud.UnbondingTxUnbondingTime,
+		stakingTxHash:              req.btcTxHash,
+		babylonBTCDelegationTxHash: delegationTxResp.TxHash,
+		unbondingTx:                delegationData.Ud.UnbondingTransaction,
+		unbondingTime:              delegationData.Ud.UnbondingTxUnbondingTime,
 	}
 
 	utils.PushOrQuit[*delegationSubmittedToBabylonEvent](
@@ -1634,7 +1634,7 @@ func (app *App) handleStakingEvents() {
 
 		case ev := <-app.delegationSubmittedToBabylonEvChan:
 			app.logStakingEventReceived(ev)
-			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.btcDelegationTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
+			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.babylonBTCDelegationTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
 				// TODO: handle this error somehow, it means we received confirmation for tx which we do not store
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
