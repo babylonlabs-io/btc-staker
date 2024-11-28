@@ -1571,7 +1571,7 @@ func (app *App) handleStakingCommands() {
 				)
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stkTxHash,
-				}).Errorf("BTC delegation transaction failed: %w", err)
+				}).WithError(err).Error("BTC delegation transaction failed")
 				return
 			}
 
