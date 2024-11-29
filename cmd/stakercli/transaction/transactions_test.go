@@ -28,9 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 
-	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
-	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/babylonlabs-io/btc-staker/utils"
 )
 
@@ -71,9 +70,6 @@ var (
 		Versions: []*parser.VersionedGlobalParams{&defaultParam},
 	}
 
-	//nolint:errchkjson
-	paramsMarshalled, _ = json.Marshal(globalParams)
-
 	parsedGlobalParams, _ = parser.ParseGlobalParams(&globalParams)
 	lastParams            = parsedGlobalParams.Versions[len(parsedGlobalParams.Versions)-1]
 )
@@ -110,34 +106,10 @@ func FuzzFinalityProviderDeposit(f *testing.F) {
 			fmt.Sprintf("--staking-time=%d", fpStakingTimeLock),
 		}
 
-		app := testApp()
-		stakingTx := appRunCreatePhase1StakingTx(r, t, app, append(createTxCmdArgs, commonFlags...))
+		app := testutil.TestApp()
+		stakingTx := testutil.AppRunCreatePhase1StakingTx(r, t, app, append(createTxCmdArgs, commonFlags...))
 		require.NotNil(t, stakingTx)
 	})
-}
-
-func appRunCreatePhase1StakingTxWithParams(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreatePhase1StakingTxResponse {
-	args := []string{"stakercli", "transaction", "create-phase1-staking-transaction-with-params"}
-	args = append(args, arguments...)
-	output := appRunWithOutput(r, t, app, args)
-
-	var data transaction.CreatePhase1StakingTxResponse
-	err := json.Unmarshal([]byte(output), &data)
-	require.NoError(t, err)
-
-	return data
-}
-
-func appRunCreatePhase1StakingTx(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreatePhase1StakingTxResponse {
-	args := []string{"stakercli", "transaction", "create-phase1-staking-transaction"}
-	args = append(args, arguments...)
-	output := appRunWithOutput(r, t, app, args)
-
-	var data transaction.CreatePhase1StakingTxResponse
-	err := json.Unmarshal([]byte(output), &data)
-	require.NoError(t, err)
-
-	return data
 }
 
 func appRunCheckPhase1StakingTxParams(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CheckPhase1StakingTxResponse {
@@ -192,15 +164,6 @@ func readFromFile(t *testing.T, f *os.File) string {
 	return buf.String()
 }
 
-func testApp() *cli.App {
-	app := cli.NewApp()
-	app.Name = "stakercli"
-	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
-	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
-	app.Commands = append(app.Commands, transaction.TransactionCommands...)
-	return app
-}
-
 func appRunCreatePhase1UnbondingTx(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreatePhase1UnbondingTxResponse {
 	args := []string{"stakercli", "transaction", "create-phase1-unbonding-transaction"}
 	args = append(args, arguments...)
@@ -223,19 +186,8 @@ func appRunCreatePhase1WithdrawalTx(r *rand.Rand, t *testing.T, app *cli.App, ar
 	return data
 }
 
-func randRange(_ *rand.Rand, min, max int) int {
-	return rand.Intn(max+1-min) + min
-}
-
-func createTempFileWithParams(f *testing.F) string {
-	file, err := os.CreateTemp("", "tmpParams-*.json")
-	require.NoError(f, err)
-	defer file.Close()
-	_, err = file.Write(paramsMarshalled)
-	require.NoError(f, err)
-	info, err := file.Stat()
-	require.NoError(f, err)
-	return filepath.Join(os.TempDir(), info.Name())
+func randRange(r *rand.Rand, minV, maxV int) int {
+	return r.Intn(maxV+1-minV) + minV
 }
 
 type StakeParameters struct {
@@ -280,7 +232,7 @@ func createCustomValidStakeParams(
 
 func TestCheckPhase1StakingTransactionCmd(t *testing.T) {
 	t.Parallel()
-	app := testApp()
+	app := testutil.TestApp()
 	stakerCliCheckP1StkTx := []string{
 		"stakercli", "transaction", "check-phase1-staking-transaction",
 		"--covenant-quorum=1",
@@ -386,12 +338,12 @@ func TestCheckPhase1StakingTransactionCmd(t *testing.T) {
 
 // Property: Every create should end without error for valid params
 func FuzzCreatPhase1Tx(f *testing.F) {
-	paramsFilePath := createTempFileWithParams(f)
+	paramsFilePath := testutil.CreateTempFileWithParams(f)
 
 	datagen.AddRandomSeedsToFuzzer(f, 5)
 	f.Fuzz(func(t *testing.T, seed int64) {
 		r := rand.New(rand.NewSource(seed))
-		app := testApp()
+		app := testutil.TestApp()
 
 		var args []string
 		args = append(args, paramsFilePath)
@@ -400,7 +352,7 @@ func FuzzCreatPhase1Tx(f *testing.F) {
 
 		args = append(args, createArgs...)
 
-		resCreate := appRunCreatePhase1StakingTxWithParams(
+		resCreate := testutil.AppRunCreatePhase1StakingTxWithParams(
 			r, t, app, args,
 		)
 		require.NotNil(t, resCreate)
@@ -412,12 +364,12 @@ func keyToSchnorrHex(key *btcec.PublicKey) string {
 }
 
 func FuzzCheckPhase1Tx(f *testing.F) {
-	paramsFilePath := createTempFileWithParams(f)
+	paramsFilePath := testutil.CreateTempFileWithParams(f)
 
 	datagen.AddRandomSeedsToFuzzer(f, 5)
 	f.Fuzz(func(t *testing.T, seed int64) {
 		r := rand.New(rand.NewSource(seed))
-		app := testApp()
+		app := testutil.TestApp()
 
 		stakerParams, _ := createCustomValidStakeParams(t, r, &globalParams, &chaincfg.RegressionNetParams)
 
@@ -462,7 +414,7 @@ func FuzzCheckPhase1Tx(f *testing.F) {
 }
 
 func FuzzCreateUnbondingTx(f *testing.F) {
-	paramsFilePath := createTempFileWithParams(f)
+	paramsFilePath := testutil.CreateTempFileWithParams(f)
 
 	datagen.AddRandomSeedsToFuzzer(f, 10)
 	f.Fuzz(func(t *testing.T, seed int64) {
@@ -495,7 +447,7 @@ func FuzzCreateUnbondingTx(f *testing.F) {
 			fmt.Sprintf("--network=%s", chaincfg.RegressionNetParams.Name),
 		}
 
-		app := testApp()
+		app := testutil.TestApp()
 		unbondingTxResponse := appRunCreatePhase1UnbondingTx(r, t, app, createTxCmdArgs)
 		require.NotNil(t, unbondingTxResponse)
 		utx, _, err := bbn.NewBTCTxFromHex(unbondingTxResponse.UnbondingTxHex)
@@ -512,7 +464,7 @@ func FuzzCreateUnbondingTx(f *testing.F) {
 }
 
 func FuzzCreateWithdrawalStaking(f *testing.F) {
-	paramsFilePath := createTempFileWithParams(f)
+	paramsFilePath := testutil.CreateTempFileWithParams(f)
 
 	datagen.AddRandomSeedsToFuzzer(f, 10)
 	f.Fuzz(func(t *testing.T, seed int64) {
@@ -557,7 +509,7 @@ func FuzzCreateWithdrawalStaking(f *testing.F) {
 			fmt.Sprintf("--network=%s", chaincfg.RegressionNetParams.Name),
 		}
 
-		app := testApp()
+		app := testutil.TestApp()
 		wr := appRunCreatePhase1WithdrawalTx(r, t, app, createTxCmdArgs)
 		require.NotNil(t, wr)
 
@@ -600,7 +552,7 @@ func FuzzCreateWithdrawalStaking(f *testing.F) {
 }
 
 func FuzzCreateWithdrawalUnbonding(f *testing.F) {
-	paramsFilePath := createTempFileWithParams(f)
+	paramsFilePath := testutil.CreateTempFileWithParams(f)
 
 	datagen.AddRandomSeedsToFuzzer(f, 10)
 	f.Fuzz(func(t *testing.T, seed int64) {
@@ -668,7 +620,7 @@ func FuzzCreateWithdrawalUnbonding(f *testing.F) {
 			fmt.Sprintf("--network=%s", chaincfg.RegressionNetParams.Name),
 		}
 
-		app := testApp()
+		app := testutil.TestApp()
 		wr := appRunCreatePhase1WithdrawalTx(r, t, app, createTxCmdArgs)
 		require.NotNil(t, wr)
 

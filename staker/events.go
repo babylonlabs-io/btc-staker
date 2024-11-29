@@ -40,9 +40,10 @@ func (event *stakingTxBtcConfirmedEvent) EventDesc() string {
 }
 
 type delegationSubmittedToBabylonEvent struct {
-	stakingTxHash chainhash.Hash
-	unbondingTx   *wire.MsgTx
-	unbondingTime uint16
+	stakingTxHash              chainhash.Hash
+	babylonBTCDelegationTxHash string
+	unbondingTx                *wire.MsgTx
+	unbondingTime              uint16
 }
 
 func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {

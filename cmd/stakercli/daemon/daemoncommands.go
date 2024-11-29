@@ -2,11 +2,15 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
+	"github.com/babylonlabs-io/networks/parameters/parser"
+	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 )
 
@@ -26,6 +30,7 @@ var DaemonCommands = []cli.Command{
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
 			unbondCmd,
+			stakeFromPhase1Cmd,
 		},
 	},
 }
@@ -37,6 +42,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	txInclusionHeightFlag      = "tx-inclusion-height"
 )
 
 var (
@@ -131,6 +137,36 @@ var stakeCmd = cli.Command{
 		},
 	},
 	Action: stake,
+}
+
+var stakeFromPhase1Cmd = cli.Command{
+	Name:      "stake-from-phase1",
+	ShortName: "stfp1",
+	Usage: "\nstakercli daemon stake-from-phase1 [fullpath/to/global_parameters.json]" +
+		" --staking-transaction-hash [txHashHex] --staker-address [btcStakerAddrHex] --tx-inclusion-height [blockHeightTxInclusion]",
+	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking transaction",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  stakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: defaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakerAddressFlag,
+			Usage:    "BTC address of the staker in hex",
+			Required: true,
+		},
+		cli.Uint64Flag{
+			Name:  txInclusionHeightFlag,
+			Usage: "Expected BTC height at which transaction was included. This value is important to choose correct global parameters for transaction, if set doesn't query bitcoin to get the block height from txHash",
+		},
+	},
+	Action: stakeFromPhase1TxBTC,
 }
 
 var unstakeCmd = cli.Command{
@@ -333,6 +369,53 @@ func stake(ctx *cli.Context) error {
 	helpers.PrintRespJSON(results)
 
 	return nil
+}
+
+func stakeFromPhase1TxBTC(ctx *cli.Context) error {
+	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return err
+	}
+
+	sctx := context.Background()
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+	if len(stakingTransactionHash) == 0 {
+		return errors.New("staking tx hash hex is empty")
+	}
+
+	inputGlobalParamsFilePath := ctx.Args().First()
+	if len(inputGlobalParamsFilePath) == 0 {
+		return errors.New("json file input is empty")
+	}
+
+	if !os.FileExists(inputGlobalParamsFilePath) {
+		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
+	}
+
+	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
+	if err != nil {
+		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
+	}
+
+	blockHeighTxInclusion := ctx.Uint64(txInclusionHeightFlag)
+	if blockHeighTxInclusion == 0 {
+		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
+		if err != nil {
+			return fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTransactionHash, err)
+		}
+
+		blockHeighTxInclusion = uint64(resp.Blk.Height)
+	}
+
+	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(blockHeighTxInclusion)
+	if paramsForHeight == nil {
+		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, blockHeighTxInclusion)
+	}
+
+	stakerAddress := ctx.String(stakerAddressFlag)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
+	return err
 }
 
 func unstake(ctx *cli.Context) error {

@@ -39,7 +39,7 @@ linters:
     - nilerr
     #    - nlreturn # Style wise I personally like this one, todo(lazar): unlax at somepoint, good practice
     - noctx
-    - nonamedreturns
+    # - nonamedreturns
     - nosprintfhostport
     - paralleltest
     - reassign

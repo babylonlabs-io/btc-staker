@@ -27,7 +27,7 @@ type inclusionInfo struct {
 }
 
 type sendDelegationRequest struct {
-	txHash chainhash.Hash
+	btcTxHash chainhash.Hash
 	// optional field, if not provided, delegation will be sent to Babylon without
 	// the inclusion proof
 	inclusionInfo               *inclusionInfo
@@ -57,7 +57,7 @@ func (app *App) buildOwnedDelegation(
 		// valid and btc confirmed staking transacion, but for some reason we cannot
 		// build delegation data using our own set of libraries
 		app.logger.WithFields(logrus.Fields{
-			"btcTxHash":     req.txHash,
+			"btcTxHash":     req.btcTxHash,
 			"stakerAddress": stakerAddress,
 			"err":           err,
 		}).Fatalf("Failed to build delegation data for already confirmed staking transaction")
@@ -138,13 +138,13 @@ func (app *App) buildDelegation(
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
 	if storedTx.Watched {
-		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.txHash)
+		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.btcTxHash)
 
 		if err != nil {
 			// Fatal error as if delegation is watched, the watched data must be in database
 			// and must be not malformed
 			app.logger.WithFields(logrus.Fields{
-				"btcTxHash":     req.txHash,
+				"btcTxHash":     req.btcTxHash,
 				"stakerAddress": stakerAddress,
 				"err":           err,
 			}).Fatalf("Failed to build delegation data for already confirmed staking transaction")
@@ -169,6 +169,7 @@ func (app *App) buildDelegation(
 		)
 		return dg, nil
 	}
+
 	return app.buildOwnedDelegation(
 		req,
 		stakerAddress,
@@ -480,5 +481,17 @@ func (app *App) activateVerifiedDelegation(
 		case <-app.quit:
 			return
 		}
+	}
+}
+
+func newSendDelegationRequest(
+	btcStakingTxHash *chainhash.Hash,
+	inclusionInfo *inclusionInfo,
+	requiredInclusionBlockDepth uint32,
+) *sendDelegationRequest {
+	return &sendDelegationRequest{
+		btcTxHash:                   *btcStakingTxHash,
+		inclusionInfo:               inclusionInfo,
+		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
 	}
 }

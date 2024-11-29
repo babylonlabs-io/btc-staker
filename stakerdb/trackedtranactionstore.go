@@ -125,10 +125,11 @@ type StoredTransaction struct {
 	Pop                       *ProofOfPossession
 	// Returning address as string, to avoid having to know how to decode address
 	// which requires knowing the network we are on
-	StakerAddress   string
-	State           proto.TransactionState
-	Watched         bool
-	UnbondingTxData *UnbondingStoreData
+	StakerAddress              string
+	State                      proto.TransactionState
+	Watched                    bool
+	UnbondingTxData            *UnbondingStoreData
+	BabylonBTCDelegationTxHash string
 }
 
 // StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
@@ -367,10 +368,11 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 			BtcSigType:            ttx.BtcSigType,
 			BtcSigOverBabylonAddr: ttx.BtcSigOverBbnStakerAddr,
 		},
-		StakerAddress:   ttx.StakerAddress,
-		State:           ttx.State,
-		Watched:         ttx.Watched,
-		UnbondingTxData: utd,
+		StakerAddress:              ttx.StakerAddress,
+		State:                      ttx.State,
+		Watched:                    ttx.Watched,
+		UnbondingTxData:            utd,
+		BabylonBTCDelegationTxHash: ttx.BabylonBTCDelegationTxHash,
 	}, nil
 }
 
@@ -675,6 +677,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	stakerAddress btcutil.Address,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
+	btcDelTxHash string,
 ) error {
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
@@ -718,6 +721,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		State:                        proto.TransactionState_SENT_TO_BABYLON,
 		Watched:                      false,
 		UnbondingTxData:              update,
+		BabylonBTCDelegationTxHash:   btcDelTxHash,
 	}
 
 	inputData, err := getInputData(btcTx)
@@ -837,14 +841,12 @@ func (c *TrackedTransactionStore) AddWatchedTransaction(
 	}
 
 	serializedSig := slashingTxSig.Serialize()
-
 	serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
 	if err != nil {
 		return err
 	}
 
 	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
-
 	if err != nil {
 		return err
 	}
@@ -976,11 +978,11 @@ func (c *TrackedTransactionStore) SetTxConfirmed(
 
 func (c *TrackedTransactionStore) SetTxSentToBabylon(
 	txHash *chainhash.Hash,
+	babylonBTCDelegationTxHash string,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
 ) error {
 	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-
 	if err != nil {
 		return err
 	}
@@ -992,6 +994,7 @@ func (c *TrackedTransactionStore) SetTxSentToBabylon(
 
 		tx.State = proto.TransactionState_SENT_TO_BABYLON
 		tx.UnbondingTxData = update
+		tx.BabylonBTCDelegationTxHash = babylonBTCDelegationTxHash
 		return nil
 	}
 
@@ -1103,7 +1106,6 @@ func (c *TrackedTransactionStore) GetTransaction(txHash *chainhash.Hash) (*Store
 		}
 
 		txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
-
 		if err != nil {
 			return err
 		}

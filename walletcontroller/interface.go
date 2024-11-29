@@ -1,12 +1,17 @@
 package walletcontroller
 
 import (
+	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 )
 
@@ -66,6 +71,9 @@ type WalletController interface {
 	SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error)
 	ListOutputs(onlySpendable bool) ([]Utxo, error)
 	TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error)
+	Tx(txHash *chainhash.Hash) (*btcutil.Tx, error)
+	TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error)
+	BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error)
 	SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error)
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
@@ -74,4 +82,31 @@ type WalletController interface {
 		txHash *chainhash.Hash,
 		outputIdx uint32,
 	) (bool, error)
+}
+
+func StkTxV0ParsedWithBlock(
+	wc WalletController,
+	btcNetwork *chaincfg.Params,
+	stkTxHash *chainhash.Hash,
+	tag []byte,
+	covenantPks []*secp256k1.PublicKey,
+	covenantQuorum uint32,
+) (*staking.ParsedV0StakingTx, *notifier.TxConfirmation, TxStatus, error) {
+	stkTx, err := wc.Tx(stkTxHash)
+	if err != nil {
+		return nil, nil, TxNotFound, err
+	}
+
+	wireStkTx := stkTx.MsgTx()
+	parsedStakingTx, err := staking.ParseV0StakingTx(wireStkTx, tag, covenantPks, covenantQuorum, btcNetwork)
+	if err != nil {
+		return nil, nil, TxNotFound, err
+	}
+
+	notifierTx, status, err := wc.TxDetails(stkTxHash, parsedStakingTx.StakingOutput.PkScript)
+	if err != nil {
+		return nil, nil, TxNotFound, err
+	}
+
+	return parsedStakingTx, notifierTx, status, nil
 }
