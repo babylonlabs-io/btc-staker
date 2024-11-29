@@ -161,6 +161,10 @@ var stakeFromPhase1Cmd = cli.Command{
 			Usage:    "BTC address of the staker in hex",
 			Required: true,
 		},
+		cli.Uint64Flag{
+			Name:  txInclusionHeightFlag,
+			Usage: "Expected BTC height at which transaction was included. This value is important to choose correct global parameters for transaction, if set doesn't query bitcoin to get the block height from txHash",
+		},
 	},
 	Action: stakeFromPhase1TxBTC,
 }
@@ -394,14 +398,19 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
 	}
 
-	resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
-	if err != nil {
-		return fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTransactionHash, err)
+	blockHeighTxInclusion := ctx.Uint64(txInclusionHeightFlag)
+	if blockHeighTxInclusion == 0 {
+		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
+		if err != nil {
+			return fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTransactionHash, err)
+		}
+
+		blockHeighTxInclusion = uint64(resp.Blk.Height)
 	}
 
-	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(uint64(resp.Blk.Height))
+	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(blockHeighTxInclusion)
 	if paramsForHeight == nil {
-		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, resp.Blk.Height)
+		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, blockHeighTxInclusion)
 	}
 
 	stakerAddress := ctx.String(stakerAddressFlag)
