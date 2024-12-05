@@ -984,7 +984,6 @@ func (app *App) retrieveExternalDelegationData(
 		}
 
 		params = p
-
 	} else {
 		p, err := app.babylonClient.ParamsByBtcHeight(inclusionInfo.inclusionBlockBtcHeight)
 

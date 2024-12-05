@@ -164,13 +164,7 @@ func (bc *BabylonController) BTCCheckpointParams() (*BTCCheckpointParams, error)
 	return bc.btccheckpointParamsWithRetry()
 }
 
-func (bc *BabylonController) Params() (*StakingParams, error) {
-	bccParams, err := bc.btccheckpointParamsWithRetry()
-
-	if err != nil {
-		return nil, err
-	}
-
+func (bc *BabylonController) queryStakingTrackerWithRetries() (*StakingTrackerResponse, error) {
 	var stakingTrackerParams *StakingTrackerResponse
 	if err := retry.Do(func() error {
 		trackerParams, err := bc.QueryStakingTracker()
@@ -189,46 +183,19 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
-	return &StakingParams{
-		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
-		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
-		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
-		CovenantPks:               stakingTrackerParams.CovenantPks,
-		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
-		SlashingRate:              stakingTrackerParams.SlashingRate,
-		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		UnbondingTime:             stakingTrackerParams.UnbondingTime,
-		UnbondingFee:              stakingTrackerParams.UnbondingFee,
-		MinStakingTime:            stakingTrackerParams.MinStakingTime,
-		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
-		MinStakingValue:           stakingTrackerParams.MinStakingValue,
-		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
-		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
-	}, nil
+	return stakingTrackerParams, nil
 }
 
-func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error) {
+func (bc *BabylonController) Params() (*StakingParams, error) {
 	bccParams, err := bc.btccheckpointParamsWithRetry()
 
 	if err != nil {
 		return nil, err
 	}
 
-	var stakingTrackerParams *StakingTrackerResponse
-	if err := retry.Do(func() error {
-		trackerParams, err := bc.QueryStakingTrackerByBtcHeight(btcHeight)
-		if err != nil {
-			return err
-		}
-		stakingTrackerParams = trackerParams
-		return nil
-	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
-		bc.logger.WithFields(logrus.Fields{
-			"attempt":      n + 1,
-			"max_attempts": RtyAttNum,
-			"error":        err,
-		}).Error("Failed to query babylon client for staking tracker params")
-	})); err != nil {
+	stakingTrackerParams, err := bc.queryStakingTrackerWithRetries()
+
+	if err != nil {
 		return nil, err
 	}
 
@@ -250,7 +217,9 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 	}, nil
 }
 
-func (bc *BabylonController) StakingTrackerByBtcHeight(btcHeight uint32) (*StakingTrackerResponse, error) {
+func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
+	btcHeight uint32,
+) (*StakingTrackerResponse, error) {
 	var stakingTrackerParams *StakingTrackerResponse
 	if err := retry.Do(func() error {
 		trackerParams, err := bc.QueryStakingTrackerByBtcHeight(btcHeight)
@@ -270,6 +239,37 @@ func (bc *BabylonController) StakingTrackerByBtcHeight(btcHeight uint32) (*Staki
 	}
 
 	return stakingTrackerParams, nil
+}
+
+func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error) {
+	bccParams, err := bc.btccheckpointParamsWithRetry()
+
+	if err != nil {
+		return nil, err
+	}
+
+	stakingTrackerParams, err := bc.queryStakingTrackerByBtcHeightWithRetries(btcHeight)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &StakingParams{
+		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
+		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
+		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
+		CovenantPks:               stakingTrackerParams.CovenantPks,
+		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
+		SlashingRate:              stakingTrackerParams.SlashingRate,
+		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
+		UnbondingFee:              stakingTrackerParams.UnbondingFee,
+		MinStakingTime:            stakingTrackerParams.MinStakingTime,
+		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
+		MinStakingValue:           stakingTrackerParams.MinStakingValue,
+		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+	}, nil
 }
 
 func (bc *BabylonController) GetKeyAddress() sdk.AccAddress {
