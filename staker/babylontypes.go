@@ -70,8 +70,7 @@ func (app *App) buildOwnedDelegation(
 		externalData.babylonParams.CovenantQuruomThreshold,
 		externalData.babylonParams.SlashingPkScript,
 		externalData.babylonParams.UnbondingFee,
-		// TODO: Possiblity to customize finalization time
-		externalData.babylonParams.MinUnbondingTime,
+		externalData.babylonParams.UnbondingTime,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		app.network,

@@ -115,7 +115,7 @@ func slashingTxForStakingTx(
 	net *chaincfg.Params,
 ) (*wire.MsgTx, *staking.SpendInfo, error) {
 	stakerPubKey := delegationData.stakerPublicKey
-	lockSlashTxLockTime := delegationData.babylonParams.MinUnbondingTime
+	lockSlashTxLockTime := delegationData.babylonParams.UnbondingTime
 
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
@@ -509,8 +509,8 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx due to tx not matching current data: %w", err)
 	}
 
-	if unbondingTime < currentParams.MinUnbondingTime {
-		return nil, fmt.Errorf("failed to watch staking tx. Unbonding time must be greater or equal min unbonding time. Unbonding time: %d, min unbonding time: %d", unbondingTime, currentParams.MinUnbondingTime)
+	if unbondingTime != currentParams.UnbondingTime {
+		return nil, fmt.Errorf("failed to watch staking tx. Unbonding time must be equal to unbonding time in babylon. Unbonding time: %d, unbonding time in babylon: %d", unbondingTime, currentParams.UnbondingTime)
 	}
 
 	// 2. Check whether slashing tx match staking tx

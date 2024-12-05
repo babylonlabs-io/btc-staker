@@ -105,7 +105,7 @@ type StakingTrackerResponse struct {
 	CovenantPks               []*btcec.PublicKey
 	CovenantQuruomThreshold   uint32
 	MinSlashingFee            btcutil.Amount
-	MinUnbondingTime          uint16
+	UnbondingTime             uint16
 	UnbondingFee              btcutil.Amount
 	MinStakingTime            uint16
 	MaxStakingTime            uint16
@@ -179,7 +179,7 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
 		SlashingRate:              stakingTrackerParams.SlashingRate,
 		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		MinUnbondingTime:          stakingTrackerParams.MinUnbondingTime,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
 		UnbondingFee:              stakingTrackerParams.UnbondingFee,
 		MinStakingTime:            stakingTrackerParams.MinStakingTime,
 		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
@@ -478,9 +478,9 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		covenantPks = append(covenantPks, covenantBtcPk)
 	}
 
-	minUnbondingTimeBlocksU32 := response.Params.MinUnbondingTimeBlocks
-	if minUnbondingTimeBlocksU32 > math.MaxUint16 {
-		return nil, fmt.Errorf("min unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	unbondingTime := response.Params.UnbondingTimeBlocks
+	if unbondingTime > math.MaxUint16 {
+		return nil, fmt.Errorf("unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
 	}
 
 	minStakingTimeBlocksU32 := response.Params.MinStakingTimeBlocks
@@ -512,7 +512,7 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		CovenantPks:               covenantPks,
 		MinSlashingFee:            btcutil.Amount(response.Params.MinSlashingTxFeeSat),
 		CovenantQuruomThreshold:   response.Params.CovenantQuorum,
-		MinUnbondingTime:          uint16(minUnbondingTimeBlocksU32),
+		UnbondingTime:             uint16(unbondingTime),
 		UnbondingFee:              btcutil.Amount(response.Params.UnbondingFeeSat),
 		MinStakingTime:            uint16(minStakingTimeBlocksU32),
 		MaxStakingTime:            uint16(maxStakingTimeBlocksU32),

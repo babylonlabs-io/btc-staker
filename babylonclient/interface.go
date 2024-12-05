@@ -38,7 +38,7 @@ type StakingParams struct {
 	CovenantQuruomThreshold uint32
 
 	// Minimum unbonding time required by babylon
-	MinUnbondingTime uint16
+	UnbondingTime uint16
 
 	// Fee required by unbonding transaction
 	UnbondingFee btcutil.Amount
