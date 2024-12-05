@@ -16,6 +16,13 @@ import (
 	pv "github.com/cosmos/relayer/v2/relayer/provider"
 )
 
+type BTCCheckpointParams struct {
+	// K-deep
+	ConfirmationTimeBlocks uint32
+	// W-deep
+	FinalizationTimeoutBlocks uint32
+}
+
 type StakingParams struct {
 	// K-deep
 	ConfirmationTimeBlocks uint32
@@ -68,7 +75,10 @@ type SingleKeyKeyring interface {
 
 type BabylonClient interface {
 	SingleKeyKeyring
+	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
+	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
+	StakingTrackerByBtcHeight(btcHeight uint32) (*StakingTrackerResponse, error)
 	Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
@@ -89,6 +99,21 @@ var _ BabylonClient = (*MockBabylonClient)(nil)
 
 func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error) {
+	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) {
+	return &BTCCheckpointParams{
+		ConfirmationTimeBlocks:    m.ClientParams.ConfirmationTimeBlocks,
+		FinalizationTimeoutBlocks: m.ClientParams.FinalizationTimeoutBlocks,
+	}, nil
+}
+
+func (m *MockBabylonClient) StakingTrackerByBtcHeight(btcHeight uint32) (*StakingTrackerResponse, error) {
+	return &StakingTrackerResponse{}, nil
 }
 
 func (m *MockBabylonClient) Sign(msg []byte) ([]byte, error) {
