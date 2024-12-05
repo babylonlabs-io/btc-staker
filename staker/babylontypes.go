@@ -21,9 +21,10 @@ import (
 // retrieving data from babylon chain, sending data to babylon chain, queuing data to be send etc.
 
 type inclusionInfo struct {
-	txIndex        uint32
-	inclusionBlock *wire.MsgBlock
-	inclusionProof []byte
+	txIndex                 uint32
+	inclusionBlock          *wire.MsgBlock
+	inclusionBlockBtcHeight uint32
+	inclusionProof          []byte
 }
 
 type sendDelegationRequest struct {
@@ -39,7 +40,7 @@ func (app *App) buildOwnedDelegation(
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
 ) (*cl.DelegationData, error) {
-	externalData, err := app.retrieveExternalDelegationData(stakerAddress)
+	externalData, err := app.retrieveExternalDelegationData(stakerAddress, req.inclusionInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +71,7 @@ func (app *App) buildOwnedDelegation(
 		externalData.babylonParams.CovenantQuruomThreshold,
 		externalData.babylonParams.SlashingPkScript,
 		externalData.babylonParams.UnbondingFee,
-		// TODO: Possiblity to customize finalization time
-		externalData.babylonParams.MinUnbondingTime,
+		externalData.babylonParams.UnbondingTime,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		app.network,

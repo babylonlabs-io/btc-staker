@@ -960,8 +960,9 @@ func (app *App) mustBuildInclusionProof(
 
 func (app *App) newBtcInclusionInfo(notifierTx *notifier.TxConfirmation) *inclusionInfo {
 	return &inclusionInfo{
-		txIndex:        notifierTx.TxIndex,
-		inclusionBlock: notifierTx.Block,
+		txIndex:                 notifierTx.TxIndex,
+		inclusionBlock:          notifierTx.Block,
+		inclusionBlockBtcHeight: notifierTx.BlockHeight,
 		inclusionProof: app.mustBuildInclusionProof(
 			notifierTx.Block,
 			notifierTx.TxIndex,
@@ -969,10 +970,28 @@ func (app *App) newBtcInclusionInfo(notifierTx *notifier.TxConfirmation) *inclus
 	}
 }
 
-func (app *App) retrieveExternalDelegationData(stakerAddress btcutil.Address) (*externalDelegationData, error) {
-	params, err := app.babylonClient.Params()
-	if err != nil {
-		return nil, err
+func (app *App) retrieveExternalDelegationData(
+	stakerAddress btcutil.Address,
+	inclusionInfo *inclusionInfo,
+) (*externalDelegationData, error) {
+	var params *cl.StakingParams
+
+	if inclusionInfo == nil {
+		p, err := app.babylonClient.Params()
+
+		if err != nil {
+			return nil, err
+		}
+
+		params = p
+	} else {
+		p, err := app.babylonClient.ParamsByBtcHeight(inclusionInfo.inclusionBlockBtcHeight)
+
+		if err != nil {
+			return nil, err
+		}
+
+		params = p
 	}
 
 	stakerPublicKey, err := app.wc.AddressPublicKey(stakerAddress)
@@ -1540,7 +1559,8 @@ func (app *App) handleStakingCommands() {
 
 		case cmd := <-app.migrateStakingCmd:
 			stkTxHash := cmd.notifierTx.Tx.TxHash()
-			stkParams, err := app.babylonClient.Params()
+
+			btcCheckpointParams, err := app.babylonClient.BTCCheckpointParams()
 			if err != nil {
 				cmd.errChan <- err
 				continue
@@ -1548,7 +1568,7 @@ func (app *App) handleStakingCommands() {
 
 			bestBlockHeight := app.currentBestBlockHeight.Load()
 			// check confirmation is deep enough
-			if err := checkConfirmationDepth(bestBlockHeight, cmd.notifierTx.BlockHeight, stkParams.ConfirmationTimeBlocks); err != nil {
+			if err := checkConfirmationDepth(bestBlockHeight, cmd.notifierTx.BlockHeight, btcCheckpointParams.ConfirmationTimeBlocks); err != nil {
 				cmd.errChan <- err
 				continue
 			}
@@ -1556,7 +1576,7 @@ func (app *App) handleStakingCommands() {
 			_, btcDelTxHash, err := app.handleSendDelegationRequest(
 				cmd.stakerAddr,
 				cmd.parsedStakingTx.OpReturnData.StakingTime,
-				stkParams.ConfirmationTimeBlocks,
+				btcCheckpointParams.ConfirmationTimeBlocks,
 				[]*btcec.PublicKey{cmd.parsedStakingTx.OpReturnData.FinalityProviderPublicKey.PubKey},
 				cmd.pop,
 				cmd.notifierTx.Tx,
@@ -1616,9 +1636,10 @@ func (app *App) handleStakingEvents() {
 			req := newSendDelegationRequest(
 				&ev.stakingTxHash,
 				&inclusionInfo{
-					txIndex:        ev.txIndex,
-					inclusionBlock: ev.inlusionBlock,
-					inclusionProof: proof,
+					txIndex:                 ev.txIndex,
+					inclusionBlock:          ev.inlusionBlock,
+					inclusionBlockBtcHeight: ev.blockHeight,
+					inclusionProof:          proof,
 				},
 				ev.blockDepth,
 			)

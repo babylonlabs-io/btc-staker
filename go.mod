@@ -6,7 +6,7 @@ require (
 	cosmossdk.io/errors v1.0.1
 	cosmossdk.io/math v1.4.0
 	github.com/avast/retry-go/v4 v4.5.1
-	github.com/babylonlabs-io/babylon v0.17.1
+	github.com/babylonlabs-io/babylon v0.18.0
 	github.com/babylonlabs-io/networks/parameters v0.2.2
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2
@@ -22,6 +22,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.9
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/relayer/v2 v2.5.2
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/jsternberg/zap-logfmt v1.3.0
 	github.com/lightningnetwork/lnd v0.16.4-beta.rc1
@@ -113,7 +114,6 @@ require (
 	github.com/danieljoos/wincred v1.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/decred/dcrd/lru v1.0.0 // indirect
 	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/dgraph-io/badger/v4 v4.3.0 // indirect
