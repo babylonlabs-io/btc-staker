@@ -1,35 +1,33 @@
-# Transition your stake from phase-1 to phase-2 through CLI
+# Register your Phase-1 stake to Phase-2 through CLI
 
-## Understanding the transition
+## Understanding the registration process
 
-The transition from phase-1 to phase-2 is a manual process that requires the 
-staker to transition their stake to phase-2 of the Babylon network. 
-This transition has the option of being executed through the `stakercli` binary 
+The registration of Phase-1 stakes to Phase-2 is a manual process that requires 
+the staker to register their stake to Phase-2 of the Babylon network. 
+This registration is executed through the `stakercli` binary 
 and this guide will show you how to do it through the `stakercli` binary. For 
-detailed information about stake eligibility 
-criteria, registration requirements, and how to gain voting power and earn 
-rewards in phase-2, please refer to the 
-[Transition of Existing Stakes to the Babylon Chain](https://github.com/babylonlabs-io/babylon/blob/main/docs/stake-registration.md).
-<!-- TODO: Update link -->
+detailed information about stake eligibility criteria, registration requirements, 
+and how to gain voting power and earn rewards in phase-2, please refer to the 
+[Registration of Existing Stakes to the Babylon Chain](https://github.com/babylonlabs-io/babylon/blob/main/docs/stake-registration.md).
 
 ## Table of Contents
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
-- [Transition your stake](#transition-your-stake)
-- [Verify the transition](#verify-the-transition)
+- [Register your stake](#register-your-stake)
+- [Verify the registration](#verify-the-registration)
 
 ## Prerequisites
 
-To transition your stake from phase-1 to phase-2, you need to have the 
+To register your stake to Phase-2, you need to have the 
 following:
-- Access to your existing Bitcoin wallet from phase-1 (needed to sign transactions 
+- Access to your existing Bitcoin wallet from Phase-1 (needed to sign transactions 
   and prove ownership of staked funds).
 - The Bitcoin block height in which your staking transaction was included, which 
-  will be used in the transition command.
+  will be used in the registration command.
 - A funded Babylon address, which will be used to receive the rewards from the 
-  transition.
+  registration.
 - Global parameter file as seen here https://github.com/babylonlabs-io/networks/blob/main/bbn-test-5/parameters/global-params.json 
-  that were used in phase-1. This will be used in the transition command later 
+  that were used in Phase-1. This will be used in the registration command later 
   on.
 - A running instance of the `stakerd` daemon. Please follow the `stakerd` 
   [setup guide](../README.md#3-btc-staker-installation) to complete the setup. 
@@ -84,10 +82,10 @@ Add the location for the above created `config.json` file to the command:
 stakerd --configfile <config-file-path> admin start
 ```
 
-## Transition your stake
+## Register your stake
 
 Following the setup of the configuration file and starting the `btcstaker` 
-daemon, you can proceed to transition your stake from Phase-1 to Phase-2 using 
+daemon, you can proceed to register your stake from Phase-1 to Phase-2 using 
 the following command. We use the `global_parameters.json` file that you should 
 already have created as stated in the prerequisites.
 
