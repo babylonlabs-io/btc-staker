@@ -9,7 +9,7 @@ and this guide will show you how to do it through the `stakercli` binary. For
 detailed information about stake eligibility 
 criteria, registration requirements, and how to gain voting power and earn 
 rewards in phase-2, please refer to the 
-[phase-2 transition guide](https://gist.github.com/vitsalis/9ebfd19bbde310e0bf4a70e7ab15a290).
+[Transition of Existing Stakes to the Babylon Chain](https://gist.github.com/vitsalis/9ebfd19bbde310e0bf4a70e7ab15a290).
 <!-- TODO: Update link -->
 
 ## Table of Contents
