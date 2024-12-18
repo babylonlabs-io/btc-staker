@@ -31,16 +31,15 @@ following:
 - Global parameter file as seen here https://github.com/babylonlabs-io/networks/blob/main/bbn-test-5/parameters/global-params.json 
   that were used in phase-1. This will be used in the transition command later 
   on.
-- A running instance of the `stakercli` binary. Please follow the `stakercli` 
-  [setup guide](../README.md#3-btc-staker-installation) to complete the setup of 
-  the `stakercli` with your keys before proceeding.
+- A running instance of the `stakerd` daemon. Please follow the `stakerd` 
+  [setup guide](../README.md#3-btc-staker-installation) to complete the setup. 
+  This is also inclusive of creating a Babylon keyring with funds step as the 
+  `stakerd` daemon requires a funded keyring to pay for the transactions.
 
 ## Setup 
 
 First, you will need to dump the default configuration file. This creates a 
-template configuration file that you'll customize with your specific values 
-(like your Bitcoin block height that your staking transaction was included in, 
-wallet credentials, and network details):
+template configuration file that you'll customize with your specific values:
 
 ```bash
 stakercli admin dump-config
@@ -68,10 +67,10 @@ Network = "signet"  # Bitcoin network (signet for testnet)
 ### Babylon Configuration
 ```toml
 [babylon]
-Key = "btc-staker"                    # Your Babylon key name
+Key = "btc-staker"                  # Your Babylon key name created in the btc-staker-installation
 ChainID = "bbn-test-5"               # Babylon chain ID
 RPCAddr = "http://localhost:26657"    # Babylon RPC endpoint
-GRPCAddr = "https://localhost:9090"   # Babylon gRPC endpoint
+GRPCAddr = "http://localhost:9090"   # Babylon gRPC endpoint
 AccountPrefix = "bbn"                 # Babylon address prefix
 KeyringBackend = "test"              # Keyring backend type
 GasPrices = "0.01ubbn"              # Minimum gas price
