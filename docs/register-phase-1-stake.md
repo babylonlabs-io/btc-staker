@@ -10,9 +10,10 @@ requirements and process.
 
 ## Table of Contents
 - [Prerequisites](#prerequisites)
-- [Setup](#setup)
+- [Setup and configuration](#setup-and-configuration)
 - [Register your stake](#register-your-stake)
-- [Verify the registration](#verify-the-registration)
+- [Verify your registration](#verify-your-registration)
+- [Receiving rewards](#receiving-rewards)
 
 ## Prerequisites
 
@@ -102,7 +103,7 @@ stakercli daemon stake-from-phase1 <global-parameters-file> \
     --tx-inclusion-height <block-height>
 ```
 
-parameters:
+Parameters:
 - `global-parameters-file`: The path to the global parameters file.
 - `your-phase1-tx-hash`: The original hash of your Bitcoin staking transaction.
 - `your-btc-address`: BTC address of the staker in hex.
@@ -110,7 +111,7 @@ parameters:
   included.
 
 The above command will output a transaction hash similar to below 
-that you can use to verify the registration on the Babylon blockchain, which  
+that you can use to verify the registration on the Babylon blockchain, which 
 you will see in the next section.
 
 ```json
