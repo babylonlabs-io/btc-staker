@@ -85,6 +85,7 @@ type BabylonClient interface {
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
+	QueryBtcLightClientTipHeight() (uint32, error)
 }
 
 type MockBabylonClient struct {
@@ -226,4 +227,8 @@ func GetMockClient() *MockBabylonClient {
 		SentMessages:           make(chan *types.MsgCreateBTCDelegation),
 		ActiveFinalityProvider: &vi,
 	}
+}
+
+func (bc *MockBabylonClient) QueryBtcLightClientTipHeight() (uint32, error) {
+	return 0, nil
 }

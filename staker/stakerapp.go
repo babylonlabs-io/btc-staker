@@ -977,7 +977,14 @@ func (app *App) retrieveExternalDelegationData(
 	var params *cl.StakingParams
 
 	if inclusionInfo == nil {
-		p, err := app.babylonClient.Params()
+		// chose params as babylon would through tip of btc light client
+		tipHeight, err := app.babylonClient.QueryBtcLightClientTipHeight()
+
+		if err != nil {
+			return nil, err
+		}
+
+		p, err := app.babylonClient.ParamsByBtcHeight(tipHeight)
 
 		if err != nil {
 			return nil, err

@@ -1004,13 +1004,13 @@ func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctyp
 	return res, nil
 }
 
-func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfoResponse, error) {
+func (bc *BabylonController) QueryBtcLightClientTipHeight() (uint32, error) {
 	res, err := bc.bbnClient.QueryClient.BTCHeaderChainTip()
 	if err != nil {
-		return nil, fmt.Errorf("failed to query BTC tip: %w", err)
+		return 0, fmt.Errorf("failed to query BTC tip: %w", err)
 	}
 
-	return res.Header, nil
+	return res.Header.Height, nil
 }
 
 func (bc *BabylonController) ActivateDelegation(
