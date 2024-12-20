@@ -229,6 +229,6 @@ func GetMockClient() *MockBabylonClient {
 	}
 }
 
-func (bc *MockBabylonClient) QueryBtcLightClientTipHeight() (uint32, error) {
+func (m *MockBabylonClient) QueryBtcLightClientTipHeight() (uint32, error) {
 	return 0, nil
 }
