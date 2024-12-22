@@ -79,7 +79,8 @@ Parameters:
 - `global-parameters-file`: The path to the global parameters file.
 - `your-phase1-tx-hash`: The original hash of your Bitcoin staking transaction.
   This will be used to retrieve the staking transaction from your wallet.
-- `your-btc-address`: BTC address of the staker in hex.
+- `your-btc-address`: BTC address of the staker (bech32 format). For example, 
+  `tb1q9hr5zxsvtzg3gxpewdc7ft9yam2c6cfeaz75jj`.
 - `block-height`: The BTC block height at which your staking transaction was 
   included.
 
