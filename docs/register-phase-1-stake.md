@@ -139,12 +139,6 @@ verify your registration with the next step.
 
 2. Babylon Chain Status:
 
-While `stakerd` tracks your registration locally, the final validation happens 
-on the Babylon chain. When `stakerd` shows `SENT_TO_BABYLON`, your transaction 
-needs covenant signatures from the Babylon validators to become active. 
-You can verify this process using the transaction hash from your 
-registration:
-
 ```shell
 # From your stake-from-phase1 response:
 {
