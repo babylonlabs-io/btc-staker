@@ -93,23 +93,63 @@ you will see in the next section.
 }
 ```
 
-## Verify your registration
+## Verify Your Registration
 
-Following the registration of your Bitcoin stake, you can verify your 
-registration by checking your balance on the [Babylon Explorer](https://babylon-testnet.l2scan.co) 
-by searching for the `<babylon_btc_delegation_tx_hash>` value.
+After submitting your stake registration with `stake-from-phase1`, you can 
+verify your registration with either of the following methods:
 
-The below states relate to the statuses maintained by stakerd. Above you refer 
-to going to the Babylon explorer. Something is missing here I think. In general, I recommend that we check the status of the transaction by stakerd/stakercli commands instead of sending people to a 3rd party explorer.
+1. Check your stake's local tracking status in `stakerd`:
 
-- `SENT_TO_BTC` - Initial state
-- `CONFIRMED_ON_BTC` - Bitcoin confirmation
-- `SENT_TO_BABYLON` - Registration submitted to Babylon
-- `VERIFIED` - Registration verified
-- `DELEGATION_ACTIVE` - Stake active and has voting power
+```shell
+# View all stakes being tracked:
+stakercli daemon list-staking-transactions
+
+# Or check a specific transaction:
+stakercli daemon staking-details --staking-transaction-hash <your-btc-tx-hash>
+```
+
+The response will show an output similar to below:
+
+```json
+{
+    "staking_tx_hash": "<your-btc-tx-hash>",
+    "staker_address": "<btc-staker-address>",
+    "staking_state": "SENT_TO_BABYLON",
+    "watched": true,
+    "transaction_idx": "1"
+}
+```
+As you can see, the `staking_state` field will show the current state of your 
+stake registration. Your stake will progress through these states:
+
+- `SENT_TO_BTC` - Initial state when transaction is created
+- `CONFIRMED_ON_BTC` - Bitcoin network has confirmed the transaction
+- `SENT_TO_BABYLON` - Registration submitted to Babylon chain
+- `VERIFIED` - Covenant signatures received
+- `DELEGATION_ACTIVE` - Stake is active with voting power
 - `UNBONDING_CONFIRMED_ON_BTC` - Unbonding in progress
-- `SPENT_ON_BTC` - Stake withdrawn
+- `SPENT_ON_BTC` - Stake has been withdrawn
 
-Depending on the state of the transaction, you can see the progress of the 
-registration on the Babylon blockchain, as it will take a few minutes for the 
-transaction to be verified and the stake to be active.
+Once your staking state reaches `DELEGATION_ACTIVE`, your stake is active and 
+participating in the network.
+
+If you wish to check your registration on the Babylon chain, you can then 
+verify your registration with the next step.
+
+2. Babylon Chain Status:
+
+While `stakerd` tracks your registration locally, the final validation happens 
+on the Babylon chain. When `stakerd` shows `SENT_TO_BABYLON`, your transaction 
+needs covenant signatures from the Babylon validators to become active. 
+You can verify this process using the transaction hash from your 
+registration:
+
+```shell
+# From your stake-from-phase1 response:
+{
+  "babylon_btc_delegation_tx_hash": "<btc-delegation-tx-hash>"
+}
+
+# View on Babylon Explorer:
+https://babylon-testnet.l2scan.co/tx/<btc-delegation-tx-hash>
+```
