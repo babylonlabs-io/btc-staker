@@ -158,7 +158,7 @@ var stakeFromPhase1Cmd = cli.Command{
 		},
 		cli.StringFlag{
 			Name:     stakerAddressFlag,
-			Usage:    "BTC address of the staker in hex",
+			Usage:    "BTC address of the staker (bech32 format)",
 			Required: true,
 		},
 		cli.Uint64Flag{
