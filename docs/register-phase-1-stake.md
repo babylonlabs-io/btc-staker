@@ -10,10 +10,8 @@ requirements and process.
 
 ## Table of Contents
 - [Prerequisites](#prerequisites)
-- [Setup and configuration](#setup-and-configuration)
 - [Register your stake](#register-your-stake)
 - [Verify your registration](#verify-your-registration)
-- [Receiving rewards](#receiving-rewards)
 
 ## Prerequisites
 
@@ -63,7 +61,7 @@ A few notes about the `global-parameters.json` file:
 > transaction (because it is a new one or very recently submitted), it cannot be 
 > registered.
 > To check your eligibility please refer to the 
-> [registration eligibility guide](registration-eligibility.md).
+> [registration eligibility guide](https://github.com/babylonlabs-io/babylon/blob/main/docs/stake-registration.md).
 
 Now that you have the `global-parameters.json` file, you can register your 
 Bitcoin stake by running the following command:
