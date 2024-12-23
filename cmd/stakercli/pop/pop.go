@@ -121,7 +121,7 @@ func generatePop(c *cli.Context) error {
 		c.String(btcWalletPassphraseFlag),
 		types.BitcoindWalletBackend,
 		networkParams,
-		false,
+		true,
 		"",
 		"",
 	)
