@@ -3,6 +3,7 @@ package staker
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
@@ -16,12 +17,12 @@ import (
 )
 
 type Response struct {
-	BabyAddress   string        `json:"babyAddress"`
-	BTCAddress    string        `json:"btcAddress"`
-	BTCPublicKey  string        `json:"btcPublicKey"`
-	BTCSignBaby   string        `json:"btcSignBaby"`
-	BabySignBTC   string        `json:"babySignBtc"`
-	BabyPublicKey BabyPublicKey `json:"babyPublicKey"`
+	BabyAddress   string `json:"babyAddress"`
+	BTCAddress    string `json:"btcAddress"`
+	BTCPublicKey  string `json:"btcPublicKey"`
+	BTCSignBaby   string `json:"btcSignBaby"`
+	BabySignBTC   string `json:"babySignBtc"`
+	BabyPublicKey string `json:"babyPublicKey"`
 }
 
 type BabyPublicKey struct {
@@ -62,6 +63,38 @@ func (pc *PopCreator) getBabyPubKey(babylonAddress sdk.AccAddress) (*keyring.Rec
 	}
 }
 
+func (pc *PopCreator) signCosmosAdr36(
+	keyName string,
+	cosmosBech32Address string,
+	bytesToSign []byte,
+) ([]byte, error) {
+	base64Bytes := base64.StdEncoding.EncodeToString(bytesToSign)
+
+	signDoc := NewCosmosSignDoc(
+		cosmosBech32Address,
+		base64Bytes,
+	)
+
+	marshaled, err := json.Marshal(signDoc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal sign doc: %w", err)
+	}
+
+	bz := sdk.MustSortJSON(marshaled)
+
+	babySignBTCAddress, _, err := pc.KeyRing.Sign(
+		keyName,
+		bz,
+		signing.SignMode_SIGN_MODE_DIRECT,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign btc address bytes: %w", err)
+	}
+
+	return babySignBTCAddress, nil
+}
+
 func (pc *PopCreator) CreatePop(
 	btcAddress btcutil.Address,
 	babyAddressPrefix string,
@@ -96,28 +129,66 @@ func (pc *PopCreator) CreatePop(
 		return nil, err
 	}
 
-	btcAddressString := btcAddress.String()
-	btcAddressBytes := []byte(btcAddressString)
-
-	babySignBTCAddress, _, err := pc.KeyRing.Sign(
-		record.Name,
-		btcAddressBytes,
-		signing.SignMode_SIGN_MODE_DIRECT,
-	)
-
+	babySignBTCAddress, err := pc.signCosmosAdr36(record.Name, bech32cosmosAddressString, signatureBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign btc address bytes: %w", err)
+		return nil, fmt.Errorf("failed to sign btc address: %w", err)
 	}
 
 	return &Response{
-		BabyAddress:  bech32cosmosAddressString,
-		BTCAddress:   btcAddress.String(),
-		BTCPublicKey: hex.EncodeToString(schnorr.SerializePubKey(btcPubKey)),
-		BTCSignBaby:  base64.StdEncoding.EncodeToString(signatureBytes),
-		BabySignBTC:  base64.StdEncoding.EncodeToString(babySignBTCAddress),
-		BabyPublicKey: BabyPublicKey{
-			Type:  babyPubKey.Type(),
-			Value: base64.StdEncoding.EncodeToString(babyPubKey.Bytes()),
-		},
+		BabyAddress:   bech32cosmosAddressString,
+		BTCAddress:    btcAddress.String(),
+		BTCPublicKey:  hex.EncodeToString(schnorr.SerializePubKey(btcPubKey)),
+		BTCSignBaby:   base64.StdEncoding.EncodeToString(signatureBytes),
+		BabySignBTC:   base64.StdEncoding.EncodeToString(babySignBTCAddress),
+		BabyPublicKey: base64.StdEncoding.EncodeToString(babyPubKey.Bytes()),
 	}, nil
+}
+
+type Fee struct {
+	Gas    string   `json:"gas"`
+	Amount []string `json:"amount"`
+}
+
+type MsgValue struct {
+	Signer string `json:"signer"`
+	Data   string `json:"data"`
+}
+
+type Msg struct {
+	Type  string   `json:"type"`
+	Value MsgValue `json:"value"`
+}
+
+type SignDoc struct {
+	ChainID       string `json:"chain_id"`
+	AccountNumber string `json:"account_number"`
+	Sequence      string `json:"sequence"`
+	Fee           Fee    `json:"fee"`
+	Msgs          []Msg  `json:"msgs"`
+	Memo          string `json:"memo"`
+}
+
+func NewCosmosSignDoc(
+	signer string,
+	data string,
+) *SignDoc {
+	return &SignDoc{
+		ChainID:       "",
+		AccountNumber: "0",
+		Sequence:      "0",
+		Fee: Fee{
+			Gas:    "0",
+			Amount: []string{},
+		},
+		Msgs: []Msg{
+			{
+				Type: "sign/MsgSignData",
+				Value: MsgValue{
+					Signer: signer,
+					Data:   data,
+				},
+			},
+		},
+		Memo: "",
+	}
 }
