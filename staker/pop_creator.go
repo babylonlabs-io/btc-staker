@@ -129,7 +129,12 @@ func (pc *PopCreator) CreatePop(
 		return nil, err
 	}
 
-	babySignBTCAddress, err := pc.signCosmosAdr36(record.Name, bech32cosmosAddressString, signatureBytes)
+	babySignBTCAddress, err := pc.signCosmosAdr36(
+		record.Name,
+		bech32cosmosAddressString,
+		[]byte(btcAddress.String()),
+	)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign btc address: %w", err)
 	}
