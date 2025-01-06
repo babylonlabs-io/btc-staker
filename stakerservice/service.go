@@ -387,7 +387,7 @@ func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, li
 	lastIdx := "0"
 	if len(stakingDetails) > 0 {
 		// this should ease up pagination i.e in case when whe have 1000 transactions, and we limit query to 50
-		// due to filetring we can retrun  response with 50 transactions when last one have index 400,
+		// due to filtering we can return  response with 50 transactions when last one have index 400,
 		// then caller can specify offset=400 and get next withdrawable transactions.
 		lastIdx = stakingDetails[len(stakingDetails)-1].TransactionIdx
 	}
