@@ -986,7 +986,7 @@ func TestStakeFromPhase1(t *testing.T) {
 	require.True(t, delInfo.Active)
 }
 
-func TestTestPopCreation(t *testing.T) {
+func TestPopCreation(t *testing.T) {
 	t.Parallel()
 	manager, err := containers.NewManager(t)
 	require.NoError(t, err)
