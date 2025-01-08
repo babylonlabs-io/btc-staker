@@ -6,6 +6,7 @@ import (
 
 	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
+	cmdpop "github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
 	cmdtx "github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
 	"github.com/urfave/cli"
 )
@@ -21,7 +22,6 @@ const (
 	btcWalletRPCUserFlag    = "btc-wallet-rpc-user"
 	btcWalletRPCPassFlag    = "btc-wallet-rpc-pass"
 	btcWalletPassphraseFlag = "btc-wallet-passphrase"
-	btcWalletBackendFlag    = "btc-wallet-backend"
 )
 
 func main() {
@@ -53,16 +53,12 @@ func main() {
 			Name:  btcWalletPassphraseFlag,
 			Usage: "Bitcoin wallet passphrase",
 		},
-		cli.StringFlag{
-			Name:  btcWalletBackendFlag,
-			Usage: "Bitcoin backend (btcwallet|bitcoind)",
-			Value: "btcd",
-		},
 	}
 
 	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
 	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
 	app.Commands = append(app.Commands, cmdtx.TransactionCommands...)
+	app.Commands = append(app.Commands, cmdpop.PopCommands...)
 
 	if err := app.Run(os.Args); err != nil {
 		fatal(err)

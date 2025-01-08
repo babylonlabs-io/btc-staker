@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/babylonlabs-io/btc-staker/babylonclient/keyringcontroller"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/babylonlabs-io/networks/parameters/parser"
@@ -27,6 +28,7 @@ import (
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
@@ -982,4 +984,56 @@ func TestStakeFromPhase1(t *testing.T) {
 	delInfo, err := tm.BabylonClient.QueryDelegationInfo(txHash)
 	require.NoError(t, err)
 	require.True(t, delInfo.Active)
+}
+
+func TestPopCreation(t *testing.T) {
+	t.Parallel()
+	manager, err := containers.NewManager(t)
+	require.NoError(t, err)
+	h := NewBitcoindHandler(t, manager)
+	bitcoind := h.Start()
+	passphrase := "pass"
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
+
+	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	cfg, c := defaultStakerConfigAndBtc(t, walletName, passphrase, rpcHost)
+
+	segwitAddress, err := c.GetNewAddress("")
+	require.NoError(t, err)
+
+	controller, err := walletcontroller.NewRPCWalletController(cfg)
+	require.NoError(t, err)
+
+	keyring, err := keyringcontroller.CreateKeyring(
+		// does not matter for memory keyring
+		"/",
+		"babylon",
+		"memory",
+		nil,
+	)
+	require.NoError(t, err)
+
+	randomKey, _ := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	keyName := "test"
+	err = keyring.ImportPrivKeyHex(keyName, hex.EncodeToString(randomKey.Serialize()), "secp256k1")
+	require.NoError(t, err)
+
+	record, err := keyring.Key(keyName)
+	require.NoError(t, err)
+
+	address, err := record.GetAddress()
+	require.NoError(t, err)
+
+	popCreator := staker.NewPopCreator(controller, keyring)
+	require.NotNil(t, popCreator)
+
+	err = controller.UnlockWallet(30)
+	require.NoError(t, err)
+
+	popResponse, err := popCreator.CreatePop(segwitAddress, "bbn", address)
+	require.NoError(t, err)
+	require.NotNil(t, popResponse)
 }
