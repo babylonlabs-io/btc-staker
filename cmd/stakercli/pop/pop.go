@@ -7,9 +7,9 @@ import (
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/types"
+	ut "github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/urfave/cli"
 )
@@ -107,7 +107,7 @@ var generatePopCmd = cli.Command{
 func generatePop(c *cli.Context) error {
 	network := c.String(btcNetworkFlag)
 
-	networkParams, err := parseNetwork(network)
+	networkParams, err := ut.GetBtcNetworkParams(network)
 	if err != nil {
 		return err
 	}
@@ -162,21 +162,4 @@ func generatePop(c *cli.Context) error {
 	helpers.PrintRespJSON(popResponse)
 
 	return nil
-}
-
-func parseNetwork(n string) (*chaincfg.Params, error) {
-	switch n {
-	case "mainnet":
-		return &chaincfg.MainNetParams, nil
-	case "testnet3":
-		return &chaincfg.TestNet3Params, nil
-	case "regtest":
-		return &chaincfg.RegressionNetParams, nil
-	case "simnet":
-		return &chaincfg.SimNetParams, nil
-	case "signet":
-		return &chaincfg.SigNetParams, nil
-	default:
-		return nil, fmt.Errorf("unknown network: %s", n)
-	}
 }
