@@ -3,6 +3,7 @@ package pop
 import (
 	"encoding/base64"
 	"fmt"
+	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/babylonclient/keyringcontroller"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
@@ -182,6 +183,11 @@ var generateDeletePopCmd = cli.Command{
 			Required: true,
 		},
 		cli.StringFlag{
+			Name:     msgFlag,
+			Usage:    "message to sign",
+			Required: true,
+		},
+		cli.StringFlag{
 			Name:  babyAddressPrefixFlag,
 			Usage: "Baby address prefix",
 			Value: "bbn",
@@ -248,11 +254,19 @@ func generateDeletePop(c *cli.Context) error {
 		return err
 	}
 
+	msg := c.String(msgFlag)
+
+	// We are assuming we are receiving string literal with escape characters
+	interpretedMsg, err := strconv.Unquote(`"` + msg + `"`)
+	if err != nil {
+		return err
+	}
+
 	signature, err := staker.SignCosmosAdr36(
 		keyring,
 		record.Name,
 		sdkAddress.String(),
-		[]byte(btcAddress.String()),
+		[]byte(interpretedMsg),
 	)
 
 	payload := DeletePopPayload{
