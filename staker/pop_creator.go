@@ -42,27 +42,6 @@ func NewPopCreator(bitcoinWalletController *walletcontroller.RPCWalletController
 	}
 }
 
-func (pc *PopCreator) getBabyPubKey(babylonAddress sdk.AccAddress) (*keyring.Record, *secp256k1.PubKey, error) {
-	record, err := pc.KeyRing.KeyByAddress(babylonAddress)
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pubKey, err := record.GetPubKey()
-
-	if err != nil {
-		return nil, nil, err
-	}
-
-	switch v := pubKey.(type) {
-	case *secp256k1.PubKey:
-		return record, v, nil
-	default:
-		return nil, nil, fmt.Errorf("unsupported key type in keyring")
-	}
-}
-
 func (pc *PopCreator) CreatePop(
 	btcAddress btcutil.Address,
 	babyAddressPrefix string,
@@ -92,7 +71,7 @@ func (pc *PopCreator) CreatePop(
 		return nil, err
 	}
 
-	record, babyPubKey, err := pc.getBabyPubKey(babyAddress)
+	record, babyPubKey, err := GetBabyPubKey(pc.KeyRing, babyAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +143,27 @@ func NewCosmosSignDoc(
 			},
 		},
 		Memo: "",
+	}
+}
+
+func GetBabyPubKey(kr keyring.Keyring, babylonAddress sdk.AccAddress) (*keyring.Record, *secp256k1.PubKey, error) {
+	record, err := kr.KeyByAddress(babylonAddress)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pubKey, err := record.GetPubKey()
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	switch v := pubKey.(type) {
+	case *secp256k1.PubKey:
+		return record, v, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported key type in keyring")
 	}
 }
 

@@ -1,6 +1,7 @@
 package pop
 
 import (
+	"encoding/base64"
 	"fmt"
 
 	"github.com/babylonlabs-io/btc-staker/babylonclient/keyringcontroller"
@@ -35,15 +36,16 @@ var PopCommands = []cli.Command{
 		Usage:    "Commands realted to generation and verification of the Proof of Possession",
 		Category: "PoP commands",
 		Subcommands: []cli.Command{
-			generatePopCmd,
+			generateCreatePopCmd,
+			generateDeletePopCmd,
 		},
 	},
 }
 
-var generatePopCmd = cli.Command{
-	Name:      "generate-pop",
-	ShortName: "gp",
-	Usage:     "stakercli pop generate-pop",
+var generateCreatePopCmd = cli.Command{
+	Name:      "generate-create-pop",
+	ShortName: "gcp",
+	Usage:     "stakercli pop generate-create-pop",
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:     btcAddressFlag,
@@ -160,6 +162,107 @@ func generatePop(c *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(popResponse)
+
+	return nil
+}
+
+var generateDeletePopCmd = cli.Command{
+	Name:      "generate-delete-pop",
+	ShortName: "gpd",
+	Usage:     "stakercli pop generate-delete-pop",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:     btcAddressFlag,
+			Usage:    "Bitcoin address to delete proof of possession for",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     babyAddressFlag,
+			Usage:    "Baby address to delete proof of possession for",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:  babyAddressPrefixFlag,
+			Usage: "Baby address prefix",
+			Value: "bbn",
+		},
+		cli.StringFlag{
+			Name:  btcNetworkFlag,
+			Usage: "Bitcoin network on which staking should take place (testnet3, mainnet, regtest, simnet, signet)",
+			Value: "testnet3",
+		},
+		cli.StringFlag{
+			Name:  keyringDirFlag,
+			Usage: "Keyring directory",
+			Value: "",
+		},
+		cli.StringFlag{
+			Name:  keyringBackendFlag,
+			Usage: "Keyring backend",
+			Value: "test",
+		},
+	},
+	Action: generateDeletePop,
+}
+
+type DeletePopPayload struct {
+	BabyAddress   string `json:"babyAddress"`
+	BabySignature string `json:"babySignature"`
+	BabyPublicKey string `json:"babyPublicKey"`
+	BtcAddress    string `json:"btcAddress"`
+}
+
+func generateDeletePop(c *cli.Context) error {
+	network := c.String(btcNetworkFlag)
+
+	networkParams, err := ut.GetBtcNetworkParams(network)
+	if err != nil {
+		return err
+	}
+
+	btcAddress, err := btcutil.DecodeAddress(c.String(btcAddressFlag), networkParams)
+	if err != nil {
+		return fmt.Errorf("failed to decode bitcoin address: %w", err)
+	}
+
+	babylonAddress := c.String(babyAddressFlag)
+	babyAddressPrefix := c.String(babyAddressPrefixFlag)
+
+	sdkAddressBytes, err := sdk.GetFromBech32(babylonAddress, babyAddressPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to decode baby address: %w", err)
+	}
+
+	sdkAddress := sdk.AccAddress(sdkAddressBytes)
+
+	keyringDir := c.String(keyringDirFlag)
+	keyringBackend := c.String(keyringBackendFlag)
+
+	keyring, err := keyringcontroller.CreateKeyring(keyringDir, "babylon", keyringBackend, nil)
+	if err != nil {
+		return err
+	}
+
+	record, babyPubKey, err := staker.GetBabyPubKey(keyring, sdkAddress)
+	if err != nil {
+		return err
+	}
+
+	signature, err := staker.SignCosmosAdr36(
+		keyring,
+		record.Name,
+		sdkAddress.String(),
+		[]byte(btcAddress.String()),
+	)
+
+	payload := DeletePopPayload{
+		BabyAddress:   sdkAddress.String(),
+		BabySignature: base64.StdEncoding.EncodeToString(signature),
+		BabyPublicKey: base64.StdEncoding.EncodeToString(babyPubKey.Bytes()),
+		BtcAddress:    btcAddress.String(),
+	}
+
+	helpers.PrintRespJSON(payload)
 
 	return nil
 }
