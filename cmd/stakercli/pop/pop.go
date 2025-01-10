@@ -169,7 +169,7 @@ func generatePop(c *cli.Context) error {
 
 var generateDeletePopCmd = cli.Command{
 	Name:      "generate-delete-pop",
-	ShortName: "gpd",
+	ShortName: "gdp",
 	Usage:     "stakercli pop generate-delete-pop",
 	Flags: []cli.Flag{
 		cli.StringFlag{
