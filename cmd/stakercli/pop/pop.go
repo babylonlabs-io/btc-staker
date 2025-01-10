@@ -269,6 +269,10 @@ func generateDeletePop(c *cli.Context) error {
 		[]byte(interpretedMsg),
 	)
 
+	if err != nil {
+		return err
+	}
+
 	payload := DeletePopPayload{
 		BabyAddress:   sdkAddress.String(),
 		BabySignature: base64.StdEncoding.EncodeToString(signature),
