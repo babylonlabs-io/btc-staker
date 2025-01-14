@@ -39,6 +39,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 to create phase-1/phase-2 PoP payload
 - [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
 to create payload for phase-1/phase-2 PoP deletion
+- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+to sign Cosmos ADR-36 messages
 
 ## v0.14.0
 
