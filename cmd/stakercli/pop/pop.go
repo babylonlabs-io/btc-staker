@@ -39,6 +39,7 @@ var PopCommands = []cli.Command{
 		Subcommands: []cli.Command{
 			generateCreatePopCmd,
 			generateDeletePopCmd,
+			signCosmosAdr36Cmd,
 		},
 	},
 }
@@ -281,6 +282,101 @@ func generateDeletePop(c *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(payload)
+
+	return nil
+}
+
+type SignatureResponse struct {
+	BabyAddress   string `json:"babyAddress"`
+	BabySignature string `json:"babySignature"`
+	BabyPublicKey string `json:"babyPublicKey"`
+}
+
+var signCosmosAdr36Cmd = cli.Command{
+	Name:      "sign-cosmos-adr36",
+	ShortName: "sc",
+	Usage:     "stakercli pop sign-cosmos-adr36",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:     babyAddressFlag,
+			Usage:    "Baby address for which signature is to be generated",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     msgFlag,
+			Usage:    "message to sign",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:  babyAddressPrefixFlag,
+			Usage: "Baby address prefix",
+			Value: "bbn",
+		},
+		cli.StringFlag{
+			Name:  keyringDirFlag,
+			Usage: "Keyring directory",
+			Value: "",
+		},
+		cli.StringFlag{
+			Name:  keyringBackendFlag,
+			Usage: "Keyring backend",
+			Value: "test",
+		},
+	},
+	Action: signCosmosAdr36,
+}
+
+func signCosmosAdr36(c *cli.Context) error {
+	babylonAddress := c.String(babyAddressFlag)
+	babyAddressPrefix := c.String(babyAddressPrefixFlag)
+
+	sdkAddressBytes, err := sdk.GetFromBech32(babylonAddress, babyAddressPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to decode baby address: %w", err)
+	}
+
+	sdkAddress := sdk.AccAddress(sdkAddressBytes)
+
+	keyringDir := c.String(keyringDirFlag)
+
+	keyringBackend := c.String(keyringBackendFlag)
+
+	keyring, err := keyringcontroller.CreateKeyring(keyringDir, "babylon", keyringBackend, nil)
+	if err != nil {
+		return err
+	}
+
+	record, babyPubKey, err := staker.GetBabyPubKey(keyring, sdkAddress)
+	if err != nil {
+		return err
+	}
+
+	msg := c.String(msgFlag)
+
+	// We are assuming we are receiving string literal with escape characters
+	interpretedMsg, err := strconv.Unquote(`"` + msg + `"`)
+	if err != nil {
+		return err
+	}
+
+	signature, err := staker.SignCosmosAdr36(
+		keyring,
+		record.Name,
+		sdkAddress.String(),
+		[]byte(interpretedMsg),
+	)
+
+	if err != nil {
+		return err
+	}
+
+	response := SignatureResponse{
+		BabyAddress:   sdkAddress.String(),
+		BabySignature: base64.StdEncoding.EncodeToString(signature),
+		BabyPublicKey: base64.StdEncoding.EncodeToString(babyPubKey.Bytes()),
+	}
+
+	helpers.PrintRespJSON(response)
 
 	return nil
 }
