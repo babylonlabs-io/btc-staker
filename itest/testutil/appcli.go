@@ -12,6 +12,7 @@ import (
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
 	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,7 @@ func TestApp() *cli.App {
 	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
 	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
 	app.Commands = append(app.Commands, transaction.TransactionCommands...)
+	app.Commands = append(app.Commands, pop.PopCommands...)
 	return app
 }
 
