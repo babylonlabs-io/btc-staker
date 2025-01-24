@@ -75,7 +75,7 @@ var GenerateCreatePopCmd = cli.Command{
 		cli.StringFlag{
 			Name:  btcNetworkFlag,
 			Usage: "Bitcoin network on which staking should take place (testnet3, mainnet, regtest, simnet, signet)",
-			Value: "main",
+			Value: "testnet3",
 		},
 		cli.StringFlag{
 			Name:  btcWalletHostFlag,
@@ -202,7 +202,7 @@ var ValidatePopCmd = cli.Command{
 		cli.StringFlag{
 			Name:  btcNetworkFlag,
 			Usage: "Bitcoin network (testnet3, mainnet, regtest, simnet, signet)",
-			Value: "mainnet",
+			Value: "testnet3",
 		},
 		cli.StringFlag{
 			Name:  babyAddressPrefixFlag,
@@ -212,13 +212,6 @@ var ValidatePopCmd = cli.Command{
 	},
 	Action:    validatePop,
 	ArgsUsage: "<path-to-pop.json>",
-}
-
-type ValidationResult struct {
-	IsValid       bool   `json:"isValid"`
-	BTCSignValid  bool   `json:"btcSignValid"`
-	BabySignValid bool   `json:"babySignValid"`
-	ErrorMessage  string `json:"errorMessage,omitempty"`
 }
 
 func validatePop(c *cli.Context) error {
@@ -242,7 +235,7 @@ func validatePop(c *cli.Context) error {
 	network := c.String(btcNetworkFlag)
 	networkParams, err := ut.GetBtcNetworkParams(network)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get btc network params: %w", err)
 	}
 
 	babyAddressPrefix := c.String(babyAddressPrefixFlag)
@@ -252,7 +245,7 @@ func validatePop(c *cli.Context) error {
 		return fmt.Errorf("pop validation failed: %w", err)
 	}
 
-	fmt.Println("pop validation succeeded!")
+	fmt.Println("Proof of Possession is valid!")
 
 	return nil
 }
@@ -286,7 +279,7 @@ func ValidateBTCSignBaby(btcAddr, babyAddr, btcSignBaby, babyPrefix string, btcN
 
 	bech32cosmosAddressString, err := sdk.Bech32ifyAddressBytes(babyPrefix, sdkAddress.Bytes())
 	if err != nil {
-		return fmt.Errorf("failed to get babylon address bytes")
+		return fmt.Errorf("failed to get babylon address bytes: %w", err)
 	}
 
 	schnorrSigBase64, err := base64.StdEncoding.DecodeString(btcSignBaby)
@@ -310,7 +303,7 @@ func ValidateBTCSignBaby(btcAddr, babyAddr, btcSignBaby, babyPrefix string, btcN
 func ValidateBabySignBTC(babyPk, babyAddr, btcAddress, babySigOverBTCPk string) error {
 	babyPubKeyBz, err := base64.StdEncoding.DecodeString(babyPk)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to decode babyPublicKey: %w", err)
 	}
 
 	babyPubKey := &secp256k1.PubKey{
@@ -322,14 +315,14 @@ func ValidateBabySignBTC(babyPk, babyAddr, btcAddress, babySigOverBTCPk string) 
 	babySignBtcDoc := staker.NewCosmosSignDoc(babyAddr, base64Bytes)
 	babySignBtcMarshaled, err := json.Marshal(babySignBtcDoc)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshalling cosmos sign doc: %w", err)
 	}
 
 	babySignBtcBz := sdk.MustSortJSON(babySignBtcMarshaled)
 
 	secp256SigBase64, err := base64.StdEncoding.DecodeString(babySigOverBTCPk)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to decode babySignBTC: %w", err)
 	}
 
 	if !babyPubKey.VerifySignature(babySignBtcBz, secp256SigBase64) {
