@@ -35,6 +35,7 @@ const (
 	babyAddressPrefixFlag   = "baby-address-prefix"
 	keyringDirFlag          = "keyring-dir"
 	keyringBackendFlag      = "keyring-backend"
+	outputFileFlag          = "output-file"
 )
 
 var PopCommands = []cli.Command{
@@ -43,15 +44,15 @@ var PopCommands = []cli.Command{
 		Usage:    "Commands about proof-of-possession generation and verification",
 		Category: "PoP commands",
 		Subcommands: []cli.Command{
-			generateCreatePopCmd,
+			GenerateCreatePopCmd,
 			generateDeletePopCmd,
 			signCosmosAdr36Cmd,
-			validatePopCmd,
+			ValidatePopCmd,
 		},
 	},
 }
 
-var generateCreatePopCmd = cli.Command{
+var GenerateCreatePopCmd = cli.Command{
 	Name:      "generate-create-pop",
 	ShortName: "gcp",
 	Usage:     "stakercli pop generate-create-pop",
@@ -110,6 +111,11 @@ var generateCreatePopCmd = cli.Command{
 			Name:  keyringBackendFlag,
 			Usage: "Keyring backend",
 			Value: "test",
+		},
+		cli.StringFlag{
+			Name:  outputFileFlag,
+			Usage: "Path to output JSON file",
+			Value: "",
 		},
 	},
 	Action: generatePop,
@@ -170,12 +176,25 @@ func generatePop(c *cli.Context) error {
 		return err
 	}
 
+	if outputPath := c.String(outputFileFlag); outputPath != "" {
+		// Convert response to JSON
+		jsonBytes, err := json.MarshalIndent(popResponse, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal response to JSON: %w", err)
+		}
+
+		// Write to file
+		if err := os.WriteFile(outputPath, jsonBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write output file: %w", err)
+		}
+	}
+
 	helpers.PrintRespJSON(popResponse)
 
 	return nil
 }
 
-var validatePopCmd = cli.Command{
+var ValidatePopCmd = cli.Command{
 	Name:      "validate",
 	ShortName: "vp",
 	Usage:     "stakercli pop validate <path-to-pop.json>",
@@ -183,7 +202,7 @@ var validatePopCmd = cli.Command{
 		cli.StringFlag{
 			Name:  btcNetworkFlag,
 			Usage: "Bitcoin network (testnet3, mainnet, regtest, simnet, signet)",
-			Value: "main",
+			Value: "mainnet",
 		},
 		cli.StringFlag{
 			Name:  babyAddressPrefixFlag,

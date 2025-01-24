@@ -1,12 +1,15 @@
 package pop_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
 
-	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/babylonlabs-io/btc-staker/staker"
 )
 
@@ -21,11 +24,26 @@ var popsToVerify = []staker.Response{
 	},
 }
 
-func TestPoPValidate(t *testing.T) {
+func TestValidatePoPCmd(t *testing.T) {
 	t.Parallel()
 
-	for _, p := range popsToVerify {
-		err := pop.ValidatePop(p, &chaincfg.MainNetParams, "bbn")
-		require.NoError(t, err)
+	// Create a temporary JSON file
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "pop.json")
+
+	// Marshal the test data to JSON
+	jsonData, err := json.MarshalIndent(popsToVerify[0], "", "  ")
+	require.NoError(t, err)
+
+	// Write JSON to temporary file
+	err = os.WriteFile(tmpFile, jsonData, 0644)
+	require.NoError(t, err)
+
+	// Test ValidatePopCmd with the JSON file
+	app := testutil.TestApp()
+	validatePop := []string{
+		"stakercli", "pop", "validate", fmt.Sprintf("%s", tmpFile),
 	}
+	err = app.Run(validatePop)
+	require.NoError(t, err)
 }
