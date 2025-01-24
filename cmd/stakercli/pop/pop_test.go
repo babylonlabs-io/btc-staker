@@ -2,7 +2,6 @@ package pop_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,7 +41,7 @@ func TestValidatePoPCmd(t *testing.T) {
 	// Test ValidatePopCmd with the JSON file
 	app := testutil.TestApp()
 	validatePop := []string{
-		"stakercli", "pop", "validate", fmt.Sprintf("%s", tmpFile),
+		"stakercli", "pop", "validate", tmpFile,
 	}
 	err = app.Run(validatePop)
 	require.NoError(t, err)
