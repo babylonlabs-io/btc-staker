@@ -35,12 +35,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Improvements
 - [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
 to create phase-1/phase-2 PoP payload
 - [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
 to create payload for phase-1/phase-2 PoP deletion
 - [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
 to sign Cosmos ADR-36 messages
+- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+to validate PoP JSON file
 
 ## v0.14.0
 
