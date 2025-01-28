@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/babylonlabs-io/btc-staker/utils"
@@ -19,7 +19,7 @@ var (
 )
 
 type sendDelegationRequest struct {
-	utils.Request[*pv.RelayerTxResponse]
+	utils.Request[*bct.RelayerTxResponse]
 	dg                          *DelegationData
 	requiredInclusionBlockDepth uint32
 }
@@ -29,7 +29,7 @@ func newSendDelegationRequest(
 	requiredInclusionBlockDepth uint32,
 ) sendDelegationRequest {
 	return sendDelegationRequest{
-		Request:                     utils.NewRequest[*pv.RelayerTxResponse](),
+		Request:                     utils.NewRequest[*bct.RelayerTxResponse](),
 		dg:                          dg,
 		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
 	}
@@ -175,10 +175,10 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 func (m *BabylonMsgSender) SendDelegation(
 	dg *DelegationData,
 	requiredInclusionBlockDepth uint32,
-) (*pv.RelayerTxResponse, error) {
+) (*bct.RelayerTxResponse, error) {
 	req := newSendDelegationRequest(dg, requiredInclusionBlockDepth)
 
-	return utils.SendRequestAndWaitForResponseOrQuit[*pv.RelayerTxResponse, *sendDelegationRequest](
+	return utils.SendRequestAndWaitForResponseOrQuit[*bct.RelayerTxResponse, *sendDelegationRequest](
 		&req,
 		m.sendDelegationRequestChan,
 		m.quit,

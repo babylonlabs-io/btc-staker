@@ -19,7 +19,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jessevdk/go-flags"
-	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/sirupsen/logrus"
 )
 
@@ -512,7 +511,7 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// Add default port to all RPC listener addresses if needed and remove
 	// duplicate addresses.
-	cfg.RPCListeners, err = lncfg.NormalizeAddresses(
+	cfg.RPCListeners, err = NormalizeAddresses(
 		cfg.JSONRPCServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
 		net.ResolveTCPAddr,
 	)

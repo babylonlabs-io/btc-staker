@@ -2,6 +2,7 @@ package babylonclient
 
 import (
 	"fmt"
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
@@ -13,7 +14,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
 )
 
 type BTCCheckpointParams struct {
@@ -78,7 +78,7 @@ type BabylonClient interface {
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
-	Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error)
+	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
@@ -138,7 +138,7 @@ func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 	}
 }
 
-func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error) {
+func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	msg, err := delegationDataToMsg(dg)
 	if err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse,
 
 	m.SentMessages <- msg
 
-	return &pv.RelayerTxResponse{Code: 0}, nil
+	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
 func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*FinalityProvidersClientResponse, error) {
@@ -180,8 +180,8 @@ func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationI
 }
 
 func (m *MockBabylonClient) Undelegate(
-	_ *UndelegationRequest) (*pv.RelayerTxResponse, error) {
-	return &pv.RelayerTxResponse{Code: 0}, nil
+	_ *UndelegationRequest) (*bct.RelayerTxResponse, error) {
+	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
 func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
