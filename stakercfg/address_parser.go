@@ -1,5 +1,5 @@
 // This file is derived from the lnd repository (https://github.com/lightningnetwork/lnd/blob/master/lncfg/address.go),
-// originall copyright: Copyright (C) 2015-2022 Lightning Labs and The Lightning Network Developers
+// original copyright: Copyright (C) 2015-2022 Lightning Labs and The Lightning Network Developers
 
 package stakercfg
 
@@ -84,7 +84,6 @@ func isUnspecifiedHost(host string) bool {
 
 func ParseAddressString(strAddress string, defaultPort string,
 	tcpResolver TCPResolver) (net.Addr, error) {
-
 	var parsedNetwork, parsedAddr string
 
 	// Addresses can either be in network://address:port format,
@@ -126,7 +125,6 @@ func ParseAddressString(strAddress string, defaultPort string,
 		// the system resolver instead for those.
 		if rawHost == "" || IsLoopback(rawHost) ||
 			isIPv6Host(rawHost) || isUnspecifiedHost(rawHost) {
-
 			return net.ResolveTCPAddr("tcp", addrWithPort)
 		}
 
@@ -152,7 +150,6 @@ func ParseAddressString(strAddress string, defaultPort string,
 
 func NormalizeAddresses(addrs []string, defaultPort string,
 	tcpResolver TCPResolver) ([]net.Addr, error) {
-
 	result := make([]net.Addr, 0, len(addrs))
 	seen := map[string]struct{}{}
 
