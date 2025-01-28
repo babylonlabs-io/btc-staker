@@ -651,7 +651,7 @@ func TestBitcoindWalletRpcApi(t *testing.T) {
 	scfg.WalletRPCConfig.Pass = "pass"
 	scfg.ActiveNetParams.Name = "regtest"
 	scfg.WalletConfig.WalletPass = passphrase
-	scfg.WalletConfig.WalletName = walletName
+	scfg.WalletConfig.WalletName = ""
 	scfg.BtcNodeBackendConfig.ActiveWalletBackend = types.BitcoindWalletBackend
 	scfg.ActiveNetParams = chaincfg.RegressionNetParams
 
@@ -723,7 +723,7 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
-
+	cfg.WalletConfig.WalletName = ""
 	controller, err := walletcontroller.NewRPCWalletController(cfg)
 	require.NoError(t, err)
 
@@ -1001,7 +1001,7 @@ func TestPopCreation(t *testing.T) {
 
 	segwitAddress, err := c.GetNewAddress("")
 	require.NoError(t, err)
-
+	cfg.WalletConfig.WalletName = ""
 	controller, err := walletcontroller.NewRPCWalletController(cfg)
 	require.NoError(t, err)
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
 	sdkErr "cosmossdk.io/errors"
@@ -33,7 +34,6 @@ import (
 	bq "github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
@@ -506,14 +506,14 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 func (bc *BabylonController) reliablySendMsgs(
 	msgs []sdk.Msg,
-) (*pv.RelayerTxResponse, error) {
+) (*bct.RelayerTxResponse, error) {
 	// TODO Empty errors ??
 	return bc.bbnClient.ReliablySendMsgs(context.Background(), msgs, []*sdkErr.Error{}, []*sdkErr.Error{})
 }
 
 // TODO: for now return sdk.TxResponse, it will ease up debugging/testing
 // ultimately we should create our own type ate
-func (bc *BabylonController) Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	delegateMsg, err := delegationDataToMsg(dg)
 	if err != nil {
 		return nil, err
@@ -793,7 +793,7 @@ func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint3
 }
 
 // InsertBtcBlockHeaders Insert BTC block header using rpc client
-func (bc *BabylonController) InsertBtcBlockHeaders(headers []*wire.BlockHeader) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) InsertBtcBlockHeaders(headers []*wire.BlockHeader) (*bct.RelayerTxResponse, error) {
 	msg := &btclctypes.MsgInsertHeaders{
 		Signer:  bc.getTxSigner(),
 		Headers: chainToChainBytes(headers),
@@ -956,7 +956,7 @@ func (bc *BabylonController) CreateCovenantMessage(
 
 func (bc *BabylonController) SubmitMultipleCovenantMessages(
 	covenantMsgs []*btcstypes.MsgAddCovenantSigs,
-) (*pv.RelayerTxResponse, error) {
+) (*bct.RelayerTxResponse, error) {
 	var msgs []sdk.Msg
 
 	for _, covenantMsg := range covenantMsgs {
@@ -990,7 +990,7 @@ func (bc *BabylonController) GetBBNClient() *bbnclient.Client {
 	return bc.bbnClient
 }
 
-func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctypes.BTCSpvProof) (*bct.RelayerTxResponse, error) {
 	msg := &btcctypes.MsgInsertBTCSpvProof{
 		Submitter: submitter,
 		Proofs:    proofs,
@@ -1015,7 +1015,7 @@ func (bc *BabylonController) QueryBtcLightClientTipHeight() (uint32, error) {
 
 func (bc *BabylonController) ActivateDelegation(
 	stakingTxHash chainhash.Hash,
-	proof *btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
+	proof *btcctypes.BTCSpvProof) (*bct.RelayerTxResponse, error) {
 	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{
 		Signer:                  bc.getTxSigner(),
 		StakingTxHash:           stakingTxHash.String(),

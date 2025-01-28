@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
+
 	"github.com/avast/retry-go/v4"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
@@ -18,7 +20,6 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"go.uber.org/zap"
 
@@ -149,7 +150,7 @@ func NewStakerAppFromConfig(
 	// on concrete implementation
 	walletClient, err := walletcontroller.NewRPCWalletController(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create wallet controller: %w", err)
 	}
 
 	tracker, err := stakerdb.NewTrackedTransactionStore(db)
@@ -1265,7 +1266,7 @@ func (app *App) buildAndSendDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
-) (*pv.RelayerTxResponse, *cl.DelegationData, error) {
+) (*bct.RelayerTxResponse, *cl.DelegationData, error) {
 	delegation, err := app.buildDelegation(req, stakerAddress, storedTx)
 	if err != nil {
 		return nil, nil, err
@@ -1315,14 +1316,14 @@ func (app *App) sendDelegationToBabylonTaskWithRetry(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
-) (*cl.DelegationData, *pv.RelayerTxResponse, error) {
+) (*cl.DelegationData, *bct.RelayerTxResponse, error) {
 	// using app quit context to cancel retrying when app is shutting down
 	ctx, cancel := app.appQuitContext()
 	defer cancel()
 
 	var (
 		delegationData *cl.DelegationData
-		response       *pv.RelayerTxResponse
+		response       *bct.RelayerTxResponse
 	)
 	err := retry.Do(func() error {
 		resp, del, err := app.buildAndSendDelegation(req, stakerAddress, storedTx)
