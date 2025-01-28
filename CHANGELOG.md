@@ -44,6 +44,8 @@ to create payload for phase-1/phase-2 PoP deletion
 to sign Cosmos ADR-36 messages
 - [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
 to validate PoP JSON file
+- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+to v1.0.0-rc.4
 
 ## v0.14.0
 
