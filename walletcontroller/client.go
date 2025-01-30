@@ -204,7 +204,7 @@ func (w *RPCWalletController) AddressPublicKey(address btcutil.Address) (*btcec.
 		return internalKey, nil
 	}
 
-	return nil, fmt.Errorf("canno	t get public key for address %s", encoded)
+	return nil, fmt.Errorf("cannot get public key for address %s", encoded)
 }
 
 func (w *RPCWalletController) NetworkName() string {
