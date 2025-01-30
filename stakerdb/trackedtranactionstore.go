@@ -280,7 +280,7 @@ func protoBtcConfirmationInfoToBtcConfirmationInfo(ci *proto.BTCConfirmationInfo
 }
 
 func protoUnbondingDataToUnbondingStoreData(ud *proto.UnbondingTxData) (*UnbondingStoreData, error) {
-	// Unbodning txdata should always contains unbonding tx
+	// Unboding txdata should always contains unbonding tx
 	var unbondingTx wire.MsgTx
 	err := unbondingTx.Deserialize(bytes.NewReader(ud.UnbondingTransaction))
 
@@ -457,7 +457,7 @@ func getNumTx(txIdxBucket walletdb.ReadBucket) uint64 {
 	return nextTxKey(txIdxBucket) - 1
 }
 
-// getTxByHash retruns transaction and transaction key if transaction with given hash exsits
+// getTxByHash returns transaction and transaction key if transaction with given hash exsits
 func getTxByHash(
 	txHashBytes []byte,
 	txIndexBucket walletdb.ReadBucket,
