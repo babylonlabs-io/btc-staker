@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
@@ -109,26 +110,101 @@ func (w *RPCWalletController) UnlockWallet(timoutSec int64) error {
 	return w.WalletPassphrase(w.walletPassphrase, timoutSec)
 }
 
+// Extracts public key from the descriptor in format:
+// tr([fingerprint/derivation/path/x/y/z]extracted_key)#checksum
+func extractPubKeyFromDescriptor(descriptor string) (string, error) {
+	// Find the position of the opening bracket and closing parenthesis
+	start := strings.Index(descriptor, "]")
+	end := strings.Index(descriptor, ")")
+
+	if start == -1 || end == -1 || start >= end {
+		return "", fmt.Errorf("invalid descriptor format")
+	}
+
+	// Extract the public key (everything between "]" and ")")
+	pubKey := descriptor[start+1 : end]
+
+	return pubKey, nil
+}
+
+func extractTaprootInternalKey(
+	descriptor string,
+) (*btcec.PublicKey, error) {
+	internalKeyHex, err := extractPubKeyFromDescriptor(descriptor)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract public key from taproot descriptor: %w", err)
+	}
+
+	internalKeyBytes, err := hex.DecodeString(internalKeyHex)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode internal key: %w", err)
+	}
+
+	internalKey, err := schnorr.ParsePubKey(internalKeyBytes)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse internal key: %w", err)
+	}
+
+	return internalKey, nil
+}
+
 func (w *RPCWalletController) AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error) {
 	encoded := address.EncodeAddress()
 
 	info, err := w.GetAddressInfo(encoded)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get address info: %w", err)
 	}
 
-	if info.PubKey == nil {
-		return nil, fmt.Errorf("address %s has no public key", encoded)
+	// first try to get public key directly from address info. Not all address types
+	// fill this field
+	if info.PubKey != nil {
+		decodedHex, err := hex.DecodeString(*info.PubKey)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode public key: %w", err)
+		}
+
+		return btcec.ParsePubKey(decodedHex)
 	}
 
-	decodedHex, err := hex.DecodeString(*info.PubKey)
+	// if not found, check if this is taproot address and extract public key from descriptor
+	// we are interested in bip86 taproot addresses i.e https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki
+	// as those addresses have direct mapping address -> public key
+	addressTxScript, err := txscript.PayToAddrScript(address)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get address tx script: %w", err)
 	}
 
-	return btcec.ParsePubKey(decodedHex)
+	if txscript.IsPayToTaproot(addressTxScript) {
+		internalKey, err := extractTaprootInternalKey(*info.Descriptor)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract internal key from descriptor: %w", err)
+		}
+		// now that we extracted public key from descriptor, we need to check whether
+		// this is address that commits to taproot output with no script spending
+		// path
+		payToTaprootScript, err := txscript.PayToTaprootScript(
+			txscript.ComputeTaprootKeyNoScript(internalKey),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create pay to taproot script: %w", err)
+		}
+
+		if !bytes.Equal(payToTaprootScript, addressTxScript) {
+			return nil, fmt.Errorf("address %s is not a taproot address", encoded)
+		}
+
+		return internalKey, nil
+	}
+
+	return nil, fmt.Errorf("canno	t get public key for address %s", encoded)
 }
 
 func (w *RPCWalletController) NetworkName() string {
@@ -301,20 +377,24 @@ func (w *RPCWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte)
 	}
 }
 
-// SignBip322NativeSegwit signs arbitrary message using bip322 signing scheme.
+func isSupportedAddress(payToAddrScript []byte) bool {
+	return txscript.IsPayToTaproot(payToAddrScript) || txscript.IsPayToWitnessPubKeyHash(payToAddrScript)
+}
+
+// SignBip322Signature signs arbitrary message using bip322 signing scheme.
 // To work properly:
 // - wallet must be unlocked
 // - address must be under wallet control
-// - address must be native segwit address
-func (w *RPCWalletController) SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error) {
+// - address must be native segwit address or taproot address with no script spending path
+func (w *RPCWalletController) SignBip322Signature(msg []byte, address btcutil.Address) (wire.TxWitness, error) {
 	toSpend, err := bip322.GetToSpendTx(msg, address)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to bip322 to spend tx: %w", err)
 	}
 
-	if !txscript.IsPayToWitnessPubKeyHash(toSpend.TxOut[0].PkScript) {
-		return nil, fmt.Errorf("Bip322NativeSegwit support only native segwit addresses")
+	if !isSupportedAddress(toSpend.TxOut[0].PkScript) {
+		return nil, fmt.Errorf("address %s is not supported for bip322 signing. Only p2wpkh and p2tr addresses are supported", address)
 	}
 
 	toSpendhash := toSpend.TxHash()
