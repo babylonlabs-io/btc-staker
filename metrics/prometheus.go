@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"net/http"
+	//nolint:revive
 	_ "net/http/pprof"
 	"regexp"
 

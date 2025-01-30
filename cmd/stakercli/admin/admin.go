@@ -62,7 +62,7 @@ func dumpCfg(c *cli.Context) error {
 	dir, _ := path.Split(configPath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(dir, os.ModeDir); err != nil {
 			return cli.NewExitError(
 				fmt.Sprintf("could not create config directory: %s", err.Error()),
 				1,
@@ -86,7 +86,7 @@ const (
 	mnemonicEntropySize = 256
 	secp256k1Type       = "secp256k1"
 
-	chainIdFlag        = "chain-id"
+	chainIDFlag        = "chain-id"
 	keyringBackendFlag = "keyring-backend"
 	keyNameFlag        = "key-name"
 	keyringDir         = "keyring-dir"
@@ -135,13 +135,13 @@ func createKeyRing(c *cli.Context) error {
 
 	app := babylonApp.NewTmpBabylonApp()
 
-	chainId := c.String(chainIdFlag)
+	chainID := c.String(chainIDFlag)
 	backend := c.String(keyringBackendFlag)
 	keyName := c.String(keyNameFlag)
 	keyDir := c.String(keyringDir)
 
 	kb, err := keyring.New(
-		chainId,
+		chainID,
 		backend,
 		keyDir,
 		nil,
@@ -189,7 +189,7 @@ var createCosmosKeyringCommand = cli.Command{
 			Value: defaultBackend,
 		},
 		cli.StringFlag{
-			Name:  chainIdFlag,
+			Name:  chainIDFlag,
 			Usage: "Chain ID for which account is created",
 			Value: defaultChainID,
 		},

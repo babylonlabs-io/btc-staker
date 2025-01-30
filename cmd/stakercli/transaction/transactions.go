@@ -99,7 +99,6 @@ func validateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
-
 	var info []*ValidityInfo
 
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
@@ -294,7 +293,10 @@ func createPhase1StakingTransaction(ctx *cli.Context) error {
 		return err
 	}
 
-	covenantQuorum := uint32(ctx.Uint64(covenantQuorumFlag))
+	covenantQuorum, err := parseCovenantQuorumFromCliCtx(ctx)
+	if err != nil {
+		return err
+	}
 
 	_, tx, err := btcstaking.BuildV0IdentifiableStakingOutputsAndTx(
 		tag,
@@ -327,7 +329,7 @@ var checkPhase1StakingTransactionCmd = cli.Command{
 	Name:      "check-phase1-staking-transaction",
 	ShortName: "cpst",
 	Usage:     "Checks whether provided staking transactions is valid staking transaction (tx must be funded/have inputs)",
-	Description: "Checks staking transaction agains custom set of parameters. Use for custom transactions" +
+	Description: "Checks staking transaction against custom set of parameters. Use for custom transactions" +
 		"that may not obey the global parameters. For most cases use `check-phase1-staking-transaction-params`",
 	Flags: []cli.Flag{
 		cli.StringFlag{
@@ -402,12 +404,14 @@ func checkPhase1StakingTransaction(ctx *cli.Context) error {
 	}
 
 	covenantMembersPks, err := parseCovenantKeysFromCliCtx(ctx)
-
 	if err != nil {
 		return err
 	}
 
-	covenantQuorum := uint32(ctx.Uint64(covenantQuorumFlag))
+	covenantQuorum, err := parseCovenantQuorumFromCliCtx(ctx)
+	if err != nil {
+		return err
+	}
 
 	stakingTx, err := btcstaking.ParseV0StakingTx(
 		tx,
@@ -439,9 +443,14 @@ func checkPhase1StakingTransaction(ctx *cli.Context) error {
 		}
 	}
 
-	timeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
-	if timeBlocks > 0 && uint16(timeBlocks) != stakingTx.OpReturnData.StakingTime {
-		return fmt.Errorf("staking time in tx %d do not match with flag %d", stakingTx.OpReturnData.StakingTime, timeBlocks)
+	if ctx.Int64(helpers.StakingTimeBlocksFlag) != 0 {
+		timeBlocks, err := parseLockTimeBlocksFromCliCtx(ctx, helpers.StakingTimeBlocksFlag)
+		if err != nil {
+			return err
+		}
+		if timeBlocks != stakingTx.OpReturnData.StakingTime {
+			return fmt.Errorf("staking time in tx %d do not match with flag %d", stakingTx.OpReturnData.StakingTime, timeBlocks)
+		}
 	}
 
 	txAmount := stakingTx.StakingOutput.Value
@@ -517,7 +526,6 @@ func createPhase1StakingTransactionWithParams(ctx *cli.Context) error {
 
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputFilePath, err)
-
 	}
 
 	currentNetwork, err := utils.GetBtcNetworkParams(ctx.String(networkNameFlag))
@@ -881,7 +889,6 @@ func createWithdrawalInfo(
 	parsedStakingTransaction *btcstaking.ParsedV0StakingTx,
 	paramsForHeight *parser.ParsedVersionedGlobalParams,
 	net *chaincfg.Params) (*withdrawalInfo, error) {
-
 	if len(unbondingTxHex) > 0 {
 		// withdrawal from unbonding output
 		unbondingTx, _, err := bbn.NewBTCTxFromHex(unbondingTxHex)
@@ -947,41 +954,40 @@ func createWithdrawalInfo(
 			withdrawalFundingUtxo: unbondingTx.TxOut[0],
 			withdrawalSpendInfo:   timeLockPathInfo,
 		}, nil
-	} else {
-		stakingInfo, err := btcstaking.BuildStakingInfo(
-			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
-			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
-			paramsForHeight.CovenantPks,
-			paramsForHeight.CovenantQuorum,
-			parsedStakingTransaction.OpReturnData.StakingTime,
-			btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("error building staking info: %w", err)
-		}
-
-		timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("error building timelock path spend info: %w", err)
-		}
-
-		withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
-
-		if withdrawalOutputValue <= 0 {
-			return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
-		}
-
-		return &withdrawalInfo{
-			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
-			withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
-			withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
-			withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
-			withdrawalSpendInfo:   timelockPathInfo,
-		}, nil
 	}
+	stakingInfo, err := btcstaking.BuildStakingInfo(
+		parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+		[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+		paramsForHeight.CovenantPks,
+		paramsForHeight.CovenantQuorum,
+		parsedStakingTransaction.OpReturnData.StakingTime,
+		btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error building staking info: %w", err)
+	}
+
+	timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("error building timelock path spend info: %w", err)
+	}
+
+	withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
+
+	if withdrawalOutputValue <= 0 {
+		return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
+	}
+
+	return &withdrawalInfo{
+		withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+		withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
+		withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
+		withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
+		withdrawalSpendInfo:   timelockPathInfo,
+	}, nil
 }
 
 func createPhase1WitdrawalTransaction(ctx *cli.Context) error {

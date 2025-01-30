@@ -9,7 +9,6 @@ import (
 
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
-	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -24,37 +23,37 @@ import (
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 )
 
-type RpcWalletController struct {
+type RPCWalletController struct {
 	*rpcclient.Client
 	walletPassphrase string
 	network          string
 	backend          types.SupportedWalletBackend
 }
 
-var _ WalletController = (*RpcWalletController)(nil)
+var _ WalletController = (*RPCWalletController)(nil)
 
 const (
 	txNotFoundErrMsgBtcd     = "No information available about transaction"
 	txNotFoundErrMsgBitcoind = "No such mempool or blockchain transaction"
 )
 
-func NewRpcWalletController(scfg *stakercfg.Config) (*RpcWalletController, error) {
-	return NewRpcWalletControllerFromArgs(
-		scfg.WalletRpcConfig.Host,
-		scfg.WalletRpcConfig.User,
-		scfg.WalletRpcConfig.Pass,
+func NewRPCWalletController(scfg *stakercfg.Config) (*RPCWalletController, error) {
+	return NewRPCWalletControllerFromArgs(
+		scfg.WalletRPCConfig.Host,
+		scfg.WalletRPCConfig.User,
+		scfg.WalletRPCConfig.Pass,
 		scfg.ActiveNetParams.Name,
 		scfg.WalletConfig.WalletName,
 		scfg.WalletConfig.WalletPass,
 		scfg.BtcNodeBackendConfig.ActiveWalletBackend,
 		&scfg.ActiveNetParams,
-		scfg.WalletRpcConfig.DisableTls,
-		scfg.WalletRpcConfig.RawRPCWalletCert,
-		scfg.WalletRpcConfig.RPCWalletCert,
+		scfg.WalletRPCConfig.DisableTLS,
+		scfg.WalletRPCConfig.RawRPCWalletCert,
+		scfg.WalletRPCConfig.RPCWalletCert,
 	)
 }
 
-func NewRpcWalletControllerFromArgs(
+func NewRPCWalletControllerFromArgs(
 	host string,
 	user string,
 	pass string,
@@ -63,15 +62,14 @@ func NewRpcWalletControllerFromArgs(
 	walletPassphrase string,
 	nodeBackend types.SupportedWalletBackend,
 	params *chaincfg.Params,
-	disableTls bool,
+	disableTLS bool,
 	rawWalletCert string, walletCertFilePath string,
-) (*RpcWalletController, error) {
-
+) (*RPCWalletController, error) {
 	connCfg := &rpcclient.ConnConfig{
 		Host:                 rpcHostURL(host, walletName),
 		User:                 user,
 		Pass:                 pass,
-		DisableTLS:           disableTls,
+		DisableTLS:           disableTLS,
 		DisableConnectOnNew:  true,
 		DisableAutoReconnect: false,
 		// we use post mode as it sure it works with either bitcoind or btcwallet
@@ -80,7 +78,7 @@ func NewRpcWalletControllerFromArgs(
 	}
 
 	if !connCfg.DisableTLS {
-		cert, err := scfg.ReadCertFile(rawWalletCert, walletCertFilePath)
+		cert, err := stakercfg.ReadCertFile(rawWalletCert, walletCertFilePath)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +90,7 @@ func NewRpcWalletControllerFromArgs(
 		return nil, err
 	}
 
-	return &RpcWalletController{
+	return &RPCWalletController{
 		Client:           rpcclient,
 		walletPassphrase: walletPassphrase,
 		network:          params.Name,
@@ -107,11 +105,11 @@ func rpcHostURL(host, walletName string) string {
 	return host
 }
 
-func (w *RpcWalletController) UnlockWallet(timoutSec int64) error {
+func (w *RPCWalletController) UnlockWallet(timoutSec int64) error {
 	return w.WalletPassphrase(w.walletPassphrase, timoutSec)
 }
 
-func (w *RpcWalletController) AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error) {
+func (w *RPCWalletController) AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error) {
 	encoded := address.EncodeAddress()
 
 	info, err := w.GetAddressInfo(encoded)
@@ -133,15 +131,16 @@ func (w *RpcWalletController) AddressPublicKey(address btcutil.Address) (*btcec.
 	return btcec.ParsePubKey(decodedHex)
 }
 
-func (w *RpcWalletController) NetworkName() string {
+func (w *RPCWalletController) NetworkName() string {
 	return w.network
 }
 
-func (w *RpcWalletController) CreateTransaction(
+func (w *RPCWalletController) CreateTransaction(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
-	changeAddres btcutil.Address) (*wire.MsgTx, error) {
-
+	changeAddres btcutil.Address,
+	useUtxoFn UseUtxoFn,
+) (*wire.MsgTx, error) {
 	utxoResults, err := w.ListUnspent()
 
 	if err != nil {
@@ -154,9 +153,20 @@ func (w *RpcWalletController) CreateTransaction(
 		return nil, err
 	}
 
+	var utxosToUse []Utxo
+	if useUtxoFn != nil {
+		for _, u := range utxos {
+			if useUtxoFn(u) {
+				utxosToUse = append(utxosToUse, u)
+			}
+		}
+	} else {
+		utxosToUse = utxos
+	}
+
 	// sort utxos by amount from highest to lowest, this is effectively strategy of using
 	// largest inputs first
-	sort.Sort(sort.Reverse(byAmount(utxos)))
+	sort.Sort(sort.Reverse(byAmount(utxosToUse)))
 
 	changeScript, err := txscript.PayToAddrScript(changeAddres)
 
@@ -164,7 +174,7 @@ func (w *RpcWalletController) CreateTransaction(
 		return nil, err
 	}
 
-	tx, err := buildTxFromOutputs(utxos, outputs, feeRatePerKb, changeScript)
+	tx, err := buildTxFromOutputs(utxosToUse, outputs, feeRatePerKb, changeScript)
 
 	if err != nil {
 		return nil, err
@@ -173,12 +183,13 @@ func (w *RpcWalletController) CreateTransaction(
 	return tx, err
 }
 
-func (w *RpcWalletController) CreateAndSignTx(
+func (w *RPCWalletController) CreateAndSignTx(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
 	changeAddress btcutil.Address,
+	useUtxoFn UseUtxoFn,
 ) (*wire.MsgTx, error) {
-	tx, err := w.CreateTransaction(outputs, feeRatePerKb, changeAddress)
+	tx, err := w.CreateTransaction(outputs, feeRatePerKb, changeAddress, useUtxoFn)
 
 	if err != nil {
 		return nil, err
@@ -199,7 +210,7 @@ func (w *RpcWalletController) CreateAndSignTx(
 	return fundedTx, nil
 }
 
-func (w *RpcWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error) {
+func (w *RPCWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error) {
 	switch w.backend {
 	case types.BitcoindWalletBackend:
 		return w.Client.SignRawTransactionWithWallet(tx)
@@ -210,11 +221,11 @@ func (w *RpcWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, b
 	}
 }
 
-func (w *RpcWalletController) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
+func (w *RPCWalletController) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
 	return w.Client.SendRawTransaction(tx, allowHighFees)
 }
 
-func (w *RpcWalletController) ListOutputs(onlySpendable bool) ([]Utxo, error) {
+func (w *RPCWalletController) ListOutputs(onlySpendable bool) ([]Utxo, error) {
 	utxoResults, err := w.ListUnspent()
 
 	if err != nil {
@@ -247,7 +258,7 @@ func nofitierStateToWalletState(state notifier.TxConfStatus) TxStatus {
 	}
 }
 
-func (w *RpcWalletController) getTxDetails(req notifier.ConfRequest, msg string) (*notifier.TxConfirmation, TxStatus, error) {
+func (w *RPCWalletController) getTxDetails(req notifier.ConfRequest, msg string) (*notifier.TxConfirmation, TxStatus, error) {
 	res, state, err := notifier.ConfDetailsFromTxIndex(w.Client, req, msg)
 
 	if err != nil {
@@ -257,8 +268,23 @@ func (w *RpcWalletController) getTxDetails(req notifier.ConfRequest, msg string)
 	return res, nofitierStateToWalletState(state), nil
 }
 
+// Tx returns the raw transaction based on the transaction hash
+func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*btcutil.Tx, error) {
+	return w.Client.GetRawTransaction(txHash)
+}
+
+// TxVerbose returns the raw transaction verbose based on the transaction hash
+func (w *RPCWalletController) TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error) {
+	return w.Client.GetRawTransactionVerbose(txHash)
+}
+
+// BlockHeaderVerbose returns the block header data based on the block hash
+func (w *RPCWalletController) BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
+	return w.Client.GetBlockHeaderVerbose(blockHash)
+}
+
 // Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index
-func (w *RpcWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error) {
+func (w *RPCWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error) {
 	req, err := notifier.NewConfRequest(txHash, pkScript)
 
 	if err != nil {
@@ -280,7 +306,7 @@ func (w *RpcWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte)
 // - wallet must be unlocked
 // - address must be under wallet control
 // - address must be native segwit address
-func (w *RpcWalletController) SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error) {
+func (w *RPCWalletController) SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error) {
 	toSpend, err := bip322.GetToSpendTx(msg, address)
 
 	if err != nil {
@@ -316,7 +342,7 @@ func (w *RpcWalletController) SignBip322NativeSegwit(msg []byte, address btcutil
 	return signed.TxIn[0].Witness, nil
 }
 
-func (w *RpcWalletController) OutputSpent(
+func (w *RPCWalletController) OutputSpent(
 	txHash *chainhash.Hash,
 	outputIdx uint32,
 ) (bool, error) {
@@ -331,7 +357,7 @@ func (w *RpcWalletController) OutputSpent(
 	return res == nil, nil
 }
 
-func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(request *TaprootSigningRequest) (*TaprootSigningResult, error) {
+func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *TaprootSigningRequest) (*TaprootSigningResult, error) {
 	if len(request.TxToSign.TxIn) != 1 {
 		return nil, fmt.Errorf("cannot sign transaction with more than one input")
 	}
@@ -443,5 +469,4 @@ func (w *RpcWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 
 	// neither witness, nor signature is filled.
 	return nil, fmt.Errorf("no signature found in PSBT packet. Wallet can't sign given tx")
-
 }

@@ -1,138 +1,166 @@
+<!--
+Guiding Principles:
+
+Changelogs are for humans, not machines.
+There should be an entry for every single version.
+The same types of changes should be grouped.
+Versions and sections should be linkable.
+The latest version comes first.
+The release date of each version is displayed.
+Mention whether you follow Semantic Versioning.
+
+Usage:
+
+Change log entries are to be added to the Unreleased section under the
+appropriate stanza (see below). Each entry should have following format:
+
+* [#PullRequestNumber](PullRequestLink) message
+
+Types of changes (Stanzas):
+
+"Features" for new features.
+"Improvements" for changes in existing functionality.
+"Deprecated" for soon-to-be removed features.
+"Bug Fixes" for any bug fixes.
+"Client Breaking" for breaking CLI commands and REST routes used by end-users.
+"API Breaking" for breaking exported APIs used by developers building on SDK.
+Ref: https://keepachangelog.com/en/1.0.0/
+-->
+
 # Changelog
 
-## [euphrates-0.1.0-rc.0](https://github.com/babylonchain/btc-staker/tree/euphrates-0.1.0-rc.0) (2024-03-26)
+All notable changes to this project will be documented in this file.
 
-[Full Changelog](https://github.com/babylonchain/btc-staker/compare/v0.1.0...euphrates-0.1.0-rc.0)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
-**Closed issues:**
+## Unreleased
 
-- restaking: support restaking to consumer chain FPs [\#126](https://github.com/babylonchain/btc-staker/issues/126)
-- testing restaking support [\#124](https://github.com/babylonchain/btc-staker/issues/124)
-- Faucet scarcity  [\#118](https://github.com/babylonchain/btc-staker/issues/118)
-- Stakerd init fails if directory doesn't exist [\#108](https://github.com/babylonchain/btc-staker/issues/108)
+## v0.15.1
 
-**Merged pull requests:**
+### Bug fixes
 
-- e2e test for restaking [\#125](https://github.com/babylonchain/btc-staker/pull/125) ([SebastianElvis](https://github.com/SebastianElvis))
-- Add cli command to verify whether tx is valid phase1 staking tx [\#123](https://github.com/babylonchain/btc-staker/pull/123) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon version [\#121](https://github.com/babylonchain/btc-staker/pull/121) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add possiblity to send concurrent transactions [\#117](https://github.com/babylonchain/btc-staker/pull/117) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add metrics [\#115](https://github.com/babylonchain/btc-staker/pull/115) ([KonradStaniec](https://github.com/KonradStaniec))
-- Switch e2e test to use bitcoind instead of btcd/btcd wallet combo [\#114](https://github.com/babylonchain/btc-staker/pull/114) ([KonradStaniec](https://github.com/KonradStaniec))
-- chore: Increase staking time in docs [\#113](https://github.com/babylonchain/btc-staker/pull/113) ([vitsalis](https://github.com/vitsalis))
-- Add CHANGELOG [\#112](https://github.com/babylonchain/btc-staker/pull/112) ([maurolacy](https://github.com/maurolacy))
-- Bitcoind tests [\#110](https://github.com/babylonchain/btc-staker/pull/110) ([KonradStaniec](https://github.com/KonradStaniec))
-- docs: Incorporate validator feedback [\#109](https://github.com/babylonchain/btc-staker/pull/109) ([gusin13](https://github.com/gusin13))
-- Bump staker to stable babylon version [\#106](https://github.com/babylonchain/btc-staker/pull/106) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bumps babylon to latest version [\#105](https://github.com/babylonchain/btc-staker/pull/105) ([KonradStaniec](https://github.com/KonradStaniec))
-- bump babylon version [\#104](https://github.com/babylonchain/btc-staker/pull/104) ([KonradStaniec](https://github.com/KonradStaniec))
-- docs: Add instructions to setup bitcoind signet node [\#103](https://github.com/babylonchain/btc-staker/pull/103) ([gusin13](https://github.com/gusin13))
-- CI: Remove redundant SSH key logic [\#102](https://github.com/babylonchain/btc-staker/pull/102) ([filippos47](https://github.com/filippos47))
-- docs: Remove btcd refs [\#101](https://github.com/babylonchain/btc-staker/pull/101) ([gusin13](https://github.com/gusin13))
-- docs: Mention legacy wallet requirement [\#96](https://github.com/babylonchain/btc-staker/pull/96) ([filippos47](https://github.com/filippos47))
-- docs: Include ZMQ endpoint config [\#94](https://github.com/babylonchain/btc-staker/pull/94) ([filippos47](https://github.com/filippos47))
+- [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
+`btcd` v0.24.2 in `go.mod`
 
-## [v0.1.0](https://github.com/babylonlabs-io/btc-staker/tree/v0.1.0) (2024-02-08)
+## v0.15.0
 
-[Full Changelog](https://github.com/babylonlabs-io/btc-staker/compare/v0.1.0-rc.0...v0.1.0)
+### Improvements
+- [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
+to create phase-1/phase-2 PoP payload
+- [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
+to create payload for phase-1/phase-2 PoP deletion
+- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+to sign Cosmos ADR-36 messages
+- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+to validate PoP JSON file
+- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+to v1.0.0-rc.4
 
-**Closed issues:**
+## v0.14.0
 
-- Improper handling of pending delegations upon restart [\#58](https://github.com/babylonlabs-io/btc-staker/issues/58)
+* [#108](https://github.com/babylonlabs-io/btc-staker/pull/108) Bump babylon to v1.0.0-rc.1
 
-## [v0.1.0-rc.0](https://github.com/babylonlabs-io/btc-staker/tree/v0.1.0-rc.0) (2024-01-22)
+## v0.13.0
 
-[Full Changelog](https://github.com/babylonlabs-io/btc-staker/compare/263d857429d555e0772d104dbeee70ab4e4d8c89...v0.1.0-rc.0)
+* [#102](https://github.com/babylonlabs-io/btc-staker/pull/102) Bump babylon v18
+and fix incompatibilities
 
-**Breaking changes:**
+## v0.12.0
 
-- Adjust data model to store confirmed block info [\#53](https://github.com/babylonlabs-io/btc-staker/pull/53) ([KonradStaniec](https://github.com/KonradStaniec))
-- Adapt spend stake endpoint to unbonding tx [\#48](https://github.com/babylonlabs-io/btc-staker/pull/48) ([KonradStaniec](https://github.com/KonradStaniec))
-- Introduce watched transactions  to enable staker to act as queuing service. [\#45](https://github.com/babylonlabs-io/btc-staker/pull/45) ([KonradStaniec](https://github.com/KonradStaniec))
-- use prod hint cache [\#40](https://github.com/babylonlabs-io/btc-staker/pull/40) ([KonradStaniec](https://github.com/KonradStaniec))
-- List all tracked transaction query [\#33](https://github.com/babylonlabs-io/btc-staker/pull/33) ([KonradStaniec](https://github.com/KonradStaniec))
-- Improve data model [\#32](https://github.com/babylonlabs-io/btc-staker/pull/32) ([KonradStaniec](https://github.com/KonradStaniec))
+### Improvements
 
-**Closed issues:**
+* [#90](https://github.com/babylonlabs-io/btc-staker/pull/90) Add CLI to create
+babylon BTC delegation from phase-1 BTC staking transaction.
+* [#99](https://github.com/babylonlabs-io/btc-staker/pull/99) Bump babylon version
+and adapt staker to the changes
 
-- Unable to dump configuration if parent directory doesn't exist [\#88](https://github.com/babylonlabs-io/btc-staker/issues/88)
-- Cannot withdraw expired delegation [\#81](https://github.com/babylonlabs-io/btc-staker/issues/81)
-- Unbonding request tx can't be sent to BTC [\#76](https://github.com/babylonlabs-io/btc-staker/issues/76)
-- Support for multiple validators when re-staking [\#68](https://github.com/babylonlabs-io/btc-staker/issues/68)
-- Add additional field `unbodningTime` to `BTCUndelegationInfo` in query `BTCDelegation` and use it in staker app [\#67](https://github.com/babylonlabs-io/btc-staker/issues/67)
-- Proper handling of restarts [\#27](https://github.com/babylonlabs-io/btc-staker/issues/27)
-- `StakeFunds` should check whether the btc validator exists  [\#20](https://github.com/babylonlabs-io/btc-staker/issues/20)
+## v0.11.0
 
-**Merged pull requests:**
+### Improvements
 
-- chore: Upgrade bbn to 0.8.0-rc.0 [\#93](https://github.com/babylonlabs-io/btc-staker/pull/93) ([vitsalis](https://github.com/vitsalis))
-- license and public deps [\#92](https://github.com/babylonlabs-io/btc-staker/pull/92) ([KonradStaniec](https://github.com/KonradStaniec))
-- fix: Add BLS flags in make [\#91](https://github.com/babylonlabs-io/btc-staker/pull/91) ([gusin13](https://github.com/gusin13))
-- chore: restructure and improve docs [\#90](https://github.com/babylonlabs-io/btc-staker/pull/90) ([gusin13](https://github.com/gusin13))
-- create dir if not exists [\#89](https://github.com/babylonlabs-io/btc-staker/pull/89) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix signet support [\#87](https://github.com/babylonlabs-io/btc-staker/pull/87) ([KonradStaniec](https://github.com/KonradStaniec))
-- Handle lock time change output [\#86](https://github.com/babylonlabs-io/btc-staker/pull/86) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix dynamic fee estimation [\#85](https://github.com/babylonlabs-io/btc-staker/pull/85) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon [\#84](https://github.com/babylonlabs-io/btc-staker/pull/84) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix withdrawing [\#83](https://github.com/babylonlabs-io/btc-staker/pull/83) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon. Use min unbonding time [\#82](https://github.com/babylonlabs-io/btc-staker/pull/82) ([KonradStaniec](https://github.com/KonradStaniec))
-- Rename validator to finality provider [\#79](https://github.com/babylonlabs-io/btc-staker/pull/79) ([KonradStaniec](https://github.com/KonradStaniec))
-- Pre signed unbonding [\#78](https://github.com/babylonlabs-io/btc-staker/pull/78) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix unbonding witness building [\#77](https://github.com/babylonlabs-io/btc-staker/pull/77) ([KonradStaniec](https://github.com/KonradStaniec))
-- docs: Setup docs [\#75](https://github.com/babylonlabs-io/btc-staker/pull/75) ([gusin13](https://github.com/gusin13))
-- fix: Use the slashing change address flag [\#72](https://github.com/babylonlabs-io/btc-staker/pull/72) ([vitsalis](https://github.com/vitsalis))
-- Handle multiple validators [\#71](https://github.com/babylonlabs-io/btc-staker/pull/71) ([KonradStaniec](https://github.com/KonradStaniec))
-- Use unbonding time from bayblon [\#70](https://github.com/babylonlabs-io/btc-staker/pull/70) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon and use new staking tx and unbonding tx [\#66](https://github.com/babylonlabs-io/btc-staker/pull/66) ([KonradStaniec](https://github.com/KonradStaniec))
-- feat: Utilize new slashing tx format [\#64](https://github.com/babylonlabs-io/btc-staker/pull/64) ([gusin13](https://github.com/gusin13))
-- Add support for ecdsa sig type [\#63](https://github.com/babylonlabs-io/btc-staker/pull/63) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add criticial error channel and simplify unbodning send [\#62](https://github.com/babylonlabs-io/btc-staker/pull/62) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon version [\#61](https://github.com/babylonlabs-io/btc-staker/pull/61) ([KonradStaniec](https://github.com/KonradStaniec))
-- Extract modules [\#60](https://github.com/babylonlabs-io/btc-staker/pull/60) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix restart bug [\#59](https://github.com/babylonlabs-io/btc-staker/pull/59) ([KonradStaniec](https://github.com/KonradStaniec))
-- Code cleanup [\#56](https://github.com/babylonlabs-io/btc-staker/pull/56) ([KonradStaniec](https://github.com/KonradStaniec))
-- Get withdrawable transactions endpoint [\#55](https://github.com/babylonlabs-io/btc-staker/pull/55) ([KonradStaniec](https://github.com/KonradStaniec))
-- Extend restart to unbonding tx [\#52](https://github.com/babylonlabs-io/btc-staker/pull/52) ([KonradStaniec](https://github.com/KonradStaniec))
-- fix restart [\#51](https://github.com/babylonlabs-io/btc-staker/pull/51) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add handling of new pop type [\#47](https://github.com/babylonlabs-io/btc-staker/pull/47) ([KonradStaniec](https://github.com/KonradStaniec))
-- Unbonding flow [\#46](https://github.com/babylonlabs-io/btc-staker/pull/46) ([KonradStaniec](https://github.com/KonradStaniec))
-- chore: Update bbn version [\#44](https://github.com/babylonlabs-io/btc-staker/pull/44) ([vitsalis](https://github.com/vitsalis))
-- Force larger staking time [\#43](https://github.com/babylonlabs-io/btc-staker/pull/43) ([KonradStaniec](https://github.com/KonradStaniec))
-- chore: Update dn unstake operation help msg [\#42](https://github.com/babylonlabs-io/btc-staker/pull/42) ([filippos47](https://github.com/filippos47))
-- Imporve checking for best block [\#41](https://github.com/babylonlabs-io/btc-staker/pull/41) ([KonradStaniec](https://github.com/KonradStaniec))
-- Recovery after restart [\#39](https://github.com/babylonlabs-io/btc-staker/pull/39) ([KonradStaniec](https://github.com/KonradStaniec))
-- Fix bug in list\_transactions [\#36](https://github.com/babylonlabs-io/btc-staker/pull/36) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add some missing daemon commands [\#35](https://github.com/babylonlabs-io/btc-staker/pull/35) ([KonradStaniec](https://github.com/KonradStaniec))
-- Improve e2e test [\#34](https://github.com/babylonlabs-io/btc-staker/pull/34) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add check that validator exists before allowing for staking [\#31](https://github.com/babylonlabs-io/btc-staker/pull/31) ([KonradStaniec](https://github.com/KonradStaniec))
-- Improve slashing fee handling [\#30](https://github.com/babylonlabs-io/btc-staker/pull/30) ([KonradStaniec](https://github.com/KonradStaniec))
-- Only show active validators [\#29](https://github.com/babylonlabs-io/btc-staker/pull/29) ([vitsalis](https://github.com/vitsalis))
-- Stall when babylon node is not ready [\#26](https://github.com/babylonlabs-io/btc-staker/pull/26) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add babylon to e2e test [\#25](https://github.com/babylonlabs-io/btc-staker/pull/25) ([KonradStaniec](https://github.com/KonradStaniec))
-- nit: Update Block Cache Size default and fix usage [\#24](https://github.com/babylonlabs-io/btc-staker/pull/24) ([vitsalis](https://github.com/vitsalis))
-- Fix delegation bug [\#23](https://github.com/babylonlabs-io/btc-staker/pull/23) ([KonradStaniec](https://github.com/KonradStaniec))
-- nit: Add default values for ZMQ messages [\#22](https://github.com/babylonlabs-io/btc-staker/pull/22) ([vitsalis](https://github.com/vitsalis))
-- nit: default to btcwallet for wallet backend type [\#21](https://github.com/babylonlabs-io/btc-staker/pull/21) ([vitsalis](https://github.com/vitsalis))
-- fix: Replace deprecated SignRawTransaction [\#19](https://github.com/babylonlabs-io/btc-staker/pull/19) ([vitsalis](https://github.com/vitsalis))
-- cli for staking BTC to Babylon [\#18](https://github.com/babylonlabs-io/btc-staker/pull/18) ([SebastianElvis](https://github.com/SebastianElvis))
-- fix: offset and limit params out of order [\#17](https://github.com/babylonlabs-io/btc-staker/pull/17) ([vitsalis](https://github.com/vitsalis))
-- Fix signers field in message [\#16](https://github.com/babylonlabs-io/btc-staker/pull/16) ([KonradStaniec](https://github.com/KonradStaniec))
-- makefile: Add build-docker command [\#15](https://github.com/babylonlabs-io/btc-staker/pull/15) ([vitsalis](https://github.com/vitsalis))
-- chore: Minor cleanup and nitpicks [\#14](https://github.com/babylonlabs-io/btc-staker/pull/14) ([vitsalis](https://github.com/vitsalis))
-- Add query for current babylon validators [\#13](https://github.com/babylonlabs-io/btc-staker/pull/13) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add api to spend staking transaction after time lock [\#12](https://github.com/babylonlabs-io/btc-staker/pull/12) ([KonradStaniec](https://github.com/KonradStaniec))
-- Command to check wallets outputs [\#11](https://github.com/babylonlabs-io/btc-staker/pull/11) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add fee estimation [\#10](https://github.com/babylonlabs-io/btc-staker/pull/10) ([KonradStaniec](https://github.com/KonradStaniec))
-- Improve handling of sending delegation to babylon [\#9](https://github.com/babylonlabs-io/btc-staker/pull/9) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add dockerfile and push images to ECR [\#8](https://github.com/babylonlabs-io/btc-staker/pull/8) ([KonradStaniec](https://github.com/KonradStaniec))
-- Bump babylon to latest version [\#7](https://github.com/babylonlabs-io/btc-staker/pull/7) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add admin commands [\#6](https://github.com/babylonlabs-io/btc-staker/pull/6) ([KonradStaniec](https://github.com/KonradStaniec))
-- Babylon communication and persistence [\#5](https://github.com/babylonlabs-io/btc-staker/pull/5) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add initial stake command [\#4](https://github.com/babylonlabs-io/btc-staker/pull/4) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add server and daemon mode [\#3](https://github.com/babylonlabs-io/btc-staker/pull/3) ([KonradStaniec](https://github.com/KonradStaniec))
-- Add core logic for funding, building, signing, sending staking transaciton [\#2](https://github.com/babylonlabs-io/btc-staker/pull/2) ([KonradStaniec](https://github.com/KonradStaniec))
-- Project skeleton with initial cli command [\#1](https://github.com/babylonlabs-io/btc-staker/pull/1) ([KonradStaniec](https://github.com/KonradStaniec))
+* [#93](https://github.com/babylonlabs-io/btc-staker/pull/93) Fix linting config
+* [#95](https://github.com/babylonlabs-io/btc-staker/pull/95) Bump babylon to v0.16
+* [#96](https://github.com/babylonlabs-io/btc-staker/pull/96) Check allow list
+expiration height before creating new delegations
+
+## v0.10.0
+
+* [#87](https://github.com/babylonlabs-io/btc-staker/pull/87) Bump babylon v15
+
+## v0.9.0
+
+### Bug fix
+
+* [#78](https://github.com/babylonlabs-io/btc-staker/pull/78) Fix
+`withdrawable-transactions` query bug, introduced when adding pre-approval
+transactions handling
+
+### Improvements
+
+* [#79](https://github.com/babylonlabs-io/btc-staker/pull/79) Remove `BTCUndelegate`
+message sending
+
+## v0.8.0
+
+### Improvements
+
+* [#51](https://github.com/babylonlabs-io/btc-staker/pull/51) Use int64
+  for satoshi amount related values.
+* [#65](https://github.com/babylonlabs-io/btc-staker/pull/65) Various fixes to
+pre-approval flow. Do not send signed staking transactions to Babylon.
+* [#66](https://github.com/babylonlabs-io/btc-staker/pull/66) Bump babylon to
+v0.13.0 as it updates BTC block heights to uint32 and function naming.
+* [#67](https://github.com/babylonlabs-io/btc-staker/pull/67) Enable concurrent
+sending of multiple pre-approval staking transactions.
+
+## v0.7.2
+
+### Bug fix
+
+* [#57](https://github.com/babylonlabs-io/btc-staker/pull/57) Use separate go
+routine to check for activation after startup
+
+## v0.7.1
+
+### Bug fix
+
+- [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
+signatures when building unbonding transaction witness
+
+## v0.7.0
+
+### Api breaking
+
+* [44](https://github.com/babylonlabs-io/btc-staker/pull/44) Implement
+pre-approval flow support
+
+### Improvements
+
+* [#48](https://github.com/babylonlabs-io/btc-staker/pull/48) Add Github actions
+  for goreleaser, changelog reminder, and backport
+
+## v0.6.0
+
+### Bug fixes
+
+* [20](https://github.com/babylonlabs-io/btc-staker/pull/20) Better handling
+of restarting during unbonding process
+
+### Api breaking
+
+* [31](https://github.com/babylonlabs-io/btc-staker/pull/31) Update Babylon
+to handle new `x/btcstaking` parameters
+
+### Improvements
+
+* [21](https://github.com/babylonlabs-io/btc-staker/pull/21) Signing taproot
+spends through psbt's
+* [25](https://github.com/babylonlabs-io/btc-staker/pull/25) Handle multiple
+bitcoind wallets
+* [26](https://github.com/babylonlabs-io/btc-staker/pull/26) Improve phase-1
+commands to check transaction
 
 
+## v0.5.0
 
-\* *This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)*
+Initial Release!
