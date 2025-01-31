@@ -206,49 +206,6 @@ func (c *StakerServiceJSONRPCClient) SpendStakingTransaction(ctx context.Context
 	return result, nil
 }
 
-func (c *StakerServiceJSONRPCClient) WatchStaking(
-	ctx context.Context,
-	stakingTx string,
-	stakingTime int,
-	stakingValue int,
-	stakerBtcPk string,
-	fpBtcPks []string,
-	slashingTx string,
-	slashingTxSig string,
-	stakerBabylonAddr string,
-	stakerAddress string,
-	stakerBtcSig string,
-	unbondingTx string,
-	slashUnbondingTx string,
-	slashUnbondingTxSig string,
-	unbondingTime int,
-	popType int,
-) (*service.ResultStake, error) {
-	result := new(service.ResultStake)
-	params := make(map[string]interface{})
-	params["stakingTx"] = stakingTx
-	params["stakingTime"] = stakingTime
-	params["stakingValue"] = stakingValue
-	params["stakerBtcPk"] = stakerBtcPk
-	params["fpBtcPks"] = fpBtcPks
-	params["slashingTx"] = slashingTx
-	params["slashingTxSig"] = slashingTxSig
-	params["stakerBabylonAddr"] = stakerBabylonAddr
-	params["stakerAddress"] = stakerAddress
-	params["stakerBtcSig"] = stakerBtcSig
-	params["unbondingTx"] = unbondingTx
-	params["slashUnbondingTx"] = slashUnbondingTx
-	params["slashUnbondingTxSig"] = slashUnbondingTxSig
-	params["unbondingTime"] = unbondingTime
-	params["popType"] = popType
-
-	_, err := c.client.Call(ctx, "watch_staking_tx", params, result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
 	result := new(service.UnbondingResponse)
 

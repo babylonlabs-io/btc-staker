@@ -386,30 +386,6 @@ func TestMultiplePreApprovalTransactions(t *testing.T) {
 	}, eventuallyWaitTimeOut, eventuallyPollTime)
 }
 
-func TestSendingWatchedStakingTransaction(t *testing.T) {
-	t.Parallel()
-	// need to have at least 300 block on testnet as only then segwit is activated.
-	// Mature output is out which has 100 confirmations, which means 200mature outputs
-	// will generate 300 blocks
-	numMatureOutputs := uint32(200)
-	ctx, cancel := context.WithCancel(context.Background())
-	tm := StartManager(t, ctx, numMatureOutputs)
-	defer tm.Stop(t, cancel)
-	tm.insertAllMinedBlocksToBabylon(t)
-
-	cl := tm.Sa.BabylonController()
-	params, err := cl.Params()
-	require.NoError(t, err)
-
-	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
-
-	tm.createAndRegisterFinalityProviders(t, testStakingData)
-
-	txHash := tm.sendWatchedStakingTx(t, testStakingData, params)
-	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
-}
-
 func TestRestartingTxNotDeepEnough(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
