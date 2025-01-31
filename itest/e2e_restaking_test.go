@@ -68,6 +68,7 @@ func (tm *TestManager) getTestStakingDataWithCZFPs(
 	data.CZFPBTCSKs = fpBTCSKs
 	data.CZFPBTCPKs = fpBTCPKs
 	data.consumerRegister = datagen.GenRandomCosmosConsumerRegister(r)
+	data.consumerRegister.ConsumerId = "09-localhost" // TODO: mock a real consumer ID
 
 	return data
 }
