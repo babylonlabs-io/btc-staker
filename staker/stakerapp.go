@@ -24,7 +24,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -1507,48 +1506,6 @@ func (app *App) handleStakingCommands() {
 		case cmd := <-app.stakingRequestedCmdChan:
 			app.logStakingEventReceived(cmd)
 
-			if cmd.isWatched() {
-				bestBlockHeight := app.currentBestBlockHeight.Load()
-
-				err := app.txTracker.AddWatchedTransaction(
-					cmd.watchTxData.stakingTx,
-					cmd.watchTxData.stakingOutputIdx,
-					cmd.stakingTime,
-					cmd.fpBtcPks,
-					babylonPopToDBPop(cmd.pop),
-					cmd.stakerAddress,
-					cmd.watchTxData.slashingTx,
-					cmd.watchTxData.slashingTxSig,
-					cmd.watchTxData.stakerBabylonAddr,
-					cmd.watchTxData.stakerBtcPk,
-					cmd.watchTxData.unbondingTx,
-					cmd.watchTxData.slashUnbondingTx,
-					cmd.watchTxData.slashUnbondingTxSig,
-					cmd.watchTxData.unbondingTime,
-				)
-
-				if err != nil {
-					cmd.errChan <- err
-					continue
-				}
-
-				// we assume tx is already on btc chain, so we need to wait for confirmation
-				if err := app.waitForStakingTransactionConfirmation(
-					&cmd.watchTxData.stakingTxHash,
-					cmd.watchTxData.stakingTx.TxOut[cmd.watchTxData.stakingOutputIdx].PkScript,
-					cmd.requiredDepthOnBtcChain,
-					bestBlockHeight,
-				); err != nil {
-					cmd.errChan <- err
-					continue
-				}
-
-				app.m.ValidReceivedDelegationRequests.Inc()
-				cmd.successChan <- &cmd.watchTxData.stakingTxHash
-				app.logStakingEventProcessed(cmd)
-				continue
-			}
-
 			stakingTxHash, err := app.handleStakingCmd(cmd)
 			if err != nil {
 				utils.PushOrQuit(
@@ -1802,93 +1759,6 @@ func (app *App) Wallet() walletcontroller.WalletController {
 
 func (app *App) BabylonController() cl.BabylonClient {
 	return app.babylonClient
-}
-
-func (app *App) WatchStaking(
-	stakingTx *wire.MsgTx,
-	stakingTime uint16,
-	stakingValue btcutil.Amount,
-	fpPks []*btcec.PublicKey,
-	slashingTx *wire.MsgTx,
-	slashingTxSig *schnorr.Signature,
-	stakerBabylonAddr sdk.AccAddress,
-	stakerBtcPk *btcec.PublicKey,
-	stakerAddress btcutil.Address,
-	pop *cl.BabylonPop,
-	unbondingTx *wire.MsgTx,
-	slashUnbondingTx *wire.MsgTx,
-	slashUnbondingTxSig *schnorr.Signature,
-	unbondingTime uint16,
-) (*chainhash.Hash, error) {
-	currentParams, err := app.babylonClient.Params()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to watch staking tx. Failed to get params: %w", err)
-	}
-
-	if len(fpPks) == 0 {
-		return nil, fmt.Errorf("no finality provider public keys provided")
-	}
-
-	if haveDuplicates(fpPks) {
-		return nil, fmt.Errorf("duplicate finality provider public keys provided")
-	}
-
-	watchedRequest, err := parseWatchStakingRequest(
-		stakingTx,
-		stakingTime,
-		stakingValue,
-		fpPks,
-		slashingTx,
-		slashingTxSig,
-		stakerBabylonAddr,
-		stakerBtcPk,
-		stakerAddress,
-		pop,
-		unbondingTx,
-		slashUnbondingTx,
-		slashUnbondingTxSig,
-		unbondingTime,
-		currentParams,
-		app.network,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to watch staking tx. Invalid request: %w", err)
-	}
-
-	// we have valid request, check whether finality providers exists on babylon
-	for _, fpPk := range fpPks {
-		if err := app.finalityProviderExists(fpPk); err != nil {
-			return nil, err
-		}
-	}
-
-	app.logger.WithFields(logrus.Fields{
-		"stakerAddress": stakerAddress,
-		"stakingAmount": watchedRequest.watchTxData.stakingTx.TxOut[watchedRequest.watchTxData.stakingOutputIdx].Value,
-		"btxTxHash":     stakingTx.TxHash(),
-	}).Info("Received valid staking tx to watch")
-
-	utils.PushOrQuit[*stakingRequestCmd](
-		app.stakingRequestedCmdChan,
-		watchedRequest,
-		app.quit,
-	)
-
-	select {
-	case reqErr := <-watchedRequest.errChan:
-		app.logger.WithFields(logrus.Fields{
-			"stakerAddress": stakerAddress,
-			"err":           reqErr,
-		}).Debugf("Sending staking tx failed")
-
-		return nil, reqErr
-	case hash := <-watchedRequest.successChan:
-		return hash, nil
-	case <-app.quit:
-		return nil, nil
-	}
 }
 
 func (app *App) filterUtxoFnGen() walletcontroller.UseUtxoFn {
@@ -2167,12 +2037,6 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 		return nil, nil, err
 	}
 
-	// we cannont spend tx which is watch only.
-	// TODO. To make it possible additional endpoint is needed
-	if tx.Watched {
-		return nil, nil, fmt.Errorf("cannot spend staking which which is in watch only mode")
-	}
-
 	// this coud happen if we stared staker on wrong network.
 	// TODO: consider storing data for different networks in different folders
 	// to avoid this
@@ -2307,16 +2171,10 @@ func (app *App) UnbondStaking(
 	default:
 	}
 
-	// 1. Check staking tx is managed by staker program
+	// Check staking tx is managed by staker program
 	tx, err := app.txTracker.GetTransaction(&stakingTxHash)
-
 	if err != nil {
 		return nil, fmt.Errorf("cannont unbond: %w", err)
-	}
-
-	// 2. Check tx is not watched and is in valid state
-	if tx.Watched {
-		return nil, fmt.Errorf("cannot unbond watched transaction")
 	}
 
 	if tx.State != proto.TransactionState_DELEGATION_ACTIVE {

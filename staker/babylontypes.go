@@ -35,7 +35,7 @@ type sendDelegationRequest struct {
 	requiredInclusionBlockDepth uint32
 }
 
-func (app *App) buildOwnedDelegation(
+func (app *App) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
@@ -131,50 +131,6 @@ func (app *App) buildOwnedDelegation(
 	)
 
 	return dg, nil
-}
-
-func (app *App) buildDelegation(
-	req *sendDelegationRequest,
-	stakerAddress btcutil.Address,
-	storedTx *stakerdb.StoredTransaction) (*cl.DelegationData, error) {
-	if storedTx.Watched {
-		watchedData, err := app.txTracker.GetWatchedTransactionData(&req.btcTxHash)
-
-		if err != nil {
-			// Fatal error as if delegation is watched, the watched data must be in database
-			// and must be not malformed
-			app.logger.WithFields(logrus.Fields{
-				"btcTxHash":     req.btcTxHash,
-				"stakerAddress": stakerAddress,
-				"err":           err,
-			}).Fatalf("Failed to build delegation data for already confirmed staking transaction")
-		}
-
-		undelegationData := cl.UndelegationData{
-			UnbondingTransaction:         watchedData.UnbondingTx,
-			UnbondingTxValue:             btcutil.Amount(watchedData.UnbondingTx.TxOut[0].Value),
-			UnbondingTxUnbondingTime:     watchedData.UnbondingTime,
-			SlashUnbondingTransaction:    watchedData.SlashingUnbondingTx,
-			SlashUnbondingTransactionSig: watchedData.SlashingUnbondingTxSig,
-		}
-
-		dg := createDelegationData(
-			watchedData.StakerBtcPubKey,
-			req.inclusionInfo,
-			storedTx,
-			watchedData.SlashingTx,
-			watchedData.SlashingTxSig,
-			watchedData.StakerBabylonAddr,
-			&undelegationData,
-		)
-		return dg, nil
-	}
-
-	return app.buildOwnedDelegation(
-		req,
-		stakerAddress,
-		storedTx,
-	)
 }
 
 // TODO for now we launch this handler indefinitely. At some point we may introduce

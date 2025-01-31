@@ -85,19 +85,6 @@ func NewBTCSigType(t BabylonBtcPopType) (btcstypes.BTCSigType, error) {
 	}
 }
 
-func IntToPopType(t int) (BabylonBtcPopType, error) {
-	switch t {
-	case 0:
-		return SchnorrType, nil
-	case 1:
-		return Bip322Type, nil
-	case 2:
-		return EcdsaType, nil
-	default:
-		return SchnorrType, fmt.Errorf("uknown pop type")
-	}
-}
-
 func (pop *BabylonPop) PopTypeNum() uint32 {
 	return uint32(pop.popType)
 }
