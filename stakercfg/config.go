@@ -2,6 +2,7 @@ package stakercfg
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,24 +19,17 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jessevdk/go-flags"
-	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	defaultDataDirname     = "data"
-	defaultTLSCertFilename = "tls.cert"
-	defaultTLSKeyFilename  = "tls.key"
-	defaultLogLevel        = "info"
-	defaultLogDirname      = "logs"
-	defaultLogFilename     = "stakerd.log"
-	DefaultRPCPort         = 15812
-	// DefaultAutogenValidity is the default validity of a self-signed
-	// certificate. The value corresponds to 14 months
-	// (14 months * 30 days * 24 hours).
-	defaultTLSCertDuration = 14 * 30 * 24 * time.Hour
-	defaultConfigFileName  = "stakerd.conf"
-	defaultFeeMode         = "static"
+	defaultDataDirname    = "data"
+	defaultLogLevel       = "info"
+	defaultLogDirname     = "logs"
+	defaultLogFilename    = "stakerd.log"
+	DefaultRPCPort        = 15812
+	defaultConfigFileName = "stakerd.conf"
+	defaultFeeMode        = "static"
 	// We are using 2 sat/vbyte as default min fee rate, as currently our size estimates
 	// for different transaction types are not very accurate and if we would use 1 sat/vbyte (minimum accepted by bitcoin network)
 	// we risk into having transactions rejected by the network due to low fee.
@@ -79,25 +73,25 @@ func DefaultWalletConfig() WalletConfig {
 	}
 }
 
-type WalletRpcConfig struct {
+type WalletRPCConfig struct {
 	Host             string `long:"wallethost" description:"location of the wallet rpc server"`
 	User             string `long:"walletuser" description:"user auth for the wallet rpc server"`
 	Pass             string `long:"walletpassword" description:"password auth for the wallet rpc server"`
-	DisableTls       bool   `long:"noclienttls" description:"disables tls for the wallet rpc client"`
+	DisableTLS       bool   `long:"noclienttls" description:"disables tls for the wallet rpc client"`
 	RPCWalletCert    string `long:"rpcwalletcert" description:"File containing the wallet daemon's certificate file"`
 	RawRPCWalletCert string `long:"rawrpcwalletcert" description:"The raw bytes of the wallet daemon's PEM-encoded certificate chain which will be used to authenticate the RPC connection."`
 }
 
-func DefaultWalletRpcConfig() WalletRpcConfig {
-	return WalletRpcConfig{
-		DisableTls: true,
+func DefaultWalletRPCConfig() WalletRPCConfig {
+	return WalletRPCConfig{
+		DisableTLS: true,
 		Host:       "localhost:18556",
 		User:       "rpcuser",
 		Pass:       "rpcpass",
 	}
 }
 
-type JsonRpcServerConfig struct {
+type JSONRPCServerConfig struct {
 	RawRPCListeners []string `long:"rpclisten" description:"Add an interface/port/socket to listen for RPC connections"`
 }
 
@@ -105,8 +99,8 @@ type BtcNodeBackendConfig struct {
 	Nodetype            string    `long:"nodetype" description:"type of node to connect to {bitcoind, btcd}"`
 	WalletType          string    `long:"wallettype" description:"type of wallet to connect to {bitcoind, btcwallet}"`
 	FeeMode             string    `long:"feemode" description:"fee mode to use for fee estimation {static, dynamic}. In dynamic mode fee will be estimated using backend node"`
-	MinFeeRate          uint64    `long:"minfeerate" description:"minimum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a lower fee rate, this value will be used instead"`
-	MaxFeeRate          uint64    `long:"maxfeerate" description:"maximum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a higher fee rate, this value will be used instead. It is also used as fallback if fee estimation by connected btc node fails and as fee rate in case of static estimator"`
+	MinFeeRate          int64     `long:"minfeerate" description:"minimum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a lower fee rate, this value will be used instead"`
+	MaxFeeRate          int64     `long:"maxfeerate" description:"maximum fee rate to use for fee estimation in sat/vbyte. If fee estimation by connected btc node returns a higher fee rate, this value will be used instead. It is also used as fallback if fee estimation by connected btc node fails and as fee rate in case of static estimator"`
 	Btcd                *Btcd     `group:"btcd" namespace:"btcd"`
 	Bitcoind            *Bitcoind `group:"bitcoind" namespace:"bitcoind"`
 	EstimationMode      types.FeeEstimationMode
@@ -131,6 +125,7 @@ func DefaultBtcNodeBackendConfig() BtcNodeBackendConfig {
 type StakerConfig struct {
 	BabylonStallingInterval   time.Duration `long:"babylonstallinginterval" description:"The interval for Babylon node BTC light client to catch up with the real chain before re-sending delegation request"`
 	UnbondingTxCheckInterval  time.Duration `long:"unbondingtxcheckinterval" description:"The interval for staker whether delegation received all covenant signatures"`
+	CheckActiveInterval       time.Duration `long:"checkactiveinterval" description:"The interval for staker to check whether delegation is active on Babylon node"`
 	MaxConcurrentTransactions uint32        `long:"maxconcurrenttransactions" description:"Maximum concurrent transactions in flight to babylon node"`
 	ExitOnCriticalError       bool          `long:"exitoncriticalerror" description:"Exit stakerd on critical error"`
 }
@@ -139,6 +134,7 @@ func DefaultStakerConfig() StakerConfig {
 	return StakerConfig{
 		BabylonStallingInterval:   1 * time.Minute,
 		UnbondingTxCheckInterval:  30 * time.Second,
+		CheckActiveInterval:       1 * time.Minute,
 		MaxConcurrentTransactions: 1,
 		ExitOnCriticalError:       true,
 	}
@@ -156,7 +152,7 @@ type Config struct {
 
 	WalletConfig *WalletConfig `group:"walletconfig" namespace:"walletconfig"`
 
-	WalletRpcConfig *WalletRpcConfig `group:"walletrpcconfig" namespace:"walletrpcconfig"`
+	WalletRPCConfig *WalletRPCConfig `group:"walletrpcconfig" namespace:"walletrpcconfig"`
 
 	ChainConfig *ChainConfig `group:"chain" namespace:"chain"`
 
@@ -170,15 +166,15 @@ type Config struct {
 
 	MetricsConfig *MetricsConfig `group:"metricsconfig" namespace:"metricsconfig"`
 
-	JsonRpcServerConfig *JsonRpcServerConfig
+	JSONRPCServerConfig *JSONRPCServerConfig
 
 	ActiveNetParams chaincfg.Params
 
-	RpcListeners []net.Addr
+	RPCListeners []net.Addr
 }
 
 func DefaultConfig() Config {
-	rpcConf := DefaultWalletRpcConfig()
+	rpcConf := DefaultWalletRPCConfig()
 	walletConf := DefaultWalletConfig()
 	chainCfg := DefaultChainConfig()
 	nodeBackendCfg := DefaultBtcNodeBackendConfig()
@@ -193,7 +189,7 @@ func DefaultConfig() Config {
 		DebugLevel:           defaultLogLevel,
 		LogDir:               defaultLogDir,
 		WalletConfig:         &walletConf,
-		WalletRpcConfig:      &rpcConf,
+		WalletRPCConfig:      &rpcConf,
 		ChainConfig:          &chainCfg,
 		BtcNodeBackendConfig: &nodeBackendCfg,
 		BabylonConfig:        &bbnConfig,
@@ -269,7 +265,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the config
 		// file doesn't exist which is OK.
-		if _, ok := err.(*flags.IniError); ok {
+		var iniErr *flags.IniError
+		if errors.As(err, &iniErr) {
 			return nil, nil, nil, err
 		}
 
@@ -289,7 +286,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 	cleanCfg, err := ValidateConfig(cfg)
 	if err != nil {
 		// Log help message in case of usage error.
-		if _, ok := err.(*usageError); ok {
+		var usageErr *usageError
+		if errors.As(err, &usageErr) {
 			cfgLogger.Warnf("Incorrect usage: %v", usageMessage)
 		}
 
@@ -303,7 +301,7 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 	// TODO: Add log rotation
 	// At this point we know config is valid, create logger which also log to file
 	logFilePath := filepath.Join(cleanCfg.LogDir, defaultLogFilename)
-	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -341,6 +339,8 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 // ValidateConfig check the given configuration to be sane. This makes sure no
 // illegal values or combination of values are set. All file system paths are
 // normalized. The cleaned up config is returned on success.
+//
+//nolint:gocyclo
 func ValidateConfig(cfg Config) (*Config, error) {
 	// If the provided stakerd directory is not the default, we'll modify the
 	// path to all of the files and directories that will live within it.
@@ -360,11 +360,12 @@ func ValidateConfig(cfg Config) (*Config, error) {
 			// Show a nicer error message if it's because a symlink
 			// is linked to a directory that does not exist
 			// (probably because it's not mounted).
-			if e, ok := err.(*os.PathError); ok && os.IsExist(err) {
-				link, lerr := os.Readlink(e.Path)
+			var pathErr *os.PathError
+			if errors.As(err, &pathErr) && os.IsExist(err) {
+				link, lerr := os.Readlink(pathErr.Path)
 				if lerr == nil {
 					str := "is symlink %s -> %s mounted?"
-					err = fmt.Errorf(str, e.Path, link)
+					err = fmt.Errorf(str, pathErr.Path, link)
 				}
 			}
 
@@ -441,11 +442,11 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		return nil, mkErr(fmt.Sprintf("invalid fee estimation mode: %s", cfg.BtcNodeBackendConfig.Nodetype))
 	}
 
-	if cfg.BtcNodeBackendConfig.MinFeeRate == 0 {
+	if cfg.BtcNodeBackendConfig.MinFeeRate <= 0 {
 		return nil, mkErr("minfeerate rate must be greater than 0")
 	}
 
-	if cfg.BtcNodeBackendConfig.MaxFeeRate == 0 {
+	if cfg.BtcNodeBackendConfig.MaxFeeRate <= 0 {
 		return nil, mkErr("maxfeerate rate must be greater than 0")
 	}
 
@@ -495,10 +496,10 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// At least one RPCListener is required. So listen on localhost per
 	// default.
-	if len(cfg.JsonRpcServerConfig.RawRPCListeners) == 0 {
+	if len(cfg.JSONRPCServerConfig.RawRPCListeners) == 0 {
 		addr := fmt.Sprintf("localhost:%d", DefaultRPCPort)
-		cfg.JsonRpcServerConfig.RawRPCListeners = append(
-			cfg.JsonRpcServerConfig.RawRPCListeners, addr,
+		cfg.JSONRPCServerConfig.RawRPCListeners = append(
+			cfg.JSONRPCServerConfig.RawRPCListeners, addr,
 		)
 	}
 
@@ -510,8 +511,8 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	// Add default port to all RPC listener addresses if needed and remove
 	// duplicate addresses.
-	cfg.RpcListeners, err = lncfg.NormalizeAddresses(
-		cfg.JsonRpcServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
+	cfg.RPCListeners, err = NormalizeAddresses(
+		cfg.JSONRPCServerConfig.RawRPCListeners, strconv.Itoa(DefaultRPCPort),
 		net.ResolveTCPAddr,
 	)
 

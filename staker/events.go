@@ -2,141 +2,24 @@ package staker
 
 import (
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/sirupsen/logrus"
 )
 
 type StakingEvent interface {
-	// Each staking event is identified by initial staking transaction hash
-	EventId() chainhash.Hash
+	EventID() chainhash.Hash // Each staking event is identified by initial staking transaction hash
 	EventDesc() string
 }
 
-var _ StakingEvent = (*stakingRequestedEvent)(nil)
 var _ StakingEvent = (*stakingTxBtcConfirmedEvent)(nil)
 var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
+var _ StakingEvent = (*delegationActivatedPostApprovalEvent)(nil)
+var _ StakingEvent = (*delegationActivatedPreApprovalEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
-
-type stakingRequestedEvent struct {
-	stakerAddress           btcutil.Address
-	stakingTxHash           chainhash.Hash
-	stakingTx               *wire.MsgTx
-	stakingOutputIdx        uint32
-	stakingOutputPkScript   []byte
-	stakingTime             uint16
-	stakingValue            btcutil.Amount
-	fpBtcPks                []*btcec.PublicKey
-	requiredDepthOnBtcChain uint32
-	pop                     *cl.BabylonPop
-	watchTxData             *watchTxData
-	errChan                 chan error
-	successChan             chan *chainhash.Hash
-}
-
-func (req *stakingRequestedEvent) isWatched() bool {
-	return req.watchTxData != nil
-}
-
-func newOwnedStakingRequest(
-	stakerAddress btcutil.Address,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-	stakingOutputPkScript []byte,
-	stakingTime uint16,
-	stakingValue btcutil.Amount,
-	fpBtcPks []*btcec.PublicKey,
-	confirmationTimeBlocks uint32,
-	pop *cl.BabylonPop,
-) *stakingRequestedEvent {
-	return &stakingRequestedEvent{
-		stakerAddress:           stakerAddress,
-		stakingTxHash:           stakingTx.TxHash(),
-		stakingTx:               stakingTx,
-		stakingOutputIdx:        stakingOutputIdx,
-		stakingOutputPkScript:   stakingOutputPkScript,
-		stakingTime:             stakingTime,
-		stakingValue:            stakingValue,
-		fpBtcPks:                fpBtcPks,
-		requiredDepthOnBtcChain: confirmationTimeBlocks,
-		pop:                     pop,
-		watchTxData:             nil,
-		errChan:                 make(chan error, 1),
-		successChan:             make(chan *chainhash.Hash, 1),
-	}
-}
-
-type watchTxData struct {
-	slashingTx        *wire.MsgTx
-	slashingTxSig     *schnorr.Signature
-	stakerBabylonAddr sdk.AccAddress
-	stakerBtcPk       *btcec.PublicKey
-	// unbonding related data
-	unbondingTx         *wire.MsgTx
-	slashUnbondingTx    *wire.MsgTx
-	slashUnbondingTxSig *schnorr.Signature
-	unbondingTime       uint16
-}
-
-func newWatchedStakingRequest(
-	stakerAddress btcutil.Address,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-	stakingOutputPkScript []byte,
-	stakingTime uint16,
-	stakingValue btcutil.Amount,
-	fpBtcPks []*btcec.PublicKey,
-	confirmationTimeBlocks uint32,
-	pop *cl.BabylonPop,
-	slashingTx *wire.MsgTx,
-	slashingTxSignature *schnorr.Signature,
-	stakerBabylonAddr sdk.AccAddress,
-	stakerBtcPk *btcec.PublicKey,
-	unbondingTx *wire.MsgTx,
-	slashUnbondingTx *wire.MsgTx,
-	slashUnbondingTxSig *schnorr.Signature,
-	unbondingTime uint16,
-) *stakingRequestedEvent {
-	return &stakingRequestedEvent{
-		stakerAddress:           stakerAddress,
-		stakingTxHash:           stakingTx.TxHash(),
-		stakingTx:               stakingTx,
-		stakingOutputIdx:        stakingOutputIdx,
-		stakingOutputPkScript:   stakingOutputPkScript,
-		stakingTime:             stakingTime,
-		stakingValue:            stakingValue,
-		fpBtcPks:                fpBtcPks,
-		requiredDepthOnBtcChain: confirmationTimeBlocks,
-		pop:                     pop,
-		watchTxData: &watchTxData{
-			slashingTx:          slashingTx,
-			slashingTxSig:       slashingTxSignature,
-			stakerBabylonAddr:   stakerBabylonAddr,
-			stakerBtcPk:         stakerBtcPk,
-			unbondingTx:         unbondingTx,
-			slashUnbondingTx:    slashUnbondingTx,
-			slashUnbondingTxSig: slashUnbondingTxSig,
-			unbondingTime:       unbondingTime,
-		},
-		errChan:     make(chan error, 1),
-		successChan: make(chan *chainhash.Hash, 1),
-	}
-}
-
-func (req *stakingRequestedEvent) EventId() chainhash.Hash {
-	return req.stakingTxHash
-}
-
-func (req *stakingRequestedEvent) EventDesc() string {
-	return "STAKING_REQUESTED"
-}
 
 type stakingTxBtcConfirmedEvent struct {
 	stakingTxHash chainhash.Hash
@@ -148,7 +31,7 @@ type stakingTxBtcConfirmedEvent struct {
 	inlusionBlock *wire.MsgBlock
 }
 
-func (event *stakingTxBtcConfirmedEvent) EventId() chainhash.Hash {
+func (event *stakingTxBtcConfirmedEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -157,12 +40,13 @@ func (event *stakingTxBtcConfirmedEvent) EventDesc() string {
 }
 
 type delegationSubmittedToBabylonEvent struct {
-	stakingTxHash chainhash.Hash
-	unbondingTx   *wire.MsgTx
-	unbondingTime uint16
+	stakingTxHash              chainhash.Hash
+	babylonBTCDelegationTxHash string
+	unbondingTx                *wire.MsgTx
+	unbondingTime              uint16
 }
 
-func (event *delegationSubmittedToBabylonEvent) EventId() chainhash.Hash {
+func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -172,10 +56,11 @@ func (event *delegationSubmittedToBabylonEvent) EventDesc() string {
 
 type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
 	stakingTxHash               chainhash.Hash
+	delegationActive            bool
 	covenantUnbondingSignatures []cl.CovenantSignatureInfo
 }
 
-func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventId() chainhash.Hash {
+func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -189,7 +74,7 @@ type unbondingTxConfirmedOnBtcEvent struct {
 	blockHeight   uint32
 }
 
-func (event *unbondingTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *unbondingTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -201,7 +86,7 @@ type spendStakeTxConfirmedOnBtcEvent struct {
 	stakingTxHash chainhash.Hash
 }
 
-func (event *spendStakeTxConfirmedOnBtcEvent) EventId() chainhash.Hash {
+func (event *spendStakeTxConfirmedOnBtcEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -215,7 +100,7 @@ type criticalErrorEvent struct {
 	additionalContext string
 }
 
-func (event *criticalErrorEvent) EventId() chainhash.Hash {
+func (event *criticalErrorEvent) EventID() chainhash.Hash {
 	return event.stakingTxHash
 }
 
@@ -223,16 +108,42 @@ func (event *criticalErrorEvent) EventDesc() string {
 	return "CRITICAL_ERROR"
 }
 
-func (app *StakerApp) logStakingEventReceived(event StakingEvent) {
+func (app *App) logStakingEventReceived(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Received staking event")
 }
 
-func (app *StakerApp) logStakingEventProcessed(event StakingEvent) {
+func (app *App) logStakingEventProcessed(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
-		"eventId": event.EventId(),
+		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
+}
+
+type delegationActivatedPostApprovalEvent struct {
+	stakingTxHash chainhash.Hash
+}
+
+func (event *delegationActivatedPostApprovalEvent) EventID() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *delegationActivatedPostApprovalEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON_POST_APPROVAL_EVENT"
+}
+
+type delegationActivatedPreApprovalEvent struct {
+	stakingTxHash chainhash.Hash
+	blockHash     chainhash.Hash
+	blockHeight   uint32
+}
+
+func (event *delegationActivatedPreApprovalEvent) EventID() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *delegationActivatedPreApprovalEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON_PRE_APPROVAL_EVENT"
 }

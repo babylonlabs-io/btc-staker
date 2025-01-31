@@ -18,5 +18,4 @@ func NewWalletBackend(backend string) (SupportedWalletBackend, error) {
 	default:
 		return BtcwalletWalletBackend, fmt.Errorf("invalid wallet type: %s", backend)
 	}
-
 }

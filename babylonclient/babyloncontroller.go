@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 
 	sdkErr "cosmossdk.io/errors"
@@ -16,7 +17,6 @@ import (
 	"github.com/avast/retry-go/v4"
 	bbnclient "github.com/babylonlabs-io/babylon/client/client"
 	bbntypes "github.com/babylonlabs-io/babylon/types"
-	bcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 	btclctypes "github.com/babylonlabs-io/babylon/x/btclightclient/types"
 	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
@@ -35,7 +35,6 @@ import (
 	bq "github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
@@ -101,18 +100,19 @@ func NewBabylonController(
 }
 
 type StakingTrackerResponse struct {
-	SlashingPkScript        []byte
-	SlashingRate            sdkmath.LegacyDec
-	MinComissionRate        sdkmath.LegacyDec
-	CovenantPks             []*btcec.PublicKey
-	CovenantQuruomThreshold uint32
-	MinSlashingFee          btcutil.Amount
-	MinUnbondingTime        uint16
-	UnbondingFee            btcutil.Amount
-	MinStakingTime          uint16
-	MaxStakingTime          uint16
-	MinStakingValue         btcutil.Amount
-	MaxStakingValue         btcutil.Amount
+	SlashingPkScript          []byte
+	SlashingRate              sdkmath.LegacyDec
+	MinComissionRate          sdkmath.LegacyDec
+	CovenantPks               []*btcec.PublicKey
+	CovenantQuruomThreshold   uint32
+	MinSlashingFee            btcutil.Amount
+	UnbondingTime             uint16
+	UnbondingFee              btcutil.Amount
+	MinStakingTime            uint16
+	MaxStakingTime            uint16
+	MinStakingValue           btcutil.Amount
+	MaxStakingValue           btcutil.Amount
+	AllowListExpirationHeight uint64
 }
 
 type FinalityProviderInfo struct {
@@ -134,18 +134,19 @@ func (bc *BabylonController) Stop() error {
 	return bc.bbnClient.Stop()
 }
 
-func (bc *BabylonController) Params() (*StakingParams, error) {
-	// TODO: uint64 are quite silly types for these params, probably uint8 or uint16 would be enough
-	// as we do not expect finalization to be more than 255 or in super extreme 65535
-	// TODO: it would probably be good to have separate methods for those
-	var bccParams *bcctypes.Params
+func (bc *BabylonController) btccheckpointParamsWithRetry() (*BTCCheckpointParams, error) {
+	var bccParams *BTCCheckpointParams
 	if err := retry.Do(func() error {
-
 		response, err := bc.bbnClient.BTCCheckpointParams()
 		if err != nil {
 			return err
 		}
-		bccParams = &response.Params
+
+		bccParams = &BTCCheckpointParams{
+			ConfirmationTimeBlocks:    response.Params.BtcConfirmationDepth,
+			FinalizationTimeoutBlocks: response.Params.CheckpointFinalizationTimeout,
+		}
+
 		return nil
 	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
 		bc.logger.WithFields(logrus.Fields{
@@ -157,6 +158,14 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
+	return bccParams, nil
+}
+
+func (bc *BabylonController) BTCCheckpointParams() (*BTCCheckpointParams, error) {
+	return bc.btccheckpointParamsWithRetry()
+}
+
+func (bc *BabylonController) queryStakingTrackerWithRetries() (*StakingTrackerResponse, error) {
 	var stakingTrackerParams *StakingTrackerResponse
 	if err := retry.Do(func() error {
 		trackerParams, err := bc.QueryStakingTracker()
@@ -175,29 +184,92 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 		return nil, err
 	}
 
-	if bccParams.CheckpointFinalizationTimeout > math.MaxUint16 {
-		return nil, fmt.Errorf("checkpoint finalization timeout is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	return stakingTrackerParams, nil
+}
+
+func (bc *BabylonController) Params() (*StakingParams, error) {
+	bccParams, err := bc.btccheckpointParamsWithRetry()
+
+	if err != nil {
+		return nil, err
 	}
 
-	minUnbondingTime := sdkmath.Max[uint16](
-		uint16(bccParams.CheckpointFinalizationTimeout),
-		stakingTrackerParams.MinUnbondingTime,
-	)
+	stakingTrackerParams, err := bc.queryStakingTrackerWithRetries()
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    uint32(bccParams.BtcConfirmationDepth),
-		FinalizationTimeoutBlocks: uint32(bccParams.CheckpointFinalizationTimeout),
+		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
+		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
 		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
 		CovenantPks:               stakingTrackerParams.CovenantPks,
 		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
 		SlashingRate:              stakingTrackerParams.SlashingRate,
 		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		MinUnbondingTime:          minUnbondingTime,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
 		UnbondingFee:              stakingTrackerParams.UnbondingFee,
 		MinStakingTime:            stakingTrackerParams.MinStakingTime,
 		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
 		MinStakingValue:           stakingTrackerParams.MinStakingValue,
 		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+	}, nil
+}
+
+func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
+	btcHeight uint32,
+) (*StakingTrackerResponse, error) {
+	var stakingTrackerParams *StakingTrackerResponse
+	if err := retry.Do(func() error {
+		trackerParams, err := bc.QueryStakingTrackerByBtcHeight(btcHeight)
+		if err != nil {
+			return err
+		}
+		stakingTrackerParams = trackerParams
+		return nil
+	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		bc.logger.WithFields(logrus.Fields{
+			"attempt":      n + 1,
+			"max_attempts": RtyAttNum,
+			"error":        err,
+		}).Error("Failed to query babylon client for staking tracker params")
+	})); err != nil {
+		return nil, err
+	}
+
+	return stakingTrackerParams, nil
+}
+
+func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error) {
+	bccParams, err := bc.btccheckpointParamsWithRetry()
+
+	if err != nil {
+		return nil, err
+	}
+
+	stakingTrackerParams, err := bc.queryStakingTrackerByBtcHeightWithRetries(btcHeight)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &StakingParams{
+		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
+		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
+		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
+		CovenantPks:               stakingTrackerParams.CovenantPks,
+		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
+		SlashingRate:              stakingTrackerParams.SlashingRate,
+		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
+		UnbondingFee:              stakingTrackerParams.UnbondingFee,
+		MinStakingTime:            stakingTrackerParams.MinStakingTime,
+		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
+		MinStakingValue:           stakingTrackerParams.MinStakingValue,
+		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
 	}, nil
 }
 
@@ -220,6 +292,18 @@ func (bc *BabylonController) GetKeyAddress() sdk.AccAddress {
 	}
 
 	return addr
+}
+
+func (bc *BabylonController) GetLatestBlockHeight() (uint64, error) {
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	status, err := bc.bbnClient.RPCClient.Status(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint64(status.SyncInfo.LatestBlockHeight), nil
 }
 
 func (bc *BabylonController) getTxSigner() string {
@@ -274,20 +358,26 @@ func (bc *BabylonController) Sign(msg []byte) ([]byte, error) {
 	}
 }
 
-type DelegationData struct {
-	StakingTransaction                   *wire.MsgTx
+type StakingTransactionInclusionInfo struct {
 	StakingTransactionIdx                uint32
 	StakingTransactionInclusionProof     []byte
 	StakingTransactionInclusionBlockHash *chainhash.Hash
-	StakingTime                          uint16
-	StakingValue                         btcutil.Amount
-	FinalityProvidersBtcPks              []*btcec.PublicKey
-	SlashingTransaction                  *wire.MsgTx
-	SlashingTransactionSig               *schnorr.Signature
-	BabylonStakerAddr                    sdk.AccAddress
-	StakerBtcPk                          *btcec.PublicKey
-	BabylonPop                           *stakerdb.ProofOfPossession
-	Ud                                   *UndelegationData
+}
+
+type DelegationData struct {
+	StakingTransaction *wire.MsgTx
+	// Optional field, if not provided, delegation will be send to Babylon without
+	// the inclusion proof
+	StakingTransactionInclusionInfo *StakingTransactionInclusionInfo
+	StakingTime                     uint16
+	StakingValue                    btcutil.Amount
+	FinalityProvidersBtcPks         []*btcec.PublicKey
+	SlashingTransaction             *wire.MsgTx
+	SlashingTransactionSig          *schnorr.Signature
+	BabylonStakerAddr               sdk.AccAddress
+	StakerBtcPk                     *btcec.PublicKey
+	BabylonPop                      *stakerdb.ProofOfPossession
+	Ud                              *UndelegationData
 }
 
 type UndelegationData struct {
@@ -334,8 +424,6 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		return nil, err
 	}
 
-	inclusionBlockHash := bbntypes.NewBTCHeaderHashBytesFromChainhash(dg.StakingTransactionInclusionBlockHash)
-
 	slashingTx, err := btcstypes.NewBTCSlashingTxFromMsgTx(dg.SlashingTransaction)
 
 	if err != nil {
@@ -375,6 +463,22 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 	slashUnbondingTxSig := bbntypes.NewBIP340SignatureFromBTCSig(dg.Ud.SlashUnbondingTransactionSig)
 
+	var stakingTransactionInclusionProof *btcstypes.InclusionProof
+
+	if dg.StakingTransactionInclusionInfo != nil {
+		inclusionBlockHash := bbntypes.NewBTCHeaderHashBytesFromChainhash(
+			dg.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash,
+		)
+		txKey := &btcctypes.TransactionKey{
+			Index: dg.StakingTransactionInclusionInfo.StakingTransactionIdx,
+			Hash:  &inclusionBlockHash,
+		}
+		stakingTransactionInclusionProof = btcstypes.NewInclusionProof(
+			txKey,
+			dg.StakingTransactionInclusionInfo.StakingTransactionInclusionProof,
+		)
+	}
+
 	return &btcstypes.MsgCreateBTCDelegation{
 		// Note: this should be always safe conversion as we received data from our db
 		StakerAddr: dg.BabylonStakerAddr.String(),
@@ -388,15 +492,9 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		StakingValue: int64(dg.StakingValue),
 		// TODO: It is super bad that this thing (TransactionInfo) spread over whole babylon codebase, and it
 		// is used in all modules, rpc, database etc.
-		StakingTx: &bcctypes.TransactionInfo{
-			Key: &bcctypes.TransactionKey{
-				Index: dg.StakingTransactionIdx,
-				Hash:  &inclusionBlockHash,
-			},
-			Transaction: serizalizedStakingTransaction,
-			Proof:       dg.StakingTransactionInclusionProof,
-		},
-		SlashingTx: slashingTx,
+		StakingTx:               serizalizedStakingTransaction,
+		StakingTxInclusionProof: stakingTransactionInclusionProof,
+		SlashingTx:              slashingTx,
 		// Data related to unbonding
 		DelegatorSlashingSig:          slashingTxSig,
 		UnbondingTx:                   serializedUnbondingTransaction,
@@ -409,14 +507,14 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 func (bc *BabylonController) reliablySendMsgs(
 	msgs []sdk.Msg,
-) (*pv.RelayerTxResponse, error) {
+) (*bct.RelayerTxResponse, error) {
 	// TODO Empty errors ??
 	return bc.bbnClient.ReliablySendMsgs(context.Background(), msgs, []*sdkErr.Error{}, []*sdkErr.Error{})
 }
 
 // TODO: for now return sdk.TxResponse, it will ease up debugging/testing
 // ultimately we should create our own type ate
-func (bc *BabylonController) Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	delegateMsg, err := delegationDataToMsg(dg)
 	if err != nil {
 		return nil, err
@@ -425,24 +523,76 @@ func (bc *BabylonController) Delegate(dg *DelegationData) (*pv.RelayerTxResponse
 	return bc.reliablySendMsgs([]sdk.Msg{delegateMsg})
 }
 
-func (bc *BabylonController) Undelegate(
-	req *UndelegationRequest,
-) (*pv.RelayerTxResponse, error) {
-
-	ubSig := bbntypes.NewBIP340SignatureFromBTCSig(req.StakerUnbondingSig)
-
-	msg := &btcstypes.MsgBTCUndelegate{
-		Signer:         bc.getTxSigner(),
-		StakingTxHash:  req.StakingTxHash.String(),
-		UnbondingTxSig: ubSig,
-	}
-
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
-}
-
 func getQueryContext(timeout time.Duration) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	return ctx, cancel
+}
+
+func parseParams(params *btcstypes.Params) (*StakingTrackerResponse, error) {
+	// check early that the covenant config makes sense, so that rest of the
+	// code can assume that:
+	// 1. covenant quorum is less or equal to number of covenant pks
+	// 2. covenant pks are not empty
+	if len(params.CovenantPks) == 0 {
+		return nil, fmt.Errorf("empty list of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if int(params.CovenantQuorum) > len(params.CovenantPks) {
+		return nil, fmt.Errorf("covenant quorum is bigger than number of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	var covenantPks []*btcec.PublicKey
+
+	for _, covenantPk := range params.CovenantPks {
+		covenantBtcPk, err := covenantPk.ToBTCPK()
+		if err != nil {
+			return nil, err
+		}
+		covenantPks = append(covenantPks, covenantBtcPk)
+	}
+
+	unbondingTime := params.UnbondingTimeBlocks
+	if unbondingTime > math.MaxUint16 {
+		return nil, fmt.Errorf("unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	minStakingTimeBlocksU32 := params.MinStakingTimeBlocks
+	if minStakingTimeBlocksU32 > math.MaxUint16 {
+		return nil, fmt.Errorf("min staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	maxStakingTimeBlocksU32 := params.MaxStakingTimeBlocks
+	if maxStakingTimeBlocksU32 > math.MaxUint16 {
+		return nil, fmt.Errorf("max staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if params.MinStakingValueSat < 0 {
+		return nil, fmt.Errorf("min staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if params.MaxStakingValueSat < 0 {
+		return nil, fmt.Errorf("max staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	if params.UnbondingFeeSat < 0 {
+		return nil, fmt.Errorf("unbonding fee is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
+	}
+
+	return &StakingTrackerResponse{
+		SlashingPkScript:          params.SlashingPkScript,
+		SlashingRate:              params.SlashingRate,
+		MinComissionRate:          params.MinCommissionRate,
+		CovenantPks:               covenantPks,
+		MinSlashingFee:            btcutil.Amount(params.MinSlashingTxFeeSat),
+		CovenantQuruomThreshold:   params.CovenantQuorum,
+		UnbondingTime:             uint16(unbondingTime),
+		UnbondingFee:              btcutil.Amount(params.UnbondingFeeSat),
+		MinStakingTime:            uint16(minStakingTimeBlocksU32),
+		MaxStakingTime:            uint16(maxStakingTimeBlocksU32),
+		MinStakingValue:           btcutil.Amount(params.MinStakingValueSat),
+		MaxStakingValue:           btcutil.Amount(params.MaxStakingValueSat),
+		AllowListExpirationHeight: params.AllowListExpirationHeight,
+	}, nil
 }
 
 func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, error) {
@@ -457,66 +607,25 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 		return nil, err
 	}
 
-	// check this early than covenant config makes sense, so that rest of the
-	// code can assume that:
-	// 1. covenant quorum is less or equal to number of covenant pks
-	// 2. covenant pks are not empty
-	if len(response.Params.CovenantPks) == 0 {
-		return nil, fmt.Errorf("empty list of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
+	return parseParams(&response.Params)
+}
+
+func (bc *BabylonController) QueryStakingTrackerByBtcHeight(btcHeight uint32) (*StakingTrackerResponse, error) {
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
+	queryClient := btcstypes.NewQueryClient(clientCtx)
+
+	response, err := queryClient.ParamsByBTCHeight(ctx, &btcstypes.QueryParamsByBTCHeightRequest{
+		BtcHeight: btcHeight,
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	if response.Params.CovenantQuorum > uint32(len(response.Params.CovenantPks)) {
-		return nil, fmt.Errorf("covenant quorum is bigger than number of covenant pks: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	var covenantPks []*btcec.PublicKey
-
-	for _, covenantPk := range response.Params.CovenantPks {
-		covenantBtcPk, err := covenantPk.ToBTCPK()
-		if err != nil {
-			return nil, err
-		}
-		covenantPks = append(covenantPks, covenantBtcPk)
-	}
-
-	if response.Params.MinUnbondingTimeBlocks > math.MaxUint16 {
-		return nil, fmt.Errorf("min unbonding time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	if response.Params.MinStakingTimeBlocks > math.MaxUint16 {
-		return nil, fmt.Errorf("min staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	if response.Params.MaxStakingTimeBlocks > math.MaxUint16 {
-		return nil, fmt.Errorf("max staking time is bigger than uint16: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	if response.Params.MinStakingValueSat < 0 {
-		return nil, fmt.Errorf("min staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	if response.Params.MaxStakingValueSat < 0 {
-		return nil, fmt.Errorf("max staking value is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	if response.Params.UnbondingFeeSat < 0 {
-		return nil, fmt.Errorf("unbonding fee is negative: %w", ErrInvalidValueReceivedFromBabylonNode)
-	}
-
-	return &StakingTrackerResponse{
-		SlashingPkScript:        response.Params.SlashingPkScript,
-		SlashingRate:            response.Params.SlashingRate,
-		MinComissionRate:        response.Params.MinCommissionRate,
-		CovenantPks:             covenantPks,
-		MinSlashingFee:          btcutil.Amount(response.Params.MinSlashingTxFeeSat),
-		CovenantQuruomThreshold: response.Params.CovenantQuorum,
-		MinUnbondingTime:        uint16(response.Params.MinUnbondingTimeBlocks),
-		UnbondingFee:            btcutil.Amount(response.Params.UnbondingFeeSat),
-		MinStakingTime:          uint16(response.Params.MinStakingTimeBlocks),
-		MaxStakingTime:          uint16(response.Params.MaxStakingTimeBlocks),
-		MinStakingValue:         btcutil.Amount(response.Params.MinStakingValueSat),
-		MaxStakingValue:         btcutil.Amount(response.Params.MaxStakingValueSat),
-	}, nil
+	return parseParams(&response.Params)
 }
 
 func (bc *BabylonController) QueryFinalityProviders(
@@ -675,7 +784,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 	}, nil
 }
 
-func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error) {
+func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error) {
 	ctx, cancel := getQueryContext(bc.cfg.Timeout)
 	defer cancel()
 
@@ -697,7 +806,6 @@ func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint6
 			"error":        err,
 		}).Error("Failed to query babylon for the depth of the header")
 	})); err != nil {
-
 		// translate errors to locally handable ones
 		if strings.Contains(err.Error(), btclctypes.ErrHeaderDoesNotExist.Error()) {
 			return 0, fmt.Errorf("%s: %w", err.Error(), ErrHeaderNotKnownToBabylon)
@@ -708,11 +816,10 @@ func (bc *BabylonController) QueryHeaderDepth(headerHash *chainhash.Hash) (uint6
 	}
 
 	return response.Depth, nil
-
 }
 
-// Insert BTC block header using rpc client
-func (bc *BabylonController) InsertBtcBlockHeaders(headers []*wire.BlockHeader) (*pv.RelayerTxResponse, error) {
+// InsertBtcBlockHeaders Insert BTC block header using rpc client
+func (bc *BabylonController) InsertBtcBlockHeaders(headers []*wire.BlockHeader) (*bct.RelayerTxResponse, error) {
 	msg := &btclctypes.MsgInsertHeaders{
 		Signer:  bc.getTxSigner(),
 		Headers: chainToChainBytes(headers),
@@ -750,7 +857,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 		ConsumerId:  consumerID,
 	}
 
-	fpPrivKeyBBN.PubKey()
 	relayerMsgs := bbnclient.ToProviderMsgs([]sdk.Msg{registerMsg})
 
 	_, err := bc.bbnClient.SendMessageWithSigner(context.Background(), fpAddr, fpPrivKeyBBN, relayerMsgs)
@@ -778,7 +884,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 			return err
 		}
 
-		var udi *UndelegationInfo = nil
+		var udi *UndelegationInfo
 
 		if resp.BtcDelegation.UndelegationResponse != nil {
 			var coventSigInfos []CovenantSignatureInfo
@@ -813,14 +919,15 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 				return retry.Unrecoverable(fmt.Errorf("malformed unbonding transaction: %s: %w", err.Error(), ErrInvalidValueReceivedFromBabylonNode))
 			}
 
-			if resp.BtcDelegation.UnbondingTime > math.MaxUint16 {
+			unbondingTimeU32 := resp.BtcDelegation.UnbondingTime
+			if unbondingTimeU32 > math.MaxUint16 {
 				return retry.Unrecoverable(fmt.Errorf("malformed unbonding time: %d: %w", resp.BtcDelegation.UnbondingTime, ErrInvalidValueReceivedFromBabylonNode))
 			}
 
 			udi = &UndelegationInfo{
 				UnbondingTransaction:        tx,
 				CovenantUnbondingSignatures: coventSigInfos,
-				UnbondingTime:               uint16(resp.BtcDelegation.UnbondingTime),
+				UnbondingTime:               uint16(unbondingTimeU32),
 			}
 		}
 
@@ -857,14 +964,13 @@ func (bc *BabylonController) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhas
 
 // Test methods for e2e testing
 // Different babylon sig methods to support e2e testing
-func (bc *BabylonController) SubmitCovenantSig(
+func (bc *BabylonController) CreateCovenantMessage(
 	covPubKey *bbntypes.BIP340PubKey,
 	stakingTxHash string,
 	slashStakingAdaptorSigs [][]byte,
 	unbondindgSig *bbntypes.BIP340Signature,
 	slashUnbondingAdaptorSigs [][]byte,
-
-) (*pv.RelayerTxResponse, error) {
+) *btcstypes.MsgAddCovenantSigs {
 	msg := &btcstypes.MsgAddCovenantSigs{
 		Signer:                  bc.getTxSigner(),
 		Pk:                      covPubKey,
@@ -874,11 +980,23 @@ func (bc *BabylonController) SubmitCovenantSig(
 		SlashingUnbondingTxSigs: slashUnbondingAdaptorSigs,
 	}
 
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
+	return msg
+}
+
+func (bc *BabylonController) SubmitMultipleCovenantMessages(
+	covenantMsgs []*btcstypes.MsgAddCovenantSigs,
+) (*bct.RelayerTxResponse, error) {
+	var msgs []sdk.Msg
+
+	for _, covenantMsg := range covenantMsgs {
+		msgs = append(msgs, covenantMsg)
+	}
+
+	return bc.reliablySendMsgs(msgs)
 }
 
 // Test methods for e2e testing
-func (bc *BabylonController) RegisterConsumerChain(id, name, description string) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) RegisterConsumerChain(id, name, description string) (*bct.RelayerTxResponse, error) {
 	msg := &bsctypes.MsgRegisterConsumer{
 		Signer:              bc.getTxSigner(),
 		ConsumerId:          id,
@@ -903,7 +1021,7 @@ func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDeleg
 
 	res, err := queryClient.BTCDelegations(ctx, &queryRequest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query BTC delegations: %v", err)
+		return nil, fmt.Errorf("failed to query BTC delegations: %w", err)
 	}
 
 	return res.BtcDelegations, nil
@@ -913,7 +1031,7 @@ func (bc *BabylonController) GetBBNClient() *bbnclient.Client {
 	return bc.bbnClient
 }
 
-func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctypes.BTCSpvProof) (*pv.RelayerTxResponse, error) {
+func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctypes.BTCSpvProof) (*bct.RelayerTxResponse, error) {
 	msg := &btcctypes.MsgInsertBTCSpvProof{
 		Submitter: submitter,
 		Proofs:    proofs,
@@ -927,11 +1045,28 @@ func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctyp
 	return res, nil
 }
 
-func (bc *BabylonController) QueryBtcLightClientTip() (*btclctypes.BTCHeaderInfoResponse, error) {
+func (bc *BabylonController) QueryBtcLightClientTipHeight() (uint32, error) {
 	res, err := bc.bbnClient.QueryClient.BTCHeaderChainTip()
 	if err != nil {
-		return nil, fmt.Errorf("failed to query BTC tip: %v", err)
+		return 0, fmt.Errorf("failed to query BTC tip: %w", err)
 	}
 
-	return res.Header, nil
+	return res.Header.Height, nil
+}
+
+func (bc *BabylonController) ActivateDelegation(
+	stakingTxHash chainhash.Hash,
+	proof *btcctypes.BTCSpvProof) (*bct.RelayerTxResponse, error) {
+	msg := &btcstypes.MsgAddBTCDelegationInclusionProof{
+		Signer:                  bc.getTxSigner(),
+		StakingTxHash:           stakingTxHash.String(),
+		StakingTxInclusionProof: btcstypes.NewInclusionProofFromSpvProof(proof),
+	}
+
+	res, err := bc.reliablySendMsgs([]sdk.Msg{msg})
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }

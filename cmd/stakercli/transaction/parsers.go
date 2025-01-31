@@ -97,3 +97,14 @@ func parseTagFromHex(tagHex string) ([]byte, error) {
 
 	return tag, nil
 }
+
+func parseCovenantQuorumFromCliCtx(ctx *cli.Context) (uint32, error) {
+	covenantQuorumUint64 := ctx.Uint64(covenantQuorumFlag)
+	if covenantQuorumUint64 == 0 {
+		return 0, fmt.Errorf("covenant quorum should be greater than 0")
+	}
+	if covenantQuorumUint64 > math.MaxUint32 {
+		return 0, fmt.Errorf("covenant quorum should be less or equal to %d", math.MaxUint32)
+	}
+	return uint32(covenantQuorumUint64), nil
+}

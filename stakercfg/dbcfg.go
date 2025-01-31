@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	defaultDbName = "staker.db"
+	defaultDBName = "staker.db"
 )
 
 type DBConfig struct {
@@ -43,7 +43,7 @@ type DBConfig struct {
 func DefaultDBConfig() DBConfig {
 	return DBConfig{
 		DBPath:            defaultDataDir,
-		DBFileName:        defaultDbName,
+		DBFileName:        defaultDBName,
 		NoFreelistSync:    true,
 		AutoCompact:       false,
 		AutoCompactMinAge: kvdb.DefaultBoltAutoCompactMinAge,
@@ -62,7 +62,7 @@ func DBConfigToBoltBackenCondfig(db *DBConfig) kvdb.BoltBackendConfig {
 	}
 }
 
-func GetDbBackend(cfg *DBConfig) (kvdb.Backend, error) {
+func GetDBBackend(cfg *DBConfig) (kvdb.Backend, error) {
 	boltConfig := DBConfigToBoltBackenCondfig(cfg)
 	return kvdb.GetBoltBackend(&boltConfig)
 }

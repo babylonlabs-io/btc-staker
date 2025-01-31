@@ -2,11 +2,15 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
+	"github.com/babylonlabs-io/networks/parameters/parser"
+	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 )
 
@@ -26,6 +30,7 @@ var DaemonCommands = []cli.Command{
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
 			unbondCmd,
+			stakeFromPhase1Cmd,
 		},
 	},
 }
@@ -36,8 +41,8 @@ const (
 	limitFlag                  = "limit"
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
-	feeRateFlag                = "fee-rate"
 	stakerAddressFlag          = "staker-address"
+	txInclusionHeightFlag      = "tx-inclusion-height"
 )
 
 var (
@@ -126,8 +131,42 @@ var stakeCmd = cli.Command{
 			Usage:    "Staking time in BTC blocks",
 			Required: true,
 		},
+		cli.BoolFlag{
+			Name:  helpers.SendToBabylonFirstFlag,
+			Usage: "Whether staking transaction should be first to Babylon or BTC",
+		},
 	},
 	Action: stake,
+}
+
+var stakeFromPhase1Cmd = cli.Command{
+	Name:      "stake-from-phase1",
+	ShortName: "stfp1",
+	Usage: "\nstakercli daemon stake-from-phase1 [fullpath/to/global_parameters.json]" +
+		" --staking-transaction-hash [txHashHex] --staker-address [btcStakerAddrHex] --tx-inclusion-height [blockHeightTxInclusion]",
+	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking transaction",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  stakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: defaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakerAddressFlag,
+			Usage:    "BTC address of the staker (bech32 format)",
+			Required: true,
+		},
+		cli.Uint64Flag{
+			Name:  txInclusionHeightFlag,
+			Usage: "Expected BTC height at which transaction was included. This value is important to choose correct global parameters for transaction, if set doesn't query bitcoin to get the block height from txHash",
+		},
+	},
+	Action: stakeFromPhase1TxBTC,
 }
 
 var unstakeCmd = cli.Command{
@@ -163,10 +202,6 @@ var unbondCmd = cli.Command{
 			Name:     stakingTransactionHashFlag,
 			Usage:    "Hash of original staking transaction in bitcoin hex format",
 			Required: true,
-		},
-		cli.IntFlag{
-			Name:  feeRateFlag,
-			Usage: "fee rate to pay for unbonding tx in sats/kb",
 		},
 	},
 	Action: unbond,
@@ -241,7 +276,7 @@ var withdrawableTransactionsCmd = cli.Command{
 
 func checkHealth(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -261,7 +296,7 @@ func checkHealth(ctx *cli.Context) error {
 
 func listOutputs(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -281,7 +316,7 @@ func listOutputs(ctx *cli.Context) error {
 
 func babylonFinalityProviders(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -313,7 +348,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 
 func stake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -324,8 +359,9 @@ func stake(ctx *cli.Context) error {
 	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
 	fpPks := ctx.StringSlice(fpPksFlag)
 	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+	sendToBabylonFirst := ctx.Bool(helpers.SendToBabylonFirstFlag)
 
-	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
 	if err != nil {
 		return err
 	}
@@ -335,9 +371,56 @@ func stake(ctx *cli.Context) error {
 	return nil
 }
 
+func stakeFromPhase1TxBTC(ctx *cli.Context) error {
+	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return err
+	}
+
+	sctx := context.Background()
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+	if len(stakingTransactionHash) == 0 {
+		return errors.New("staking tx hash hex is empty")
+	}
+
+	inputGlobalParamsFilePath := ctx.Args().First()
+	if len(inputGlobalParamsFilePath) == 0 {
+		return errors.New("json file input is empty")
+	}
+
+	if !os.FileExists(inputGlobalParamsFilePath) {
+		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
+	}
+
+	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
+	if err != nil {
+		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
+	}
+
+	blockHeighTxInclusion := ctx.Uint64(txInclusionHeightFlag)
+	if blockHeighTxInclusion == 0 {
+		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
+		if err != nil {
+			return fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTransactionHash, err)
+		}
+
+		blockHeighTxInclusion = uint64(resp.Blk.Height)
+	}
+
+	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(blockHeighTxInclusion)
+	if paramsForHeight == nil {
+		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, blockHeighTxInclusion)
+	}
+
+	stakerAddress := ctx.String(stakerAddressFlag)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
+	return err
+}
+
 func unstake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -358,7 +441,7 @@ func unstake(ctx *cli.Context) error {
 
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -367,18 +450,7 @@ func unbond(ctx *cli.Context) error {
 
 	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
 
-	feeRate := ctx.Int(feeRateFlag)
-
-	if feeRate < 0 {
-		return cli.NewExitError("Fee rate must be non-negative", 1)
-	}
-
-	var fr *int = nil
-	if feeRate > 0 {
-		fr = &feeRate
-	}
-
-	result, err := client.UnbondStaking(sctx, stakingTransactionHash, fr)
+	result, err := client.UnbondStaking(sctx, stakingTransactionHash)
 	if err != nil {
 		return err
 	}
@@ -390,7 +462,7 @@ func unbond(ctx *cli.Context) error {
 
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -411,7 +483,7 @@ func stakingDetails(ctx *cli.Context) error {
 
 func listStakingTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -443,7 +515,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 
 func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJsonRpcClient(daemonAddress)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}

@@ -2,25 +2,53 @@
     "versions": [
         {
             "version": 0,
-            "activation_height": 1,
-            "staking_cap": 50000000000,
-            "cap_height": 0,
-            "tag": "01020304",
+            "activation_height": 857910,
+            "staking_cap": 100000000000,
+            "tag": "62626e31",
             "covenant_pks": [
-                "0205149a0c7a95320adf210e47bca8b363b7bd966be86be6392dd6cf4f96995869",
-                "02e8d503cb52715249f32f3ee79cee88dfd48c2565cb0c79cf9640d291f46fd518",
-                "02fe81b2409a32ddfd8ec1556557e8dd949b6e4fd37047523cb7f5fefca283d542",
-                "02bc4a1ff485d7b44faeec320b81ad31c3cad4d097813c21fcf382b4305e4cfc82",
-                "02001e50601a4a1c003716d7a1ee7fe25e26e55e24e909b3642edb60d30e3c40c1"
+                "03d45c70d28f169e1f0c7f4a78e2bc73497afe585b70aa897955989068f3350aaa",
+                "034b15848e495a3a62283daaadb3f458a00859fe48e321f0121ebabbdd6698f9fa",
+                "0223b29f89b45f4af41588dcaf0ca572ada32872a88224f311373917f1b37d08d1",
+                "02d3c79b99ac4d265c2f97ac11e3232c07a598b020cf56c6f055472c893c0967ae",
+                "038242640732773249312c47ca7bdb50ca79f15f2ecc32b9c83ceebba44fb74df7",
+                "03e36200aaa8dce9453567bba108bdc51f7f1174b97a65e4dc4402fc5de779d41c",
+                "03cbdd028cfe32c1c1f2d84bfec71e19f92df509bba7b8ad31ca6c1a134fe09204",
+                "03f178fcce82f95c524b53b077e6180bd2d779a9057fdff4255a0af95af918cee0",
+                "03de13fc96ea6899acbdc5db3afaa683f62fe35b60ff6eb723dad28a11d2b12f8c"
             ],
-            "covenant_quorum": 3,
-            "unbonding_time": 1000,
-            "unbonding_fee": 20000,
-            "max_staking_amount": 1000000000,
-            "min_staking_amount": 1000000,
+            "covenant_quorum": 6,
+            "unbonding_time": 1008,
+            "unbonding_fee": 64000,
+            "max_staking_amount": 5000000,
+            "min_staking_amount": 500000,
             "max_staking_time": 64000,
             "min_staking_time": 64000,
-            "confirmation_depth": 6
-        }
+            "confirmation_depth": 10
+        },
+        {
+          "version": 1,
+          "activation_height": 864790,
+          "cap_height": 864799,
+          "tag": "62626e31",
+          "covenant_pks": [
+              "03d45c70d28f169e1f0c7f4a78e2bc73497afe585b70aa897955989068f3350aaa",
+              "034b15848e495a3a62283daaadb3f458a00859fe48e321f0121ebabbdd6698f9fa",
+              "0223b29f89b45f4af41588dcaf0ca572ada32872a88224f311373917f1b37d08d1",
+              "02d3c79b99ac4d265c2f97ac11e3232c07a598b020cf56c6f055472c893c0967ae",
+              "038242640732773249312c47ca7bdb50ca79f15f2ecc32b9c83ceebba44fb74df7",
+              "03e36200aaa8dce9453567bba108bdc51f7f1174b97a65e4dc4402fc5de779d41c",
+              "03cbdd028cfe32c1c1f2d84bfec71e19f92df509bba7b8ad31ca6c1a134fe09204",
+              "03f178fcce82f95c524b53b077e6180bd2d779a9057fdff4255a0af95af918cee0",
+              "03de13fc96ea6899acbdc5db3afaa683f62fe35b60ff6eb723dad28a11d2b12f8c"
+          ],
+          "covenant_quorum": 6,
+          "unbonding_time": 1008,
+          "unbonding_fee": 32000,
+          "max_staking_amount": 50000000000,
+          "min_staking_amount": 500000,
+          "max_staking_time": 64000,
+          "min_staking_time": 64000,
+          "confirmation_depth": 10
+      }
     ]
-}
+  }

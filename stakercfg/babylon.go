@@ -25,7 +25,7 @@ type BBNConfig struct {
 
 func DefaultBBNConfig() BBNConfig {
 	dc := bbncfg.DefaultBabylonConfig()
-	//fill up the config from dc config
+	// fill up the config from dc config
 	return BBNConfig{
 		Key:            dc.Key,
 		ChainID:        dc.ChainID,

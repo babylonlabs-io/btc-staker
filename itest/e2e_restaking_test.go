@@ -67,7 +67,8 @@ func (tm *TestManager) getTestStakingDataWithCZFPs(
 	data.CZFPBabylonAddrs = fpBBNAddrs
 	data.CZFPBTCSKs = fpBTCSKs
 	data.CZFPBTCPKs = fpBTCPKs
-	data.consumerRegister = datagen.GenRandomConsumerRegister(r)
+	data.consumerRegister = datagen.GenRandomCosmosConsumerRegister(r)
+	data.consumerRegister.ConsumerId = "09-localhost" // TODO: mock a real consumer ID
 
 	return data
 }
@@ -85,7 +86,7 @@ func (tm *TestManager) createAndRegisterFinalityProvidersWithCZ(
 	for i, addr := range data.CZFPBabylonAddrs {
 		strAddrs[i] = addr.String()
 	}
-	err = tm.BabylonHandler.BabylonNode.TxBankMultiSend("1000000ubbn", strAddrs...)
+	_, _, err = tm.manager.BabylondTxBankMultiSend(t, "node0", "1000000ubbn", strAddrs...)
 	require.NoError(t, err)
 
 	// create and register finality providers for consumer chains
@@ -152,6 +153,7 @@ func (tm *TestManager) sendStakingTxWithCZFPs(t *testing.T, data *testStakingDat
 		data.StakingAmount,
 		fpBTCPKs,
 		int64(data.StakingTime),
+		false,
 	)
 	require.NoError(t, err)
 	txHash := res.TxHash
@@ -165,7 +167,7 @@ func (tm *TestManager) sendStakingTxWithCZFPs(t *testing.T, data *testStakingDat
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcClient, []*chainhash.Hash{hashFromString})
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{hashFromString})
 		return len(txFromMempool) == 1
 	}, eventuallyWaitTimeOut, eventuallyPollTime)
 
@@ -183,8 +185,9 @@ func TestRestakingToConsumerChains(t *testing.T) {
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
 	numMatureOutputs := uint32(200)
-	tm := StartManager(t, numMatureOutputs)
-	defer tm.Stop(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
 	tm.insertAllMinedBlocksToBabylon(t)
 
 	cl := tm.Sa.BabylonController()

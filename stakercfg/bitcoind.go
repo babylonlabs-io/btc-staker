@@ -10,7 +10,7 @@ const (
 	DefaultTxPollingJitter = 0.5
 
 	DefaultEstimateMode           = "CONSERVATIVE"
-	defaultBitcoindRpcHost        = "127.0.0.1:8334"
+	defaultBitcoindRPCHost        = "127.0.0.1:8334"
 	defaultBitcoindRPCUser        = "user"
 	defaultBitcoindRPCPass        = "pass"
 	defaultBitcoindBlockCacheSize = 20 * 1024 * 1024 // 20 MB
@@ -41,7 +41,7 @@ type Bitcoind struct {
 
 func DefaultBitcoindConfig() Bitcoind {
 	return Bitcoind{
-		RPCHost:              defaultBitcoindRpcHost,
+		RPCHost:              defaultBitcoindRPCHost,
 		RPCUser:              defaultBitcoindRPCUser,
 		RPCPass:              defaultBitcoindRPCPass,
 		RPCPolling:           true,

@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/babylonlabs-io/babylon/btcstaking"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 
 	bbn "github.com/babylonlabs-io/babylon/types"
@@ -33,23 +32,23 @@ type spendStakeTxInfo struct {
 	calculatedFee          btcutil.Amount
 }
 
-// babylonPopToDbPop receives already validated pop from external sources and converts it to database representation
-func babylonPopToDbPop(pop *cl.BabylonPop) *stakerdb.ProofOfPossession {
+// babylonPopToDBPop receives already validated pop from external sources and converts it to database representation
+func babylonPopToDBPop(pop *cl.BabylonPop) *stakerdb.ProofOfPossession {
 	return &stakerdb.ProofOfPossession{
 		BtcSigType:            pop.PopTypeNum(),
 		BtcSigOverBabylonAddr: pop.BtcSig,
 	}
 }
 
-func babylonCovSigToDbCovSig(covSig cl.CovenantSignatureInfo) stakerdb.PubKeySigPair {
+func babylonCovSigToDBCovSig(covSig cl.CovenantSignatureInfo) stakerdb.PubKeySigPair {
 	return stakerdb.NewCovenantMemberSignature(covSig.Signature, covSig.PubKey)
 }
 
-func babylonCovSigsToDbSigSigs(covSigs []cl.CovenantSignatureInfo) []stakerdb.PubKeySigPair {
+func babylonCovSigsToDBSigSigs(covSigs []cl.CovenantSignatureInfo) []stakerdb.PubKeySigPair {
 	sigSigs := make([]stakerdb.PubKeySigPair, len(covSigs))
 
 	for i := range covSigs {
-		sigSigs[i] = babylonCovSigToDbCovSig(covSigs[i])
+		sigSigs[i] = babylonCovSigToDBCovSig(covSigs[i])
 	}
 
 	return sigSigs
@@ -75,13 +74,23 @@ func pubKeyToString(pubKey *btcec.PublicKey) string {
 
 func createWitnessSignaturesForPubKeys(
 	covenantPubKeys []*btcec.PublicKey,
+	covenantQuorum uint32,
 	receivedSignaturePairs []stakerdb.PubKeySigPair,
-) []*schnorr.Signature {
+) ([]*schnorr.Signature, error) {
+	if len(receivedSignaturePairs) < int(covenantQuorum) {
+		return nil, fmt.Errorf("not enough signatures to create witness. Required: %d, received: %d", covenantQuorum, len(receivedSignaturePairs))
+	}
+
 	// create map of received signatures
-	receivedSignatures := make(map[string]*schnorr.Signature)
+	receivedSignaturesUpToQuorum := make(map[string]*schnorr.Signature)
 
 	for _, pair := range receivedSignaturePairs {
-		receivedSignatures[pubKeyToString(pair.PubKey)] = pair.Signature
+		// we are only interested in quorum number of signatures
+		if len(receivedSignaturesUpToQuorum) >= int(covenantQuorum) {
+			break
+		}
+
+		receivedSignaturesUpToQuorum[pubKeyToString(pair.PubKey)] = pair.Signature
 	}
 
 	sortedPubKeys := sortPubKeysForWitness(covenantPubKeys)
@@ -91,12 +100,12 @@ func createWitnessSignaturesForPubKeys(
 
 	for i, key := range sortedPubKeys {
 		k := key
-		if signature, found := receivedSignatures[pubKeyToString(k)]; found {
+		if signature, found := receivedSignaturesUpToQuorum[pubKeyToString(k)]; found {
 			signatures[i] = signature
 		}
 	}
 
-	return signatures
+	return signatures, nil
 }
 
 func slashingTxForStakingTx(
@@ -106,7 +115,7 @@ func slashingTxForStakingTx(
 	net *chaincfg.Params,
 ) (*wire.MsgTx, *staking.SpendInfo, error) {
 	stakerPubKey := delegationData.stakerPublicKey
-	lockSlashTxLockTime := delegationData.babylonParams.MinUnbondingTime + 1
+	lockSlashTxLockTime := delegationData.babylonParams.UnbondingTime
 
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
@@ -120,7 +129,7 @@ func slashingTxForStakingTx(
 	)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("buidling slashing transaction failed: %w", err)
+		return nil, nil, fmt.Errorf("building slashing transaction failed: %w", err)
 	}
 
 	stakingInfo, err := staking.BuildStakingInfo(
@@ -147,32 +156,38 @@ func slashingTxForStakingTx(
 }
 
 func createDelegationData(
-	StakerBtcPk *btcec.PublicKey,
-	inclusionBlock *wire.MsgBlock,
-	stakingTxIdx uint32,
+	stakerBtcPk *btcec.PublicKey,
+	inclusionInfo *inclusionInfo,
 	storedTx *stakerdb.StoredTransaction,
 	slashingTx *wire.MsgTx,
 	slashingTxSignature *schnorr.Signature,
 	babylonStakerAddr sdk.AccAddress,
-	stakingTxInclusionProof []byte,
 	undelegationData *cl.UndelegationData,
 ) *cl.DelegationData {
-	inclusionBlockHash := inclusionBlock.BlockHash()
+	var incInfo *cl.StakingTransactionInclusionInfo
+
+	if inclusionInfo != nil {
+		inclusionBlockHash := inclusionInfo.inclusionBlock.BlockHash()
+
+		incInfo = &cl.StakingTransactionInclusionInfo{
+			StakingTransactionIdx:                inclusionInfo.txIndex,
+			StakingTransactionInclusionProof:     inclusionInfo.inclusionProof,
+			StakingTransactionInclusionBlockHash: &inclusionBlockHash,
+		}
+	}
 
 	dg := cl.DelegationData{
-		StakingTransaction:                   storedTx.StakingTx,
-		StakingTransactionIdx:                stakingTxIdx,
-		StakingTransactionInclusionProof:     stakingTxInclusionProof,
-		StakingTransactionInclusionBlockHash: &inclusionBlockHash,
-		StakingTime:                          storedTx.StakingTime,
-		StakingValue:                         btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
-		FinalityProvidersBtcPks:              storedTx.FinalityProvidersBtcPks,
-		StakerBtcPk:                          StakerBtcPk,
-		SlashingTransaction:                  slashingTx,
-		SlashingTransactionSig:               slashingTxSignature,
-		BabylonStakerAddr:                    babylonStakerAddr,
-		BabylonPop:                           storedTx.Pop,
-		Ud:                                   undelegationData,
+		StakingTransaction:              storedTx.StakingTx,
+		StakingTransactionInclusionInfo: incInfo,
+		StakingTime:                     storedTx.StakingTime,
+		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
+		FinalityProvidersBtcPks:         storedTx.FinalityProvidersBtcPks,
+		StakerBtcPk:                     stakerBtcPk,
+		SlashingTransaction:             slashingTx,
+		SlashingTransactionSig:          slashingTxSignature,
+		BabylonStakerAddr:               babylonStakerAddr,
+		BabylonPop:                      storedTx.Pop,
+		Ud:                              undelegationData,
 	}
 
 	return &dg
@@ -202,7 +217,7 @@ func createSpendStakeTx(
 
 	fee := txrules.FeeForSerializeSize(btcutil.Amount(feeRate), txSize)
 
-	spendTx.TxOut[0].Value = spendTx.TxOut[0].Value - int64(fee)
+	spendTx.TxOut[0].Value -= int64(fee)
 
 	if spendTx.TxOut[0].Value <= 0 {
 		return nil, nil, fmt.Errorf("too big fee rate for spend stake tx. calculated fee: %d. funding output value: %d", fee, fundingOutput.Value)
@@ -224,7 +239,8 @@ func createSpendStakeTxFromStoredTx(
 	// This is to cover cases:
 	// - staker is unable to sent delegation to babylon
 	// - staking transaction on babylon fail to get covenant signatures
-	if storedtx.StakingTxConfirmedOnBtc() {
+	//nolint:gocritic
+	if storedtx.StakingTxConfirmedOnBtc() && !storedtx.UnbondingTxConfirmedOnBtc() {
 		stakingInfo, err := staking.BuildStakingInfo(
 			stakerBtcPk,
 			storedtx.FinalityProvidersBtcPks,
@@ -266,7 +282,7 @@ func createSpendStakeTxFromStoredTx(
 			fundingOutput:          storedtx.StakingTx.TxOut[storedtx.StakingOutputIndex],
 			calculatedFee:          *calculatedFee,
 		}, nil
-	} else if storedtx.IsUnbonded() {
+	} else if storedtx.StakingTxConfirmedOnBtc() && storedtx.UnbondingTxConfirmedOnBtc() {
 		data := storedtx.UnbondingTxData
 
 		unbondingInfo, err := staking.BuildUnbondingInfo(
@@ -310,9 +326,8 @@ func createSpendStakeTxFromStoredTx(
 			fundingOutputSpendInfo: unbondingTimeLockPathInfo,
 			calculatedFee:          *calculatedFee,
 		}, nil
-	} else {
-		return nil, fmt.Errorf("cannot build spend stake transactions.Staking transaction is in invalid state: %s", storedtx.State)
 	}
+	return nil, fmt.Errorf("cannot build spend stake transactions.Staking transaction is in invalid state: %s", storedtx.State)
 }
 
 type UnbondingSlashingDesc struct {
@@ -417,7 +432,7 @@ func buildUnbondingSpendInfo(
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain unbonding transaction")
 	}
 
-	if len(unbondingData.CovenantSignatures) != int(params.CovenantQuruomThreshold) {
+	if len(unbondingData.CovenantSignatures) < int(params.CovenantQuruomThreshold) {
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain all necessary signatures. Required: %d, received: %d", params.CovenantQuruomThreshold, len(unbondingData.CovenantSignatures))
 	}
 
@@ -461,7 +476,7 @@ func parseWatchStakingRequest(
 	unbondingTime uint16,
 	currentParams *cl.StakingParams,
 	network *chaincfg.Params,
-) (*stakingRequestedEvent, error) {
+) (*stakingRequestCmd, error) {
 	// TODO(https://github.com/babylonlabs-io/btc-staker/issues/32):
 	// This check re-implements whole babylon validation logic. We should
 	// refactor this to use babylon validation utilities.
@@ -494,12 +509,12 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx due to tx not matching current data: %w", err)
 	}
 
-	if unbondingTime <= currentParams.MinUnbondingTime {
-		return nil, fmt.Errorf("failed to watch staking tx. Unbonding time must be greater than min unbonding time. Unbonding time: %d, min unbonding time: %d", unbondingTime, currentParams.MinUnbondingTime)
+	if unbondingTime != currentParams.UnbondingTime {
+		return nil, fmt.Errorf("failed to watch staking tx. Unbonding time must be equal to unbonding time in babylon. Unbonding time: %d, unbonding time in babylon: %d", unbondingTime, currentParams.UnbondingTime)
 	}
 
-	// 2. Check wheter slashing tx match staking tx
-	err = staking.CheckTransactions(
+	// 2. Check whether slashing tx match staking tx
+	err = staking.CheckSlashingTxMatchFundingTx(
 		slashingTx,
 		stakingTx,
 		stakingOutputIdx,
@@ -539,7 +554,7 @@ func parseWatchStakingRequest(
 	}
 
 	// 6. Validate unbonding related data
-	if err := btcstaking.IsSimpleTransfer(unbondingTx); err != nil {
+	if err := staking.IsSimpleTransfer(unbondingTx); err != nil {
 		return nil, fmt.Errorf("failed to watch staking tx. Invalid unbonding tx: %w", err)
 	}
 
@@ -566,7 +581,7 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding output does not match output produced from provided values")
 	}
 
-	err = staking.CheckTransactions(
+	err = staking.CheckSlashingTxMatchFundingTx(
 		slashUnbondingTx,
 		unbondingTx,
 		0,
@@ -616,10 +631,10 @@ func parseWatchStakingRequest(
 		return nil, fmt.Errorf("failed to watch staking tx. Unbonding tx do not point to staking tx")
 	}
 
-	req := newWatchedStakingRequest(
+	req := newWatchedStakingCmd(
 		stakerAddress,
 		stakingTx,
-		uint32(stakingOutputIdx),
+		stakingOutputIdx,
 		stakingTx.TxOut[stakingOutputIdx].PkScript,
 		stakingTime,
 		stakingValue,
@@ -647,9 +662,8 @@ func haveDuplicates(btcPKs []*btcec.PublicKey) bool {
 
 		if _, found := seen[pkStr]; found {
 			return true
-		} else {
-			seen[pkStr] = struct{}{}
 		}
+		seen[pkStr] = struct{}{}
 	}
 
 	return false
