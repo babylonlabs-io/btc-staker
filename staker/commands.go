@@ -23,7 +23,6 @@ type stakingRequestCmd struct {
 	fpBtcPks                []*btcec.PublicKey
 	requiredDepthOnBtcChain uint32
 	pop                     *cl.BabylonPop
-	usePreApprovalFlow      bool
 	errChan                 chan error
 	successChan             chan *chainhash.Hash
 }
@@ -37,7 +36,6 @@ func newOwnedStakingCommand(
 	fpBtcPks []*btcec.PublicKey,
 	confirmationTimeBlocks uint32,
 	pop *cl.BabylonPop,
-	usePreApprovalFlow bool,
 ) *stakingRequestCmd {
 	return &stakingRequestCmd{
 		stakerAddress:           stakerAddress,
@@ -48,7 +46,6 @@ func newOwnedStakingCommand(
 		fpBtcPks:                fpBtcPks,
 		requiredDepthOnBtcChain: confirmationTimeBlocks,
 		pop:                     pop,
-		usePreApprovalFlow:      usePreApprovalFlow,
 		errChan:                 make(chan error, 1),
 		successChan:             make(chan *chainhash.Hash, 1),
 	}

@@ -129,7 +129,6 @@ type App struct {
 	migrateStakingCmd                             chan *migrateStakingCmd
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
-	delegationActivatedPostApprovalEvChan         chan *delegationActivatedPostApprovalEvent
 	delegationActivatedPreApprovalEvChan          chan *delegationActivatedPreApprovalEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
 	unbondingTxConfirmedOnBtcEvChan               chan *unbondingTxConfirmedOnBtcEvent
@@ -240,8 +239,6 @@ func NewStakerAppFromDeps(
 
 		// event for when delegation is sent to babylon and included in babylon
 		delegationSubmittedToBabylonEvChan: make(chan *delegationSubmittedToBabylonEvent),
-		// event for when delegation is active on babylon after going through post approval flow
-		delegationActivatedPostApprovalEvChan: make(chan *delegationActivatedPostApprovalEvent),
 		// event for when delegation is active on babylon after going through pre approval flow
 		delegationActivatedPreApprovalEvChan: make(chan *delegationActivatedPreApprovalEvent),
 		// event emitte	d upon transaction which spends staking transaction is confirmed on BTC
@@ -1351,24 +1348,6 @@ func (app *App) sendDelegationToBabylonTaskWithRetry(
 	return delegationData, response, nil
 }
 
-func (app *App) handlePreApprovalCmd(
-	cmd *stakingRequestCmd,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-) (*chainhash.Hash, error) {
-	btcTxHash, _, err := app.handleSendDelegationRequest(
-		cmd.stakerAddress,
-		cmd.stakingTime,
-		cmd.requiredDepthOnBtcChain,
-		cmd.fpBtcPks,
-		cmd.pop,
-		stakingTx,
-		stakingOutputIdx,
-		nil,
-	)
-	return btcTxHash, err
-}
-
 func (app *App) handleSendDelegationRequest(
 	stakerAddress btcutil.Address,
 	stakingTime uint16,
@@ -1425,60 +1404,6 @@ func (app *App) handleSendDelegationRequest(
 	return &stakingTxHash, resp.TxHash, nil
 }
 
-func (app *App) handlePostApprovalCmd(
-	cmd *stakingRequestCmd,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-) (*chainhash.Hash, error) {
-	stakingTxHash := stakingTx.TxHash()
-
-	bestBlockHeight := app.currentBestBlockHeight.Load()
-
-	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
-	if err != nil {
-		return nil, err
-	}
-
-	tx, fullySignd, err := app.wc.SignRawTransaction(stakingTx)
-	if err != nil {
-		return nil, err
-	}
-
-	if !fullySignd {
-		return nil, fmt.Errorf("failed to fully sign transaction with hash %s", stakingTxHash)
-	}
-
-	_, err = app.wc.SendRawTransaction(tx, true)
-
-	if err != nil {
-		return nil, err
-	}
-
-	stakingOutputPkScript := stakingTx.TxOut[stakingOutputIdx].PkScript
-
-	if err := app.waitForStakingTransactionConfirmation(
-		&stakingTxHash,
-		stakingOutputPkScript,
-		cmd.requiredDepthOnBtcChain,
-		bestBlockHeight,
-	); err != nil {
-		return nil, err
-	}
-
-	if err := app.txTracker.AddTransactionSentToBTC(
-		stakingTx,
-		stakingOutputIdx,
-		cmd.stakingTime,
-		cmd.fpBtcPks,
-		babylonPopToDBPop(cmd.pop),
-		cmd.stakerAddress,
-	); err != nil {
-		return nil, err
-	}
-
-	return &stakingTxHash, nil
-}
-
 func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error) {
 	// Create unsigned transaction by wallet without signing. Signing will happen
 	// in next steps
@@ -1492,10 +1417,23 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 		return nil, fmt.Errorf("failed to build staking transaction: %w", err)
 	}
 
-	if cmd.usePreApprovalFlow {
-		return app.handlePreApprovalCmd(cmd, stakingTx, 0)
+	// Send staking transaction to Babylon node
+	btcTxHash, _, err := app.handleSendDelegationRequest(
+		cmd.stakerAddress,
+		cmd.stakingTime,
+		cmd.requiredDepthOnBtcChain,
+		cmd.fpBtcPks,
+		cmd.pop,
+		stakingTx,
+		0,
+		nil,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to send delegation request: %w", err)
 	}
-	return app.handlePostApprovalCmd(cmd, stakingTx, 0)
+
+	return btcTxHash, nil
 }
 
 func (app *App) handleStakingCommands() {
@@ -1645,30 +1583,16 @@ func (app *App) handleStakingEvents() {
 				app.logger.Fatalf("Error setting state for tx %s: %s", &ev.stakingTxHash, err)
 			}
 
-			if ev.delegationActive {
-				app.wg.Add(1)
-				go func(hash chainhash.Hash) {
-					defer app.wg.Done()
-					utils.PushOrQuit[*delegationActivatedPostApprovalEvent](
-						app.delegationActivatedPostApprovalEvChan,
-						&delegationActivatedPostApprovalEvent{
-							stakingTxHash: hash,
-						},
-						app.quit,
-					)
-				}(ev.stakingTxHash)
-			} else {
-				storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
-				// if the delegation is not active here, it can only mean that statking
-				// is going through pre-approvel flow. Fire up task to send staking tx
-				// to btc chain
-				app.wg.Add(1)
-				go app.activateVerifiedDelegation(
-					storedTx.StakingTx,
-					storedTx.StakingOutputIndex,
-					&ev.stakingTxHash,
-				)
-			}
+			storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+			// if the delegation is not active here, it can only mean that statking
+			// is going through pre-approval flow. Fire up task to send staking tx
+			// to btc chain
+			app.wg.Add(1)
+			go app.activateVerifiedDelegation(
+				storedTx.StakingTx,
+				storedTx.StakingOutputIndex,
+				&ev.stakingTxHash,
+			)
 
 			app.logStakingEventProcessed(ev)
 
@@ -1692,16 +1616,6 @@ func (app *App) handleStakingEvents() {
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
-			app.logStakingEventProcessed(ev)
-
-		case ev := <-app.delegationActivatedPostApprovalEvChan:
-			app.logStakingEventReceived(ev)
-			if err := app.txTracker.SetDelegationActiveOnBabylon(&ev.stakingTxHash); err != nil {
-				// TODO: handle this error somehow, it means we received spend stake confirmation for tx which we do not store
-				// which is seems like programming error. Maybe panic?
-				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
-			}
-			app.m.DelegationsActivatedOnBabylon.Inc()
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.delegationActivatedPreApprovalEvChan:
@@ -1780,7 +1694,6 @@ func (app *App) StakeFunds(
 	stakingAmount btcutil.Amount,
 	fpPks []*btcec.PublicKey,
 	stakingTimeBlocks uint16,
-	sendToBabylonFirst bool,
 ) (*chainhash.Hash, error) {
 	// check we are not shutting down
 	select {
@@ -1884,7 +1797,6 @@ func (app *App) StakeFunds(
 		fpPks,
 		params.ConfirmationTimeBlocks,
 		pop,
-		sendToBabylonFirst,
 	)
 
 	utils.PushOrQuit[*stakingRequestCmd](
