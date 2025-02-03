@@ -770,7 +770,6 @@ func (tm *TestManager) mineBlock(t *testing.T) *wire.MsgBlock {
 func (tm *TestManager) sendStakingTxBTC(
 	t *testing.T,
 	stkData *testStakingData,
-	sendToBabylonFirst bool,
 ) *chainhash.Hash {
 	fpBTCPKs := []string{}
 	for i := 0; i < stkData.GetNumRestakedFPs(); i++ {
@@ -783,7 +782,6 @@ func (tm *TestManager) sendStakingTxBTC(
 		stkData.StakingAmount,
 		fpBTCPKs,
 		int64(stkData.StakingTime),
-		sendToBabylonFirst,
 	)
 	require.NoError(t, err)
 	txHash := res.TxHash
@@ -791,51 +789,17 @@ func (tm *TestManager) sendStakingTxBTC(
 	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
 	require.NoError(t, err)
 	require.Equal(t, stakingDetails.StakingTxHash, txHash)
+	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
 
-	if sendToBabylonFirst {
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
-	} else {
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
-	}
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
-
-	// only wait for blocks if we are using the old flow, and send staking tx to BTC
-	// first
-	if !sendToBabylonFirst {
-		require.Eventually(t, func() bool {
-			txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{hashFromString})
-			return len(txFromMempool) == 1
-		}, eventuallyWaitTimeOut, eventuallyPollTime)
-
-		mBlock := tm.mineBlock(t)
-		require.Equal(t, 2, len(mBlock.Transactions))
-
-		_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
-		require.NoError(t, err)
-	}
 	return hashFromString
 }
 
-func (tm *TestManager) sendMultipleStakingTx(t *testing.T, tStkData []*testStakingData, sendToBabylonFirst bool) []*chainhash.Hash {
+func (tm *TestManager) sendMultipleStakingTx(t *testing.T, tStkData []*testStakingData) []*chainhash.Hash {
 	var hashes []*chainhash.Hash
 	for _, data := range tStkData {
-		fpBTCPKs := []string{}
-		for i := 0; i < data.GetNumRestakedFPs(); i++ {
-			fpBTCPK := hex.EncodeToString(schnorr.SerializePubKey(data.FinalityProviderBtcKeys[i]))
-			fpBTCPKs = append(fpBTCPKs, fpBTCPK)
-		}
-		res, err := tm.StakerClient.Stake(
-			context.Background(),
-			tm.MinerAddr.String(),
-			data.StakingAmount,
-			fpBTCPKs,
-			int64(data.StakingTime),
-			sendToBabylonFirst,
-		)
-		require.NoError(t, err)
-		txHash, err := chainhash.NewHashFromStr(res.TxHash)
-		require.NoError(t, err)
+		txHash := tm.sendStakingTxBTC(t, data)
 		hashes = append(hashes, txHash)
 	}
 
@@ -845,20 +809,7 @@ func (tm *TestManager) sendMultipleStakingTx(t *testing.T, tStkData []*testStaki
 		stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), hashStr)
 		require.NoError(t, err)
 		require.Equal(t, stakingDetails.StakingTxHash, hashStr)
-
-		if sendToBabylonFirst {
-			require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
-		} else {
-			require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
-		}
-	}
-
-	if !sendToBabylonFirst {
-		mBlock := tm.mineBlock(t)
-		require.Equal(t, len(hashes)+1, len(mBlock.Transactions))
-
-		_, err := tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
-		require.NoError(t, err)
+		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
 	}
 	return hashes
 }

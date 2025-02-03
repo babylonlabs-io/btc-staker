@@ -196,7 +196,6 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 
 				req := &unbondingTxSignaturesConfirmedOnBabylonEvent{
 					stakingTxHash:               *stakingTxHash,
-					delegationActive:            di.Active,
 					covenantUnbondingSignatures: di.UndelegationInfo.CovenantUnbondingSignatures,
 				}
 
