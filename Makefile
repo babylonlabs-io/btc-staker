@@ -1,6 +1,5 @@
 DOCKER = $(shell which docker)
 BUILDDIR ?= $(CURDIR)/build
-TOOLS_DIR := tools
 
 BABYLON_PKG := github.com/babylonlabs-io/babylon/cmd/babylond
 
@@ -51,8 +50,7 @@ test:
 	go test ./...
 
 test-e2e:
-	cd $(TOOLS_DIR); go install -trimpath $(BABYLON_PKG);
-	go test -mod=readonly -timeout=25m -v $(PACKAGES_E2E) -count=1 --tags=e2e
+	go test -mod=readonly -timeout=25m -failfast -v $(PACKAGES_E2E) -count=1 --tags=e2e
 
 proto-gen:
 	@$(call print, "Compiling protos.")
@@ -65,3 +63,58 @@ update-changelog:
 	./scripts/update_changelog.sh $(sinceTag) $(upcomingTag)
 
 .PHONY: update-changelog
+
+
+###############################################################################
+###                                Release                                  ###
+###############################################################################
+
+# The below is adapted from https://github.com/osmosis-labs/osmosis/blob/main/Makefile
+GO_VERSION := $(shell grep -E '^go [0-9]+\.[0-9]+' go.mod | awk '{print $$2}')
+GORELEASER_IMAGE := ghcr.io/goreleaser/goreleaser-cross:v$(GO_VERSION)
+COSMWASM_VERSION := $(shell go list -m github.com/CosmWasm/wasmvm/v2 | sed 's/.* //')
+
+.PHONY: release-dry-run release-snapshot release
+release-dry-run:
+	docker run \
+		--rm \
+		-e COSMWASM_VERSION=$(COSMWASM_VERSION) \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v `pwd`:/go/src/babylon \
+		-w /go/src/babylon \
+		$(GORELEASER_IMAGE) \
+		release \
+		--clean \
+		--skip=publish
+
+release-snapshot:
+	docker run \
+		--rm \
+		-e COSMWASM_VERSION=$(COSMWASM_VERSION) \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v `pwd`:/go/src/babylon \
+		-w /go/src/babylon \
+		$(GORELEASER_IMAGE) \
+		release \
+		--clean \
+		--snapshot \
+		--skip=publish,validate
+
+# NOTE: By default, the CI will handle the release process.
+# this is for manually releasing.
+ifdef GITHUB_TOKEN
+release:
+	docker run \
+		--rm \
+		-e GITHUB_TOKEN=$(GITHUB_TOKEN) \
+		-e COSMWASM_VERSION=$(COSMWASM_VERSION) \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v `pwd`:/go/src/babylon \
+		-w /go/src/babylon \
+		$(GORELEASER_IMAGE) \
+		release \
+		--clean
+else
+release:
+	@echo "Error: GITHUB_TOKEN is not defined. Please define it before running 'make release'."
+endif

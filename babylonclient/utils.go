@@ -8,7 +8,6 @@ import (
 )
 
 func GenerateProof(block *wire.MsgBlock, txIdx uint32) ([]byte, error) {
-
 	headerBytes := babylontypes.NewBTCHeaderBytesFromBlockHeader(&block.Header)
 
 	var txsBytes [][]byte

@@ -5,8 +5,14 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	bbn "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/btc-staker/itest/testutil"
+	"github.com/btcsuite/btcd/btcec/v2"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -14,7 +20,8 @@ import (
 )
 
 const (
-	bitcoindContainerName = "bitcoind-test"
+	bitcoindContainerName = "bitcoind"
+	babylondContainerName = "babylond"
 )
 
 var errRegex = regexp.MustCompile(`(E|e)rror`)
@@ -29,9 +36,9 @@ type Manager struct {
 
 // NewManager creates a new Manager instance and initializes
 // all Docker specific utilities. Returns an error if initialization fails.
-func NewManager() (docker *Manager, err error) {
+func NewManager(t *testing.T) (docker *Manager, err error) {
 	docker = &Manager{
-		cfg:       NewImageConfig(),
+		cfg:       NewImageConfig(t),
 		resources: make(map[string]*dockertest.Resource),
 	}
 	docker.pool, err = dockertest.NewPool("")
@@ -122,32 +129,23 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string) 
 }
 
 func (m *Manager) RunBitcoindResource(
+	t *testing.T,
 	bitcoindCfgPath string,
 ) (*dockertest.Resource, error) {
 	bitcoindResource, err := m.pool.RunWithOptions(
 		&dockertest.RunOptions{
-			Name:       bitcoindContainerName,
+			Name:       fmt.Sprintf("%s-%s", bitcoindContainerName, t.Name()),
 			Repository: m.cfg.BitcoindRepository,
 			Tag:        m.cfg.BitcoindVersion,
 			User:       "root:root",
 			Mounts: []string{
 				fmt.Sprintf("%s/:/data/.bitcoin", bitcoindCfgPath),
 			},
-			ExposedPorts: []string{
-				"8332",
-				"8333",
-				"28332",
-				"28333",
-				"18443",
-				"18444",
+			Labels: map[string]string{
+				"e2e": "bitcoind",
 			},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"8332/tcp":  {{HostIP: "", HostPort: "8332"}},
-				"8333/tcp":  {{HostIP: "", HostPort: "8333"}},
-				"28332/tcp": {{HostIP: "", HostPort: "28332"}},
-				"28333/tcp": {{HostIP: "", HostPort: "28333"}},
-				"18443/tcp": {{HostIP: "", HostPort: "18443"}},
-				"18444/tcp": {{HostIP: "", HostPort: "18444"}},
+			ExposedPorts: []string{
+				"18443/tcp",
 			},
 			Cmd: []string{
 				"-regtest",
@@ -158,13 +156,131 @@ func (m *Manager) RunBitcoindResource(
 				"-rpcbind=0.0.0.0",
 			},
 		},
+		func(config *docker.HostConfig) {
+			config.PortBindings = map[docker.Port][]docker.PortBinding{
+				"18443/tcp": {{HostIP: "", HostPort: strconv.Itoa(testutil.AllocateUniquePort(t))}}, // only expose what we need
+			}
+			config.PublishAllPorts = false // because in dockerfile they already expose them
+		},
 		noRestart,
 	)
 	if err != nil {
 		return nil, err
 	}
 	m.resources[bitcoindContainerName] = bitcoindResource
+
 	return bitcoindResource, nil
+}
+
+// RunBabylondResource starts a babylond container
+func (m *Manager) RunBabylondResource(
+	t *testing.T,
+	mounthPath string,
+	coventantQuorum int,
+	baseHeaderHex string,
+	slashingPkScript string,
+	covenantPks ...*btcec.PublicKey,
+) (*dockertest.Resource, error) {
+	covenantPksStr := make([]string, len(covenantPks))
+	for i, cvPk := range covenantPks {
+		covenantPksStr[i] = bbn.NewBIP340PubKeyFromBTCPK(cvPk).MarshalHex()
+	}
+
+	cmd := []string{
+		"sh", "-c", fmt.Sprintf(
+			"babylond testnet --v=1 --output-dir=/home --starting-ip-address=192.168.10.2 "+
+				"--keyring-backend=test --chain-id=chain-test --btc-finalization-timeout=4 "+
+				"--btc-confirmation-depth=2 --unbonding-time=5 --additional-sender-account --btc-network=regtest "+
+				"--min-staking-time-blocks=200 --min-staking-amount-sat=10000 "+
+				"--slashing-pk-script=%s --btc-base-header=%s --covenant-quorum=%d "+
+				"--covenant-pks=%s && chmod -R 777 /home && "+
+				"babylond start --home=/home/node0/babylond",
+			slashingPkScript, baseHeaderHex, coventantQuorum, strings.Join(covenantPksStr, ",")),
+	}
+
+	resource, err := m.pool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       fmt.Sprintf("%s-%s", babylondContainerName, t.Name()),
+			Repository: m.cfg.BabylonRepository,
+			Tag:        m.cfg.BabylonVersion,
+			Labels: map[string]string{
+				"e2e": "babylond",
+			},
+			User: "root:root",
+			Mounts: []string{
+				fmt.Sprintf("%s/:/home/", mounthPath),
+			},
+			ExposedPorts: []string{
+				"9090/tcp", // only expose what we need
+				"26657/tcp",
+			},
+			Cmd: cmd,
+		},
+		func(config *docker.HostConfig) {
+			config.PortBindings = map[docker.Port][]docker.PortBinding{
+				"9090/tcp":  {{HostIP: "", HostPort: strconv.Itoa(testutil.AllocateUniquePort(t))}},
+				"26657/tcp": {{HostIP: "", HostPort: strconv.Itoa(testutil.AllocateUniquePort(t))}},
+			}
+		},
+		noRestart,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	m.resources[babylondContainerName] = resource
+
+	return resource, nil
+}
+
+// BabylondTxBankSend send transaction to an address from the node address.
+func (m *Manager) BabylondTxBankSend(t *testing.T, addr, coins, walletName string) (bytes.Buffer, bytes.Buffer, error) {
+	flags := []string{
+		"babylond",
+		"tx",
+		"bank",
+		"send",
+		walletName,
+		addr,
+		coins,
+		"--keyring-backend=test",
+		"--home=/home/node0/babylond",
+		"--log_level=debug",
+		"--chain-id=chain-test",
+		"-b=sync", "--yes", "--gas-prices=10ubbn",
+	}
+
+	return m.ExecCmd(t, babylondContainerName, flags)
+}
+
+// BabylondTxBankMultiSend send transaction to an addresses from the node address.
+func (m *Manager) BabylondTxBankMultiSend(t *testing.T, walletName string, coins string, addresses ...string) (bytes.Buffer, bytes.Buffer, error) {
+	// babylond tx bank multi-send [from_key_or_address] [to_address_1 to_address_2 ...] [amount] [flags]
+	switch len(addresses) {
+	case 0:
+		return bytes.Buffer{}, bytes.Buffer{}, nil
+	case 1:
+		return m.BabylondTxBankSend(t, addresses[0], coins, walletName)
+	}
+
+	flags := []string{
+		"babylond",
+		"tx",
+		"bank",
+		"multi-send",
+		walletName,
+	}
+	flags = append(flags, addresses...)
+	flags = append(flags,
+		coins,
+		"--keyring-backend=test",
+		"--home=/home/node0/babylond",
+		"--log_level=debug",
+		"--chain-id=chain-test",
+		"-b=sync", "--yes", "--gas-prices=10ubbn",
+	)
+
+	return m.ExecCmd(t, babylondContainerName, flags)
 }
 
 // ClearResources removes all outstanding Docker resources created by the Manager.

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
+
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/stretchr/testify/require"
 )
@@ -34,16 +36,14 @@ type BitcoindTestHandler struct {
 	m *containers.Manager
 }
 
-func NewBitcoindHandler(t *testing.T) *BitcoindTestHandler {
-	m, err := containers.NewManager()
-	require.NoError(t, err)
+func NewBitcoindHandler(t *testing.T, m *containers.Manager) *BitcoindTestHandler {
 	return &BitcoindTestHandler{
 		t: t,
 		m: m,
 	}
 }
 
-func (h *BitcoindTestHandler) Start() {
+func (h *BitcoindTestHandler) Start() *dockertest.Resource {
 	tempPath, err := os.MkdirTemp("", "bitcoind-staker-test-*")
 	require.NoError(h.t, err)
 
@@ -51,7 +51,7 @@ func (h *BitcoindTestHandler) Start() {
 		_ = os.RemoveAll(tempPath)
 	})
 
-	_, err = h.m.RunBitcoindResource(tempPath)
+	bitcoinResource, err := h.m.RunBitcoindResource(h.t, tempPath)
 	require.NoError(h.t, err)
 
 	h.t.Cleanup(func() {
@@ -64,6 +64,7 @@ func (h *BitcoindTestHandler) Start() {
 		return err == nil
 	}, startTimeout, 500*time.Millisecond, "bitcoind did not start")
 
+	return bitcoinResource
 }
 
 func (h *BitcoindTestHandler) GetBlockCount() (int, error) {

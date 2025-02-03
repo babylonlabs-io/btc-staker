@@ -25,7 +25,6 @@ type paginator struct {
 // in pages.
 func newPaginator(c kvdb.RCursor, reversed bool,
 	indexOffset, totalItems uint64) paginator {
-
 	return paginator{
 		cursor:      c,
 		reversed:    reversed,

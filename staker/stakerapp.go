@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
+
 	"github.com/avast/retry-go/v4"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
@@ -18,17 +20,17 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"go.uber.org/zap"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcwallet/wallet/txrules"
 	"github.com/cometbft/cometbft/crypto/tmhash"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
@@ -47,7 +49,7 @@ type externalDelegationData struct {
 	babylonParams *cl.StakingParams
 }
 
-type stakingDbInfo struct {
+type stakingDBInfo struct {
 	stakingTxHash  *chainhash.Hash
 	stakingTxState proto.TransactionState
 }
@@ -71,7 +73,7 @@ func longRetryOps(ctx context.Context, fixedDelay time.Duration, onRetryFn retry
 	}
 }
 
-func (app *StakerApp) onLongRetryFunc(stakingTxHash *chainhash.Hash, msg string) retry.OnRetryFunc {
+func (app *App) onLongRetryFunc(stakingTxHash *chainhash.Hash, msg string) retry.OnRetryFunc {
 	return func(n uint, err error) {
 		app.logger.WithFields(logrus.Fields{
 			"attempt":      n + 1,
@@ -98,9 +100,6 @@ const (
 
 	defaultWalletUnlockTimeout = 15
 
-	// Set minimum fee to 1 sat/byte, as in standard rules policy
-	MinFeePerKb = txrules.DefaultRelayFeePerKb
-
 	// If we fail to send unbonding tx to btc for any reason we will retry in this time
 	unbondingSendRetryTimeout = 1 * time.Minute
 
@@ -110,7 +109,7 @@ const (
 	UnbondingTxConfirmations = 6
 )
 
-type StakerApp struct {
+type App struct {
 	startOnce sync.Once
 	stopOnce  sync.Once
 	wg        sync.WaitGroup
@@ -127,9 +126,12 @@ type StakerApp struct {
 	babylonMsgSender *cl.BabylonMsgSender
 	m                *metrics.StakerMetrics
 
-	stakingRequestedEvChan                        chan *stakingRequestedEvent
+	stakingRequestedCmdChan                       chan *stakingRequestCmd
+	migrateStakingCmd                             chan *migrateStakingCmd
 	stakingTxBtcConfirmedEvChan                   chan *stakingTxBtcConfirmedEvent
 	delegationSubmittedToBabylonEvChan            chan *delegationSubmittedToBabylonEvent
+	delegationActivatedPostApprovalEvChan         chan *delegationActivatedPostApprovalEvent
+	delegationActivatedPreApprovalEvChan          chan *delegationActivatedPreApprovalEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
 	unbondingTxConfirmedOnBtcEvChan               chan *unbondingTxConfirmedOnBtcEvent
 	spendStakeTxConfirmedOnBtcEvChan              chan *spendStakeTxConfirmedOnBtcEvent
@@ -143,12 +145,12 @@ func NewStakerAppFromConfig(
 	rpcClientLogger *zap.Logger,
 	db kvdb.Backend,
 	m *metrics.StakerMetrics,
-) (*StakerApp, error) {
+) (*App, error) {
 	// TODO: If we want to support multiple wallet types, this is most probably the place to decide
 	// on concrete implementation
-	walletClient, err := walletcontroller.NewRpcWalletController(config)
+	walletClient, err := walletcontroller.NewRPCWalletController(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create wallet controller: %w", err)
 	}
 
 	tracker, err := stakerdb.NewTrackedTransactionStore(db)
@@ -171,7 +173,7 @@ func NewStakerAppFromConfig(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("unable to create height hint cache: %v", err)
+		return nil, fmt.Errorf("unable to create height hint cache: %w", err)
 	}
 
 	nodeNotifier, err := NewNodeBackend(config.BtcNodeBackendConfig, &config.ActiveNetParams, hintCache)
@@ -218,54 +220,55 @@ func NewStakerAppFromDeps(
 	tracker *stakerdb.TrackedTransactionStore,
 	babylonMsgSender *cl.BabylonMsgSender,
 	metrics *metrics.StakerMetrics,
-) (*StakerApp, error) {
-	return &StakerApp{
-		babylonClient:          cl,
-		wc:                     walletClient,
-		notifier:               nodeNotifier,
-		feeEstimator:           feeEestimator,
-		network:                &config.ActiveNetParams,
-		txTracker:              tracker,
-		babylonMsgSender:       babylonMsgSender,
-		m:                      metrics,
-		config:                 config,
-		logger:                 logger,
-		quit:                   make(chan struct{}),
-		stakingRequestedEvChan: make(chan *stakingRequestedEvent),
+) (*App, error) {
+	return &App{
+		babylonClient:           cl,
+		wc:                      walletClient,
+		notifier:                nodeNotifier,
+		feeEstimator:            feeEestimator,
+		network:                 &config.ActiveNetParams,
+		txTracker:               tracker,
+		babylonMsgSender:        babylonMsgSender,
+		m:                       metrics,
+		config:                  config,
+		logger:                  logger,
+		quit:                    make(chan struct{}),
+		stakingRequestedCmdChan: make(chan *stakingRequestCmd),
+		// channel to receive requests of transition of BTC staking tx to consumer BTC delegation
+		migrateStakingCmd: make(chan *migrateStakingCmd),
 		// event for when transaction is confirmed on BTC
 		stakingTxBtcConfirmedEvChan: make(chan *stakingTxBtcConfirmedEvent),
 
 		// event for when delegation is sent to babylon and included in babylon
 		delegationSubmittedToBabylonEvChan: make(chan *delegationSubmittedToBabylonEvent),
-
-		// event emitted upon transaction which spends staking transaction is confirmed on BTC
+		// event for when delegation is active on babylon after going through post approval flow
+		delegationActivatedPostApprovalEvChan: make(chan *delegationActivatedPostApprovalEvent),
+		// event for when delegation is active on babylon after going through pre approval flow
+		delegationActivatedPreApprovalEvChan: make(chan *delegationActivatedPreApprovalEvent),
+		// event emitte	d upon transaction which spends staking transaction is confirmed on BTC
 		spendStakeTxConfirmedOnBtcEvChan: make(chan *spendStakeTxConfirmedOnBtcEvent),
-
 		// channel which receives unbonding signatures from covenant for unbonding
 		// transaction
 		unbondingTxSignaturesConfirmedOnBabylonEvChan: make(chan *unbondingTxSignaturesConfirmedOnBabylonEvent),
-
 		// channel which receives confirmation that unbonding transaction was confirmed on BTC
 		unbondingTxConfirmedOnBtcEvChan: make(chan *unbondingTxConfirmedOnBtcEvent),
-
 		// channel which receives critical errors, critical errors are errors which we do not know
-		// how to handle, so we just log them. It is up to user to investigate, what had happend
+		// how to handle, so we just log them. It is up to user to investigate what had happened
 		// and report the situation
 		criticalErrorEvChan: make(chan *criticalErrorEvent),
 	}, nil
 }
 
-func (app *StakerApp) Start() error {
+func (app *App) Start() error {
 	var startErr error
 	app.startOnce.Do(func() {
-		app.logger.Infof("Starting StakerApp")
+		app.logger.Infof("Starting App")
 
 		// TODO: This can take a long time as it connects to node. Maybe make it cancellable?
 		// although staker without node is not very useful
 
 		app.logger.Infof("Connecting to node backend: %s", app.config.BtcNodeBackendConfig.Nodetype)
-		err := app.notifier.Start()
-		if err != nil {
+		if err := app.notifier.Start(); err != nil {
 			startErr = err
 			return
 		}
@@ -279,17 +282,19 @@ func (app *StakerApp) Start() error {
 			return
 		}
 
-		err = app.feeEstimator.Start()
-
-		if err != nil {
+		if err = app.feeEstimator.Start(); err != nil {
 			startErr = err
 			return
 		}
 
 		// we registered for notifications with `nil`  so we should receive best block
-		// immeadiatly
+		// immediately
 		select {
 		case block := <-blockEventNotifier.Epochs:
+			if block.Height < 0 {
+				startErr = errors.New("block height is negative")
+				return
+			}
 			app.currentBestBlockHeight.Store(uint32(block.Height))
 		case <-app.quit:
 			startErr = errors.New("staker app quit before finishing start")
@@ -300,20 +305,23 @@ func (app *StakerApp) Start() error {
 
 		app.babylonMsgSender.Start()
 
-		app.wg.Add(2)
+		app.wg.Add(3)
 		go app.handleNewBlocks(blockEventNotifier)
 		go app.handleStakingEvents()
+		go app.handleStakingCommands()
 
 		if err := app.checkTransactionsStatus(); err != nil {
 			startErr = err
 			return
 		}
+
+		app.logger.Info("App started")
 	})
 
 	return startErr
 }
 
-func (app *StakerApp) handleNewBlocks(blockNotifier *notifier.BlockEpochEvent) {
+func (app *App) handleNewBlocks(blockNotifier *notifier.BlockEpochEvent) {
 	defer app.wg.Done()
 	defer blockNotifier.Cancel()
 	for {
@@ -335,10 +343,10 @@ func (app *StakerApp) handleNewBlocks(blockNotifier *notifier.BlockEpochEvent) {
 	}
 }
 
-func (app *StakerApp) Stop() error {
+func (app *App) Stop() error {
 	var stopErr error
 	app.stopOnce.Do(func() {
-		app.logger.Infof("Stopping StakerApp")
+		app.logger.Infof("Stopping App")
 		close(app.quit)
 		app.wg.Wait()
 
@@ -360,7 +368,7 @@ func (app *StakerApp) Stop() error {
 	return stopErr
 }
 
-func (app *StakerApp) reportCriticialError(
+func (app *App) reportCriticialError(
 	stakingTxHash chainhash.Hash,
 	err error,
 	additionalContext string,
@@ -378,7 +386,7 @@ func (app *StakerApp) reportCriticialError(
 	)
 }
 
-func (app *StakerApp) waitForStakingTransactionConfirmation(
+func (app *App) waitForStakingTransactionConfirmation(
 	stakingTxHash *chainhash.Hash,
 	stakingTxPkScript []byte,
 	requiredBlockDepth uint32,
@@ -399,18 +407,18 @@ func (app *StakerApp) waitForStakingTransactionConfirmation(
 		return err
 	}
 
+	app.wg.Add(1)
 	go app.waitForStakingTxConfirmation(*stakingTxHash, requiredBlockDepth, confEvent)
 	return nil
 }
 
-func (app *StakerApp) handleBtcTxInfo(
+func (app *App) handleBtcTxInfo(
 	stakingTxHash *chainhash.Hash,
 	txInfo *stakerdb.StoredTransaction,
 	params *cl.StakingParams,
 	currentBestBlockHeight uint32,
 	txStatus walletcontroller.TxStatus,
 	btcTxInfo *notifier.TxConfirmation) error {
-
 	switch txStatus {
 	case walletcontroller.TxNotFound:
 		// Most probable reason this happened is transaction was included in btc chain (removed from mempool)
@@ -442,9 +450,9 @@ func (app *StakerApp) handleBtcTxInfo(
 		}).Debug("Transaction found in chain")
 
 		if currentBestBlockHeight < btcTxInfo.BlockHeight {
-			// This is wierd case, we retrieved transaction from btc wallet, even though wallet best height
+			// This is a weird case; we retrieved transaction from btc wallet, even though wallet the best height
 			// is lower than block height of transaction.
-			// Log it as error so that user can investigate.
+			// Log it as an error so that user can investigate.
 			app.logger.WithFields(logrus.Fields{
 				"btcTxHash":              stakingTxHash,
 				"btcTxBlockHeight":       btcTxInfo.BlockHeight,
@@ -479,7 +487,6 @@ func (app *StakerApp) handleBtcTxInfo(
 				ev,
 				app.quit,
 			)
-
 		} else {
 			app.logger.WithFields(logrus.Fields{
 				"btcTxHash":              stakingTxHash,
@@ -500,41 +507,100 @@ func (app *StakerApp) handleBtcTxInfo(
 	return nil
 }
 
-func (app *StakerApp) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
+func (app *App) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
 	if err := app.txTracker.SetTxSpentOnBtc(hash); err != nil {
 		app.logger.Fatalf("Error setting transaction spent on btc: %s", err)
+	}
+}
+
+// SendPhase1Transaction receives the BTC staking transaction hash that
+// should be already in BTC and creates the necessary data to submit
+// the BTC delegation into the consumer chain
+func (app *App) SendPhase1Transaction(
+	stakerAddr btcutil.Address,
+	stkTxHash *chainhash.Hash,
+	tag []byte,
+	covenantPks []*secp256k1.PublicKey,
+	covenantQuorum uint32,
+) (babylonBTCDelegationTxHash string, err error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return "", nil
+	default:
+	}
+
+	parsedStakingTx, notifierTx, status, err := walletcontroller.StkTxV0ParsedWithBlock(app.wc, app.network, stkTxHash, tag, covenantPks, covenantQuorum)
+	if err != nil {
+		app.logger.WithError(err).Info("err getting tx details")
+		return "", err
+	}
+	if status != walletcontroller.TxInChain {
+		app.logger.WithError(err).Info("BTC tx not on chain")
+		return "", err
+	}
+
+	pop, err := app.unlockAndCreatePop(stakerAddr)
+	if err != nil {
+		return "", err
+	}
+
+	req := newMigrateStakingCmd(stakerAddr, notifierTx, parsedStakingTx, pop)
+	utils.PushOrQuit[*migrateStakingCmd](
+		app.migrateStakingCmd,
+		req,
+		app.quit,
+	)
+
+	select {
+	case reqErr := <-req.errChan:
+		app.logger.WithFields(logrus.Fields{
+			"stakerAddress": stakerAddr,
+			"err":           reqErr,
+		}).Debugf("Sending staking tx failed")
+
+		return "", reqErr
+	case hash := <-req.successChanTxHash:
+		return hash, nil
+	case <-app.quit:
+		return "", nil
 	}
 }
 
 // TODO: We should also handle case when btc node or babylon node lost data and start from scratch
 // i.e keep track what is last known block height on both chains and detect if after restart
 // for some reason they are behind staker
-// TODO: Refactor this functions after adding unit tests to stakerapp
-func (app *StakerApp) checkTransactionsStatus() error {
+// TODO: Refactor this functions after adding unit tests to stakerapp, because of lint complexity
+// nolint:maintidx,gocyclo
+func (app *App) checkTransactionsStatus() error {
+	app.logger.Debug("Start checking transaction status to fix db state")
+
 	stakingParams, err := app.babylonClient.Params()
 
 	if err != nil {
 		return err
 	}
 
-	// Keep track of all staking transactions which need checking. chainhash.Hash objects are not relativly small
+	// Keep track of all staking transactions which need checking. chainhash.Hash objects are not relatively small
 	// so it should not OOM even for larage database
 	var transactionsSentToBtc []*chainhash.Hash
 	var transactionConfirmedOnBtc []*chainhash.Hash
-	var transactionsOnBabylon []*stakingDbInfo
+	var transactionsOnBabylon []*stakingDBInfo
+	var transactionsVerifiedOnBabylon []*chainhash.Hash
 
 	reset := func() {
 		transactionsSentToBtc = make([]*chainhash.Hash, 0)
 		transactionConfirmedOnBtc = make([]*chainhash.Hash, 0)
-		transactionsOnBabylon = make([]*stakingDbInfo, 0)
+		transactionsOnBabylon = make([]*stakingDBInfo, 0)
+		transactionsVerifiedOnBabylon = make([]*chainhash.Hash, 0)
 	}
 
 	// In our scan we only record transactions which state need to be checked, as`ScanTrackedTransactions`
-	// is long running read transaction, it could dead lock with write transactions which we would need
+	// is long-running read transaction, it could deadlock with write transactions which we would need
 	// to use to update transaction state.
 	err = app.txTracker.ScanTrackedTransactions(func(tx *stakerdb.StoredTransaction) error {
 		// TODO : We need to have another stare like UnstakeTransaction sent and store
-		// info about transaction sent (hash) to check wheter it was confirmed after staker
+		// info about transaction sent (hash) to check whether it was confirmed after staker
 		// restarts
 		stakingTxHash := tx.StakingTx.TxHash()
 		switch tx.State {
@@ -548,21 +614,24 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		// that we sent undelegation msg, but restart happened before we could update
 		// database
 		case proto.TransactionState_SENT_TO_BABYLON:
-			// TODO: If we will have automatic unstaking, we should check wheter tx is expired
+			// TODO: If we will have automatic unstaking, we should check whether tx is expired
 			// and proceed with sending unstake transaction
-			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
+			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDBInfo{
 				stakingTxHash:  &stakingTxHash,
 				stakingTxState: tx.State,
 			})
 			return nil
+		case proto.TransactionState_VERIFIED:
+			transactionsVerifiedOnBabylon = append(transactionsVerifiedOnBabylon, &stakingTxHash)
+			return nil
 		case proto.TransactionState_DELEGATION_ACTIVE:
-			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
+			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDBInfo{
 				stakingTxHash:  &stakingTxHash,
 				stakingTxState: tx.State,
 			})
 			return nil
 		case proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC:
-			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDbInfo{
+			transactionsOnBabylon = append(transactionsOnBabylon, &stakingDBInfo{
 				stakingTxHash:  &stakingTxHash,
 				stakingTxState: tx.State,
 			})
@@ -578,6 +647,13 @@ func (app *StakerApp) checkTransactionsStatus() error {
 	if err != nil {
 		return err
 	}
+
+	app.logger.WithFields(logrus.Fields{
+		"num_sent_to_btc":      len(transactionsSentToBtc),
+		"num_confirmed_on_btc": len(transactionConfirmedOnBtc),
+		"num_on_babylon":       len(transactionsOnBabylon),
+		"num_verified":         len(transactionsVerifiedOnBabylon),
+	}).Debug("Iteration over all database staking requests finished")
 
 	for _, txHash := range transactionsSentToBtc {
 		stakingTxHash := txHash
@@ -596,12 +672,15 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		}
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_SENT_TO_BTC.String(),
+	}).Debug("Partially fixed state of the database")
+
 	for _, txHash := range transactionConfirmedOnBtc {
 		stakingTxHash := txHash
 
 		delegationInfo, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
-
-		if err != nil && !errors.Is(cl.ErrDelegationNotFound, err) {
+		if err != nil && !errors.Is(err, cl.ErrDelegationNotFound) {
 			return err
 		}
 
@@ -625,10 +704,8 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		} else {
 			// transaction which is not on babylon, is already confirmed on btc chain
 			// get all necessary info and send it to babylon
-
 			tx, stakerAddress := app.mustGetTransactionAndStakerAddress(stakingTxHash)
 			details, status, err := app.wc.TxDetails(stakingTxHash, tx.StakingTx.TxOut[tx.StakingOutputIndex].PkScript)
-
 			if err != nil {
 				// we got some communication err, return error and kill app startup
 				return err
@@ -648,23 +725,27 @@ func (app *StakerApp) checkTransactionsStatus() error {
 				"btcTxConfirmationBlockHeight": details.BlockHeight,
 			}).Debug("Already confirmed transaction not sent to babylon yet. Initiate sending")
 
-			req := &sendDelegationRequest{
-				txHash:                      *stakingTxHash,
-				txIndex:                     details.TxIndex,
-				inclusionBlock:              details.Block,
-				requiredInclusionBlockDepth: uint64(stakingParams.ConfirmationTimeBlocks),
-			}
+			req := newSendDelegationRequest(
+				stakingTxHash,
+				app.newBtcInclusionInfo(details),
+				stakingParams.ConfirmationTimeBlocks,
+			)
 
 			app.wg.Add(1)
 			go app.sendDelegationToBabylonTask(req, stakerAddress, tx)
 		}
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_CONFIRMED_ON_BTC.String(),
+	}).Debug("Partially fixed state of the database")
+
 	for _, localInfo := range transactionsOnBabylon {
 		// we only can have one local states here
+		//nolint:gocritic
 		if localInfo.stakingTxState == proto.TransactionState_SENT_TO_BABYLON {
 			stakingTxHash := localInfo.stakingTxHash
-			// we crashed after succesful send to babaylon, restart checking for unbonding signatures
+			// we crashed after successful send to babylon, restart checking for unbonding signatures
 			app.wg.Add(1)
 			go app.checkForUnbondingTxSignaturesOnBabylon(stakingTxHash)
 		} else if localInfo.stakingTxState == proto.TransactionState_DELEGATION_ACTIVE {
@@ -765,26 +846,48 @@ func (app *StakerApp) checkTransactionsStatus() error {
 		}
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"state_sent_to_babylon": proto.TransactionState_SENT_TO_BABYLON.String(),
+		"state_active":          proto.TransactionState_DELEGATION_ACTIVE.String(),
+		"state_unbonding":       proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC.String(),
+	}).Debug("Partially fixed state of the database")
+
+	for _, txHash := range transactionsVerifiedOnBabylon {
+		txHashCopy := *txHash
+		storedTx, _ := app.mustGetTransactionAndStakerAddress(&txHashCopy)
+		app.wg.Add(1)
+		go app.activateVerifiedDelegation(
+			storedTx.StakingTx,
+			storedTx.StakingOutputIndex,
+			&txHashCopy,
+		)
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"state": proto.TransactionState_VERIFIED.String(),
+	}).Debug("Partially fixed state of the database")
+
+	app.logger.Debug("Finished checking transaction status to fix db state")
+
 	return nil
 }
 
-func (app *StakerApp) waitForStakingTxConfirmation(
+// waitForStakingTxConfirmation should be run in separate goroutine
+func (app *App) waitForStakingTxConfirmation(
 	txHash chainhash.Hash,
 	depthOnBtcChain uint32,
-	ev *notifier.ConfirmationEvent) {
-	// check we are not shutting down
-	select {
-	case <-app.quit:
-		ev.Cancel()
-		return
-
-	default:
-	}
+	ev *notifier.ConfirmationEvent,
+) {
+	defer app.wg.Done()
 
 	for {
 		// TODO add handling of more events like ev.NegativeConf which signals that
 		// transaction have beer reorged out of the chain
 		select {
+		case <-app.quit:
+			// app is quitting, cancel the event
+			ev.Cancel()
+			return
 		case conf := <-ev.Confirmed:
 			stakingEvent := &stakingTxBtcConfirmedEvent{
 				stakingTxHash: conf.Tx.TxHash(),
@@ -808,15 +911,11 @@ func (app *StakerApp) waitForStakingTxConfirmation(
 				"btcTxHash": txHash,
 				"confLeft":  u,
 			}).Debugf("Staking transaction received confirmation")
-		case <-app.quit:
-			// app is quitting, cancel the event
-			ev.Cancel()
-			return
 		}
 	}
 }
 
-func (app *StakerApp) getSlashingFee(feeFromBabylon btcutil.Amount) btcutil.Amount {
+func (app *App) getSlashingFee(feeFromBabylon btcutil.Amount) btcutil.Amount {
 	if feeFromBabylon < minSlashingFee {
 		app.logger.WithFields(logrus.Fields{
 			"babylonSlashingFee":  feeFromBabylon,
@@ -829,7 +928,7 @@ func (app *StakerApp) getSlashingFee(feeFromBabylon btcutil.Amount) btcutil.Amou
 }
 
 // helper to retrieve transaction when we are sure it must be in the store
-func (app *StakerApp) mustGetTransactionAndStakerAddress(txHash *chainhash.Hash) (*stakerdb.StoredTransaction, btcutil.Address) {
+func (app *App) mustGetTransactionAndStakerAddress(txHash *chainhash.Hash) (*stakerdb.StoredTransaction, btcutil.Address) {
 	ts, err := app.txTracker.GetTransaction(txHash)
 
 	if err != nil {
@@ -845,23 +944,62 @@ func (app *StakerApp) mustGetTransactionAndStakerAddress(txHash *chainhash.Hash)
 	return ts, stakerAddress
 }
 
-func (app *StakerApp) mustBuildInclusionProof(req *sendDelegationRequest) []byte {
-	proof, err := cl.GenerateProof(req.inclusionBlock, req.txIndex)
+func (app *App) mustBuildInclusionProof(
+	inclusionBlock *wire.MsgBlock,
+	txIndex uint32,
+) []byte {
+	proof, err := cl.GenerateProof(inclusionBlock, txIndex)
 
 	if err != nil {
 		app.logger.WithFields(logrus.Fields{
-			"btcTxHash": req.txHash,
-			"err":       err,
+			"err": err,
 		}).Fatalf("Failed to build inclusion proof for already confirmed transaction")
 	}
 
 	return proof
 }
 
-func (app *StakerApp) retrieveExternalDelegationData(stakerAddress btcutil.Address) (*externalDelegationData, error) {
-	params, err := app.babylonClient.Params()
-	if err != nil {
-		return nil, err
+func (app *App) newBtcInclusionInfo(notifierTx *notifier.TxConfirmation) *inclusionInfo {
+	return &inclusionInfo{
+		txIndex:                 notifierTx.TxIndex,
+		inclusionBlock:          notifierTx.Block,
+		inclusionBlockBtcHeight: notifierTx.BlockHeight,
+		inclusionProof: app.mustBuildInclusionProof(
+			notifierTx.Block,
+			notifierTx.TxIndex,
+		),
+	}
+}
+
+func (app *App) retrieveExternalDelegationData(
+	stakerAddress btcutil.Address,
+	inclusionInfo *inclusionInfo,
+) (*externalDelegationData, error) {
+	var params *cl.StakingParams
+
+	if inclusionInfo == nil {
+		// chose params as babylon would through tip of btc light client
+		tipHeight, err := app.babylonClient.QueryBtcLightClientTipHeight()
+
+		if err != nil {
+			return nil, err
+		}
+
+		p, err := app.babylonClient.ParamsByBtcHeight(tipHeight)
+
+		if err != nil {
+			return nil, err
+		}
+
+		params = p
+	} else {
+		p, err := app.babylonClient.ParamsByBtcHeight(inclusionInfo.inclusionBlockBtcHeight)
+
+		if err != nil {
+			return nil, err
+		}
+
+		params = p
 	}
 
 	stakerPublicKey, err := app.wc.AddressPublicKey(stakerAddress)
@@ -877,13 +1015,12 @@ func (app *StakerApp) retrieveExternalDelegationData(stakerAddress btcutil.Addre
 	}, nil
 }
 
-func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
+func (app *App) sendUnbondingTxToBtcWithWitness(
 	stakingTxHash *chainhash.Hash,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
 	unbondingData *stakerdb.UnbondingStoreData,
 ) error {
-
 	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddress)
 
 	if err != nil {
@@ -933,10 +1070,18 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 		return fmt.Errorf("failed to receive stakerUnbondingSig.Signature")
 	}
 
-	covenantSigantures := createWitnessSignaturesForPubKeys(
+	covenantSigantures, err := createWitnessSignaturesForPubKeys(
 		params.CovenantPks,
+		params.CovenantQuruomThreshold,
 		unbondingData.CovenantSignatures,
 	)
+
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Fatalf("failed to create witness to send unbonding tx")
+	}
 
 	witness, err := unbondingSpendInfo.CreateUnbondingPathWitness(
 		covenantSigantures,
@@ -966,14 +1111,13 @@ func (app *StakerApp) sendUnbondingTxToBtcWithWitness(
 
 // sendUnbondingTxToBtc sends unbonding tx to btc and registers for inclusion notification.
 // It retries until it successfully sends unbonding tx to btc and registers for notification.or until program finishes
-// TODO: Investigate wheter some of the errors should be treated as fatal and abort whole process
-func (app *StakerApp) sendUnbondingTxToBtc(
+// TODO: Investigate whether some of the errors should be treated as fatal and abort whole process
+func (app *App) sendUnbondingTxToBtc(
 	ctx context.Context,
 	stakingTxHash *chainhash.Hash,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
 	unbondingData *stakerdb.UnbondingStoreData) (*notifier.ConfirmationEvent, error) {
-
 	err := retry.Do(func() error {
 		return app.sendUnbondingTxToBtcWithWitness(
 			stakingTxHash,
@@ -1025,7 +1169,7 @@ func (app *StakerApp) sendUnbondingTxToBtc(
 }
 
 // waitForUnbondingTxConfirmation blocks until unbonding tx is confirmed on btc chain.
-func (app *StakerApp) waitForUnbondingTxConfirmation(
+func (app *App) waitForUnbondingTxConfirmation(
 	waitEv *notifier.ConfirmationEvent,
 	unbondingData *stakerdb.UnbondingStoreData,
 	stakingTxHash *chainhash.Hash,
@@ -1070,7 +1214,7 @@ func (app *StakerApp) waitForUnbondingTxConfirmation(
 
 // sendUnbondingTxToBtcTask tries to send unbonding tx to btc and register for confirmation notification.
 // it should be run in separate go routine.
-func (app *StakerApp) sendUnbondingTxToBtcTask(
+func (app *App) sendUnbondingTxToBtcTask(
 	stakingTxHash *chainhash.Hash,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
@@ -1101,7 +1245,7 @@ func (app *StakerApp) sendUnbondingTxToBtcTask(
 }
 
 // context which will be cancelled when app is shutting down
-func (app *StakerApp) appQuitContext() (context.Context, func()) {
+func (app *App) appQuitContext() (context.Context, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
 	app.wg.Add(1)
 	go func() {
@@ -1118,15 +1262,16 @@ func (app *StakerApp) appQuitContext() (context.Context, func()) {
 	return ctx, cancel
 }
 
-func (app *StakerApp) buildAndSendDelegation(
+func (app *App) buildAndSendDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
-) (*pv.RelayerTxResponse, *cl.DelegationData, error) {
+) (*bct.RelayerTxResponse, *cl.DelegationData, error) {
 	delegation, err := app.buildDelegation(req, stakerAddress, storedTx)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	resp, err := app.babylonMsgSender.SendDelegation(delegation, req.requiredInclusionBlockDepth)
 	if err != nil {
 		return nil, nil, err
@@ -1135,21 +1280,53 @@ func (app *StakerApp) buildAndSendDelegation(
 	return resp, delegation, nil
 }
 
-func (app *StakerApp) sendDelegationToBabylonTask(
+func (app *App) sendDelegationToBabylonTask(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	storedTx *stakerdb.StoredTransaction,
 ) {
 	defer app.wg.Done()
 
+	delegationData, delegationTxResp, err := app.sendDelegationToBabylonTaskWithRetry(req, stakerAddress, storedTx)
+	if err != nil {
+		app.reportCriticialError(
+			req.btcTxHash,
+			err,
+			"Failed to deliver delegation to babylon due to error.",
+		)
+		return
+	}
+
+	// report success with the values we sent to Babylon
+	ev := &delegationSubmittedToBabylonEvent{
+		stakingTxHash:              req.btcTxHash,
+		babylonBTCDelegationTxHash: delegationTxResp.TxHash,
+		unbondingTx:                delegationData.Ud.UnbondingTransaction,
+		unbondingTime:              delegationData.Ud.UnbondingTxUnbondingTime,
+	}
+
+	utils.PushOrQuit[*delegationSubmittedToBabylonEvent](
+		app.delegationSubmittedToBabylonEvChan,
+		ev,
+		app.quit,
+	)
+}
+
+func (app *App) sendDelegationToBabylonTaskWithRetry(
+	req *sendDelegationRequest,
+	stakerAddress btcutil.Address,
+	storedTx *stakerdb.StoredTransaction,
+) (*cl.DelegationData, *bct.RelayerTxResponse, error) {
 	// using app quit context to cancel retrying when app is shutting down
 	ctx, cancel := app.appQuitContext()
 	defer cancel()
 
-	var delegationData *cl.DelegationData
+	var (
+		delegationData *cl.DelegationData
+		response       *bct.RelayerTxResponse
+	)
 	err := retry.Do(func() error {
-		_, del, err := app.buildAndSendDelegation(req, stakerAddress, storedTx)
-
+		resp, del, err := app.buildAndSendDelegation(req, stakerAddress, storedTx)
 		if err != nil {
 			if errors.Is(err, cl.ErrInvalidBabylonExecution) {
 				return retry.Unrecoverable(err)
@@ -1158,107 +1335,294 @@ func (app *StakerApp) sendDelegationToBabylonTask(
 		}
 
 		delegationData = del
+		response = resp
 		return nil
 	},
 		longRetryOps(
 			ctx,
 			app.config.StakerConfig.BabylonStallingInterval,
-			app.onLongRetryFunc(&req.txHash, "Failed to deliver delegation to babylon due to error."),
+			app.onLongRetryFunc(&req.btcTxHash, "Failed to deliver delegation to babylon due to error."),
 		)...,
 	)
 
 	if err != nil {
-		app.reportCriticialError(
-			req.txHash,
-			err,
-			"Failed to deliver delegation to babylon due to error.",
-		)
-	} else {
-		// report success with the values we sent to Babylon
-		ev := &delegationSubmittedToBabylonEvent{
-			stakingTxHash: req.txHash,
-			unbondingTx:   delegationData.Ud.UnbondingTransaction,
-			unbondingTime: delegationData.Ud.UnbondingTxUnbondingTime,
-		}
-
-		utils.PushOrQuit[*delegationSubmittedToBabylonEvent](
-			app.delegationSubmittedToBabylonEvChan,
-			ev,
-			app.quit,
-		)
+		return nil, nil, err
 	}
+
+	return delegationData, response, nil
 }
 
-// main event loop for the staker app
-func (app *StakerApp) handleStakingEvents() {
+func (app *App) handlePreApprovalCmd(
+	cmd *stakingRequestCmd,
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+) (*chainhash.Hash, error) {
+	btcTxHash, _, err := app.handleSendDelegationRequest(
+		cmd.stakerAddress,
+		cmd.stakingTime,
+		cmd.requiredDepthOnBtcChain,
+		cmd.fpBtcPks,
+		cmd.pop,
+		stakingTx,
+		stakingOutputIdx,
+		nil,
+	)
+	return btcTxHash, err
+}
+
+func (app *App) handleSendDelegationRequest(
+	stakerAddress btcutil.Address,
+	stakingTime uint16,
+	requiredDepthOnBtcChain uint32,
+	fpBtcPks []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+	inclusionInfo *inclusionInfo,
+) (btcTxHash *chainhash.Hash, btcDelTxHash string, err error) {
+	// just to pass to buildAndSendDelegation
+	fakeStoredTx, err := stakerdb.CreateTrackedTransaction(
+		stakingTx,
+		stakingOutputIdx,
+		stakingTime,
+		fpBtcPks,
+		babylonPopToDBPop(pop),
+		stakerAddress,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, err
+	}
+
+	stakingTxHash := stakingTx.TxHash()
+
+	req := newSendDelegationRequest(&stakingTxHash, inclusionInfo, requiredDepthOnBtcChain)
+	resp, delegationData, err := app.buildAndSendDelegation(
+		req,
+		stakerAddress,
+		fakeStoredTx,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, err
+	}
+
+	err = app.txTracker.AddTransactionSentToBabylon(
+		stakingTx,
+		stakingOutputIdx,
+		stakingTime,
+		fpBtcPks,
+		babylonPopToDBPop(pop),
+		stakerAddress,
+		delegationData.Ud.UnbondingTransaction,
+		delegationData.Ud.UnbondingTxUnbondingTime,
+		resp.TxHash,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, err
+	}
+
+	app.wg.Add(1)
+	go app.checkForUnbondingTxSignaturesOnBabylon(&stakingTxHash)
+
+	return &stakingTxHash, resp.TxHash, nil
+}
+
+func (app *App) handlePostApprovalCmd(
+	cmd *stakingRequestCmd,
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+) (*chainhash.Hash, error) {
+	stakingTxHash := stakingTx.TxHash()
+
+	bestBlockHeight := app.currentBestBlockHeight.Load()
+
+	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, fullySignd, err := app.wc.SignRawTransaction(stakingTx)
+	if err != nil {
+		return nil, err
+	}
+
+	if !fullySignd {
+		return nil, fmt.Errorf("failed to fully sign transaction with hash %s", stakingTxHash)
+	}
+
+	_, err = app.wc.SendRawTransaction(tx, true)
+
+	if err != nil {
+		return nil, err
+	}
+
+	stakingOutputPkScript := stakingTx.TxOut[stakingOutputIdx].PkScript
+
+	if err := app.waitForStakingTransactionConfirmation(
+		&stakingTxHash,
+		stakingOutputPkScript,
+		cmd.requiredDepthOnBtcChain,
+		bestBlockHeight,
+	); err != nil {
+		return nil, err
+	}
+
+	if err := app.txTracker.AddTransactionSentToBTC(
+		stakingTx,
+		stakingOutputIdx,
+		cmd.stakingTime,
+		cmd.fpBtcPks,
+		babylonPopToDBPop(cmd.pop),
+		cmd.stakerAddress,
+	); err != nil {
+		return nil, err
+	}
+
+	return &stakingTxHash, nil
+}
+
+func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error) {
+	// Create unsigned transaction by wallet without signing. Signing will happen
+	// in next steps
+	stakingTx, err := app.wc.CreateTransaction(
+		[]*wire.TxOut{cmd.stakingOutput},
+		btcutil.Amount(cmd.feeRate),
+		cmd.stakerAddress,
+		app.filterUtxoFnGen(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build staking transaction: %w", err)
+	}
+
+	if cmd.usePreApprovalFlow {
+		return app.handlePreApprovalCmd(cmd, stakingTx, 0)
+	}
+	return app.handlePostApprovalCmd(cmd, stakingTx, 0)
+}
+
+func (app *App) handleStakingCommands() {
 	defer app.wg.Done()
 
 	for {
 		select {
-		case ev := <-app.stakingRequestedEvChan:
-			app.logStakingEventReceived(ev)
+		case cmd := <-app.stakingRequestedCmdChan:
+			app.logStakingEventReceived(cmd)
 
-			bestBlockHeight := app.currentBestBlockHeight.Load()
+			if cmd.isWatched() {
+				bestBlockHeight := app.currentBestBlockHeight.Load()
 
-			if ev.isWatched() {
 				err := app.txTracker.AddWatchedTransaction(
-					ev.stakingTx,
-					ev.stakingOutputIdx,
-					ev.stakingTime,
-					ev.fpBtcPks,
-					babylonPopToDbPop(ev.pop),
-					ev.stakerAddress,
-					ev.watchTxData.slashingTx,
-					ev.watchTxData.slashingTxSig,
-					ev.watchTxData.stakerBabylonAddr,
-					ev.watchTxData.stakerBtcPk,
-					ev.watchTxData.unbondingTx,
-					ev.watchTxData.slashUnbondingTx,
-					ev.watchTxData.slashUnbondingTxSig,
-					ev.watchTxData.unbondingTime,
+					cmd.watchTxData.stakingTx,
+					cmd.watchTxData.stakingOutputIdx,
+					cmd.stakingTime,
+					cmd.fpBtcPks,
+					babylonPopToDBPop(cmd.pop),
+					cmd.stakerAddress,
+					cmd.watchTxData.slashingTx,
+					cmd.watchTxData.slashingTxSig,
+					cmd.watchTxData.stakerBabylonAddr,
+					cmd.watchTxData.stakerBtcPk,
+					cmd.watchTxData.unbondingTx,
+					cmd.watchTxData.slashUnbondingTx,
+					cmd.watchTxData.slashUnbondingTxSig,
+					cmd.watchTxData.unbondingTime,
 				)
 
 				if err != nil {
-					ev.errChan <- err
-					continue
-				}
-			} else {
-				// in case of owend transaction we need to send it, and then add to our tracking db.
-				_, err := app.wc.SendRawTransaction(ev.stakingTx, true)
-				if err != nil {
-					ev.errChan <- err
+					cmd.errChan <- err
 					continue
 				}
 
-				err = app.txTracker.AddTransaction(
-					ev.stakingTx,
-					ev.stakingOutputIdx,
-					ev.stakingTime,
-					ev.fpBtcPks,
-					babylonPopToDbPop(ev.pop),
-					ev.stakerAddress,
-				)
-
-				if err != nil {
-					ev.errChan <- err
+				// we assume tx is already on btc chain, so we need to wait for confirmation
+				if err := app.waitForStakingTransactionConfirmation(
+					&cmd.watchTxData.stakingTxHash,
+					cmd.watchTxData.stakingTx.TxOut[cmd.watchTxData.stakingOutputIdx].PkScript,
+					cmd.requiredDepthOnBtcChain,
+					bestBlockHeight,
+				); err != nil {
+					cmd.errChan <- err
 					continue
 				}
-			}
 
-			if err := app.waitForStakingTransactionConfirmation(
-				&ev.stakingTxHash,
-				ev.stakingOutputPkScript,
-				ev.requiredDepthOnBtcChain,
-				uint32(bestBlockHeight),
-			); err != nil {
-				ev.errChan <- err
+				app.m.ValidReceivedDelegationRequests.Inc()
+				cmd.successChan <- &cmd.watchTxData.stakingTxHash
+				app.logStakingEventProcessed(cmd)
 				continue
 			}
 
-			app.m.ValidReceivedDelegationRequests.Inc()
-			ev.successChan <- &ev.stakingTxHash
-			app.logStakingEventProcessed(ev)
+			stakingTxHash, err := app.handleStakingCmd(cmd)
+			if err != nil {
+				utils.PushOrQuit(
+					cmd.errChan,
+					err,
+					app.quit,
+				)
+			} else {
+				utils.PushOrQuit(
+					cmd.successChan,
+					stakingTxHash,
+					app.quit,
+				)
+			}
+			app.logStakingEventProcessed(cmd)
 
+		case cmd := <-app.migrateStakingCmd:
+			stkTxHash := cmd.notifierTx.Tx.TxHash()
+
+			btcCheckpointParams, err := app.babylonClient.BTCCheckpointParams()
+			if err != nil {
+				cmd.errChan <- err
+				continue
+			}
+
+			bestBlockHeight := app.currentBestBlockHeight.Load()
+			// check confirmation is deep enough
+			if err := checkConfirmationDepth(bestBlockHeight, cmd.notifierTx.BlockHeight, btcCheckpointParams.ConfirmationTimeBlocks); err != nil {
+				cmd.errChan <- err
+				continue
+			}
+
+			_, btcDelTxHash, err := app.handleSendDelegationRequest(
+				cmd.stakerAddr,
+				cmd.parsedStakingTx.OpReturnData.StakingTime,
+				btcCheckpointParams.ConfirmationTimeBlocks,
+				[]*btcec.PublicKey{cmd.parsedStakingTx.OpReturnData.FinalityProviderPublicKey.PubKey},
+				cmd.pop,
+				cmd.notifierTx.Tx,
+				uint32(cmd.parsedStakingTx.StakingOutputIdx),
+				app.newBtcInclusionInfo(cmd.notifierTx),
+			)
+			if err != nil {
+				utils.PushOrQuit(
+					cmd.errChan,
+					fmt.Errorf("sending tx to babylon failed: %w", err),
+					app.quit,
+				)
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stkTxHash,
+				}).WithError(err).Error("BTC delegation transaction failed")
+				return
+			}
+
+			utils.PushOrQuit(
+				cmd.successChanTxHash,
+				btcDelTxHash,
+				app.quit,
+			)
+			app.logger.WithFields(logrus.Fields{
+				"consumerBtcDelegationTxHash": btcDelTxHash,
+			}).Debugf("Sending BTC delegation was a success")
+		case <-app.quit:
+			return
+		}
+	}
+}
+
+// main event loop for the staker app
+func (app *App) handleStakingEvents() {
+	defer app.wg.Done()
+
+	for {
+		select {
 		case ev := <-app.stakingTxBtcConfirmedEvChan:
 			app.logStakingEventReceived(ev)
 
@@ -1272,13 +1636,21 @@ func (app *StakerApp) handleStakingEvents() {
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
 
-			req := &sendDelegationRequest{
-				txHash:                      ev.stakingTxHash,
-				txIndex:                     ev.txIndex,
-				inclusionBlock:              ev.inlusionBlock,
-				requiredInclusionBlockDepth: uint64(ev.blockDepth),
-			}
+			proof := app.mustBuildInclusionProof(
+				ev.inlusionBlock,
+				ev.txIndex,
+			)
 
+			req := newSendDelegationRequest(
+				&ev.stakingTxHash,
+				&inclusionInfo{
+					txIndex:                 ev.txIndex,
+					inclusionBlock:          ev.inlusionBlock,
+					inclusionBlockBtcHeight: ev.blockHeight,
+					inclusionProof:          proof,
+				},
+				ev.blockDepth,
+			)
 			storedTx, stakerAddress := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
 
 			app.m.DelegationsConfirmedOnBtc.Inc()
@@ -1291,7 +1663,7 @@ func (app *StakerApp) handleStakingEvents() {
 
 		case ev := <-app.delegationSubmittedToBabylonEvChan:
 			app.logStakingEventReceived(ev)
-			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
+			if err := app.txTracker.SetTxSentToBabylon(&ev.stakingTxHash, ev.babylonBTCDelegationTxHash, ev.unbondingTx, ev.unbondingTime); err != nil {
 				// TODO: handle this error somehow, it means we received confirmation for tx which we do not store
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
@@ -1310,13 +1682,37 @@ func (app *StakerApp) handleStakingEvents() {
 
 			if err := app.txTracker.SetTxUnbondingSignaturesReceived(
 				&ev.stakingTxHash,
-				babylonCovSigsToDbSigSigs(ev.covenantUnbondingSignatures),
+				babylonCovSigsToDBSigSigs(ev.covenantUnbondingSignatures),
 			); err != nil {
 				// TODO: handle this error somehow, it means we possilbly make invalid state transition
 				app.logger.Fatalf("Error setting state for tx %s: %s", &ev.stakingTxHash, err)
 			}
 
-			app.m.DelegationsActivatedOnBabylon.Inc()
+			if ev.delegationActive {
+				app.wg.Add(1)
+				go func(hash chainhash.Hash) {
+					defer app.wg.Done()
+					utils.PushOrQuit[*delegationActivatedPostApprovalEvent](
+						app.delegationActivatedPostApprovalEvChan,
+						&delegationActivatedPostApprovalEvent{
+							stakingTxHash: hash,
+						},
+						app.quit,
+					)
+				}(ev.stakingTxHash)
+			} else {
+				storedTx, _ := app.mustGetTransactionAndStakerAddress(&ev.stakingTxHash)
+				// if the delegation is not active here, it can only mean that statking
+				// is going through pre-approvel flow. Fire up task to send staking tx
+				// to btc chain
+				app.wg.Add(1)
+				go app.activateVerifiedDelegation(
+					storedTx.StakingTx,
+					storedTx.StakingOutputIndex,
+					&ev.stakingTxHash,
+				)
+			}
+
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.unbondingTxConfirmedOnBtcEvChan:
@@ -1339,6 +1735,28 @@ func (app *StakerApp) handleStakingEvents() {
 				// which is seems like programming error. Maybe panic?
 				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
 			}
+			app.logStakingEventProcessed(ev)
+
+		case ev := <-app.delegationActivatedPostApprovalEvChan:
+			app.logStakingEventReceived(ev)
+			if err := app.txTracker.SetDelegationActiveOnBabylon(&ev.stakingTxHash); err != nil {
+				// TODO: handle this error somehow, it means we received spend stake confirmation for tx which we do not store
+				// which is seems like programming error. Maybe panic?
+				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
+			}
+			app.m.DelegationsActivatedOnBabylon.Inc()
+			app.logStakingEventProcessed(ev)
+
+		case ev := <-app.delegationActivatedPreApprovalEvChan:
+			app.logStakingEventReceived(ev)
+			if err := app.txTracker.SetDelegationActiveOnBabylonAndConfirmedOnBtc(
+				&ev.stakingTxHash,
+				&ev.blockHash,
+				ev.blockHeight,
+			); err != nil {
+				app.logger.Fatalf("Error setting state for tx %s: %s", ev.stakingTxHash, err)
+			}
+
 			app.logStakingEventProcessed(ev)
 
 		case ev := <-app.criticalErrorEvChan:
@@ -1378,15 +1796,15 @@ func (app *StakerApp) handleStakingEvents() {
 	}
 }
 
-func (app *StakerApp) Wallet() walletcontroller.WalletController {
+func (app *App) Wallet() walletcontroller.WalletController {
 	return app.wc
 }
 
-func (app *StakerApp) BabylonController() cl.BabylonClient {
+func (app *App) BabylonController() cl.BabylonClient {
 	return app.babylonClient
 }
 
-func (app *StakerApp) WatchStaking(
+func (app *App) WatchStaking(
 	stakingTx *wire.MsgTx,
 	stakingTime uint16,
 	stakingValue btcutil.Amount,
@@ -1448,12 +1866,12 @@ func (app *StakerApp) WatchStaking(
 
 	app.logger.WithFields(logrus.Fields{
 		"stakerAddress": stakerAddress,
-		"stakingAmount": watchedRequest.stakingTx.TxOut[watchedRequest.stakingOutputIdx].Value,
+		"stakingAmount": watchedRequest.watchTxData.stakingTx.TxOut[watchedRequest.watchTxData.stakingOutputIdx].Value,
 		"btxTxHash":     stakingTx.TxHash(),
 	}).Info("Received valid staking tx to watch")
 
-	utils.PushOrQuit[*stakingRequestedEvent](
-		app.stakingRequestedEvChan,
+	utils.PushOrQuit[*stakingRequestCmd](
+		app.stakingRequestedCmdChan,
 		watchedRequest,
 		app.quit,
 	)
@@ -1473,13 +1891,27 @@ func (app *StakerApp) WatchStaking(
 	}
 }
 
-func (app *StakerApp) StakeFunds(
+func (app *App) filterUtxoFnGen() walletcontroller.UseUtxoFn {
+	return func(utxo walletcontroller.Utxo) bool {
+		outpoint := utxo.OutPoint
+
+		used, err := app.txTracker.OutpointUsed(&outpoint)
+
+		if err != nil {
+			return false
+		}
+
+		return !used
+	}
+}
+
+func (app *App) StakeFunds(
 	stakerAddress btcutil.Address,
 	stakingAmount btcutil.Amount,
 	fpPks []*btcec.PublicKey,
 	stakingTimeBlocks uint16,
+	sendToBabylonFirst bool,
 ) (*chainhash.Hash, error) {
-
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1508,6 +1940,21 @@ func (app *StakerApp) StakeFunds(
 		return nil, err
 	}
 
+	// Allow list is enabled, check if we are past the expiration height and we can
+	// create new delegations
+	if params.AllowListExpirationHeight > 0 {
+		latestBlockHeight, err := app.babylonClient.GetLatestBlockHeight()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		// we add +1 to account for comet bft lazy execution
+		if latestBlockHeight <= params.AllowListExpirationHeight+1 {
+			return nil, fmt.Errorf("allow is enabled, cannot create new delegations. Latest block height %d is before allow list expiration height %d",
+				latestBlockHeight, params.AllowListExpirationHeight)
+		}
+	}
+
 	slashingFee := app.getSlashingFee(params.MinSlashingTxFeeSat)
 
 	if stakingAmount <= slashingFee {
@@ -1524,36 +1971,14 @@ func (app *StakerApp) StakeFunds(
 			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
 	}
 
-	// unlock wallet for the rest of the operations
-	// TODO consider unlock/lock with defer
-	err = app.wc.UnlockWallet(defaultWalletUnlockTimeout)
-
+	pop, err := app.unlockAndCreatePop(stakerAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	// build proof of possesion, no point moving forward if staker do not have all
+	// build proof of possession, no point moving forward if staker do not have all
 	// the necessary keys
 	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddress)
-
-	if err != nil {
-		return nil, err
-	}
-
-	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
-
-	sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
-
-	if err != nil {
-		return nil, err
-	}
-
-	pop, err := cl.NewBabylonBip322Pop(
-		babylonAddrHash,
-		sig,
-		stakerAddress,
-	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -1574,33 +1999,26 @@ func (app *StakerApp) StakeFunds(
 
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
-	tx, err := app.wc.CreateAndSignTx([]*wire.TxOut{stakingInfo.StakingOutput}, btcutil.Amount(feeRate), stakerAddress)
-
-	if err != nil {
-		return nil, err
-	}
-
 	app.logger.WithFields(logrus.Fields{
 		"stakerAddress": stakerAddress,
 		"stakingAmount": stakingInfo.StakingOutput,
-		"btxTxHash":     tx.TxHash(),
 		"fee":           feeRate,
 	}).Info("Created and signed staking transaction")
 
-	req := newOwnedStakingRequest(
+	req := newOwnedStakingCommand(
 		stakerAddress,
-		tx,
-		0,
-		stakingInfo.StakingOutput.PkScript,
+		stakingInfo.StakingOutput,
+		feeRate,
 		stakingTimeBlocks,
 		stakingAmount,
 		fpPks,
 		params.ConfirmationTimeBlocks,
 		pop,
+		sendToBabylonFirst,
 	)
 
-	utils.PushOrQuit[*stakingRequestedEvent](
-		app.stakingRequestedEvChan,
+	utils.PushOrQuit[*stakingRequestCmd](
+		app.stakingRequestedCmdChan,
 		req,
 		app.quit,
 	)
@@ -1620,7 +2038,7 @@ func (app *StakerApp) StakeFunds(
 	}
 }
 
-func (app *StakerApp) StoredTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
+func (app *App) StoredTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
 	query := stakerdb.StoredTransactionQuery{
 		IndexOffset:        offset,
 		NumMaxTransactions: limit,
@@ -1634,7 +2052,7 @@ func (app *StakerApp) StoredTransactions(limit, offset uint64) (*stakerdb.Stored
 	return &resp, nil
 }
 
-func (app *StakerApp) WithdrawableTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
+func (app *App) WithdrawableTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
 	query := stakerdb.StoredTransactionQuery{
 		IndexOffset:        offset,
 		NumMaxTransactions: limit,
@@ -1648,15 +2066,15 @@ func (app *StakerApp) WithdrawableTransactions(limit, offset uint64) (*stakerdb.
 	return &resp, nil
 }
 
-func (app *StakerApp) GetStoredTransaction(txHash *chainhash.Hash) (*stakerdb.StoredTransaction, error) {
+func (app *App) GetStoredTransaction(txHash *chainhash.Hash) (*stakerdb.StoredTransaction, error) {
 	return app.txTracker.GetTransaction(txHash)
 }
 
-func (app *StakerApp) ListUnspentOutputs() ([]walletcontroller.Utxo, error) {
+func (app *App) ListUnspentOutputs() ([]walletcontroller.Utxo, error) {
 	return app.wc.ListOutputs(false)
 }
 
-func (app *StakerApp) waitForSpendConfirmation(stakingTxHash chainhash.Hash, ev *notifier.ConfirmationEvent) {
+func (app *App) waitForSpendConfirmation(stakingTxHash chainhash.Hash, ev *notifier.ConfirmationEvent) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1697,14 +2115,13 @@ func (app *StakerApp) waitForSpendConfirmation(stakingTxHash chainhash.Hash, ev 
 	}
 }
 
-func (app *StakerApp) signTaprootScriptSpendUsingWallet(
+func (app *App) signTaprootScriptSpendUsingWallet(
 	txToSign *wire.MsgTx,
 	fundingOutput *wire.TxOut,
 	signerAddress btcutil.Address,
 	leaf *txscript.TapLeaf,
 	controlBlock *txscript.ControlBlock,
 ) (*walletcontroller.TaprootSigningResult, error) {
-
 	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
 		return nil, fmt.Errorf("failed to unlock wallet before signing: %w", err)
 	}
@@ -1735,7 +2152,7 @@ func (app *StakerApp) signTaprootScriptSpendUsingWallet(
 // unbonding of his stake.
 // We find in which type of output stake is locked by checking state of staking transaction, and build
 // proper spend transaction based on that state.
-func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount, error) {
+func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount, error) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1866,11 +2283,11 @@ func (app *StakerApp) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash
 	return spendTxHash, &spendTxValue, nil
 }
 
-func (app *StakerApp) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.FinalityProvidersClientResponse, error) {
+func (app *App) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.FinalityProvidersClientResponse, error) {
 	return app.babylonClient.QueryFinalityProviders(limit, offset)
 }
 
-// Initiates whole unbonding process. Whole process looks like this:
+// UnbondStaking initiates whole unbonding process. Whole process looks like this:
 // 1. Unbonding data is build based on exsitng staking transaction data
 // 2. Unbonding data is sent to babylon as part of undelegete request
 // 3. If request is successful, unbonding transaction is registred in db and
@@ -1880,8 +2297,8 @@ func (app *StakerApp) ListActiveFinalityProviders(limit uint64, offset uint64) (
 // 5. After gathering all signatures, unbonding transaction is sent to bitcoin
 // This function returns control to the caller after step 3. Later is up to the caller
 // to check what is state of unbonding transaction
-func (app *StakerApp) UnbondStaking(
-	stakingTxHash chainhash.Hash, feeRate *btcutil.Amount) (*chainhash.Hash, error) {
+func (app *App) UnbondStaking(
+	stakingTxHash chainhash.Hash) (*chainhash.Hash, error) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1909,7 +2326,7 @@ func (app *StakerApp) UnbondStaking(
 	stakerAddress, err := btcutil.DecodeAddress(tx.StakerAddress, app.network)
 
 	if err != nil {
-		return nil, fmt.Errorf("error decoding staker address: %s. Err: %v", tx.StakerAddress, err)
+		return nil, fmt.Errorf("error decoding staker address: %s. Err: %w", tx.StakerAddress, err)
 	}
 
 	// TODO: Move this to event handler to avoid somebody starting multiple unbonding routines
@@ -1923,4 +2340,58 @@ func (app *StakerApp) UnbondStaking(
 
 	unbondingTxHash := tx.UnbondingTxData.UnbondingTx.TxHash()
 	return &unbondingTxHash, nil
+}
+
+func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPop, error) {
+	// unlock wallet for the rest of the operations
+	// TODO consider unlock/lock with defer
+	err := app.wc.UnlockWallet(defaultWalletUnlockTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
+	// pop only works for native segwit address
+	sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	return cl.NewBabylonBip322Pop(
+		babylonAddrHash,
+		sig,
+		stakerAddress,
+	)
+}
+
+func (app *App) BtcTxAndBlock(txHash *chainhash.Hash) (*btcjson.TxRawResult, *btcjson.GetBlockHeaderVerboseResult, error) {
+	tx, err := app.wc.TxVerbose(txHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	blockHash, err := chainhash.NewHashFromStr(tx.BlockHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	blk, err := app.wc.BlockHeaderVerbose(blockHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return tx, blk, nil
+}
+
+func checkConfirmationDepth(tipBlockHeight, txInclusionBlockHeight, confirmationTimeBlocks uint32) error {
+	if txInclusionBlockHeight >= tipBlockHeight {
+		return fmt.Errorf("inclusion block height: %d should be lower than current tip: %d", txInclusionBlockHeight, tipBlockHeight)
+	}
+	if (tipBlockHeight - txInclusionBlockHeight) < confirmationTimeBlocks {
+		return fmt.Errorf(
+			"BTC tx not deep enough, current tip: %d, tx inclusion height: %d, confirmations needed: %d",
+			tipBlockHeight, txInclusionBlockHeight, confirmationTimeBlocks,
+		)
+	}
+	return nil
 }

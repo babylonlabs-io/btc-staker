@@ -2,6 +2,7 @@ package stakerservice
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -26,7 +27,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/lightningnetwork/lnd/kvdb"
-	"github.com/lightningnetwork/lnd/signal"
 	"github.com/sirupsen/logrus"
 )
 
@@ -41,26 +41,23 @@ type RoutesMap map[string]*rpc.RPCFunc
 type StakerService struct {
 	started int32
 
-	config      *scfg.Config
-	staker      *str.StakerApp
-	logger      *logrus.Logger
-	db          kvdb.Backend
-	interceptor signal.Interceptor
+	config *scfg.Config
+	staker *str.App
+	logger *logrus.Logger
+	db     kvdb.Backend
 }
 
 func NewStakerService(
 	c *scfg.Config,
-	s *str.StakerApp,
+	s *str.App,
 	l *logrus.Logger,
-	sig signal.Interceptor,
 	db kvdb.Backend,
 ) *StakerService {
 	return &StakerService{
-		config:      c,
-		staker:      s,
-		logger:      l,
-		interceptor: sig,
-		db:          db,
+		config: c,
+		staker: s,
+		logger: l,
+		db:     db,
 	}
 }
 
@@ -83,8 +80,8 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	stakingAmount int64,
 	fpBtcPks []string,
 	stakingTimeBlocks int64,
+	sendToBabylonFirst bool,
 ) (*ResultStake, error) {
-
 	if stakingAmount <= 0 {
 		return nil, fmt.Errorf("staking amount must be positive")
 	}
@@ -96,7 +93,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -118,7 +115,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 
 	stakingTimeUint16 := uint16(stakingTimeBlocks)
 
-	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16)
+	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16, sendToBabylonFirst)
 	if err != nil {
 		return nil, err
 	}
@@ -128,9 +125,96 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
-func (s *StakerService) stakingDetails(_ *rpctypes.Context,
-	stakingTxHash string) (*StakingDetails, error) {
+func (s *StakerService) btcDelegationFromBtcStakingTx(
+	_ *rpctypes.Context,
+	stakerAddress string,
+	btcStkTxHash string,
+	tag []byte,
+	covenantPksHex []string,
+	covenantQuorum uint32,
+) (*ResultBtcDelegationFromBtcStakingTx, error) {
+	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
+	if err != nil {
+		s.logger.WithError(err).Info("err parse tx hash")
+		return nil, err
+	}
 
+	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
+	if err != nil {
+		s.logger.WithError(err).Info("err decode staker addr")
+		return nil, err
+	}
+
+	covenantPks, err := parseCovenantsPubKeyFromHex(covenantPksHex...)
+	if err != nil {
+		s.logger.WithError(err).Infof("err decode covenant pks %s", covenantPksHex)
+		return nil, err
+	}
+
+	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
+	if err != nil {
+		s.logger.WithError(err).Info("err to send phase 1 tx")
+		return nil, err
+	}
+
+	return &ResultBtcDelegationFromBtcStakingTx{
+		BabylonBTCDelegationTxHash: babylonBTCDelegationTxHash,
+	}, nil
+}
+
+func parseCovenantsPubKeyFromHex(covenantPksHex ...string) ([]*btcec.PublicKey, error) {
+	covenantPks := make([]*btcec.PublicKey, len(covenantPksHex))
+	for i, covenantPkHex := range covenantPksHex {
+		covPk, err := parseCovenantPubKeyFromHex(covenantPkHex)
+		if err != nil {
+			return nil, err
+		}
+		covenantPks[i] = covPk
+	}
+
+	return covenantPks, nil
+}
+
+// parseCovenantPubKeyFromHex parses public key string to btc public key
+// the input should be 33 bytes
+func parseCovenantPubKeyFromHex(pkStr string) (*btcec.PublicKey, error) {
+	pkBytes, err := hex.DecodeString(pkStr)
+	if err != nil {
+		return nil, err
+	}
+
+	pk, err := btcec.ParsePubKey(pkBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return pk, nil
+}
+
+func (s *StakerService) btcTxBlkDetails(
+	_ *rpctypes.Context,
+	txHashStr string,
+) (*BtcTxAndBlockResponse, error) {
+	txHash, err := chainhash.NewHashFromStr(txHashStr)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, blk, err := s.staker.BtcTxAndBlock(txHash)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BtcTxAndBlockResponse{
+		Tx:  tx,
+		Blk: blk,
+	}, nil
+}
+
+func (s *StakerService) stakingDetails(
+	_ *rpctypes.Context,
+	stakingTxHash string,
+) (*StakingDetails, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
 		return nil, err
@@ -168,7 +252,6 @@ func (s *StakerService) spendStake(_ *rpctypes.Context,
 }
 
 func (s *StakerService) listOutputs(_ *rpctypes.Context) (*OutputsResponse, error) {
-
 	outputs, err := s.staker.ListUnspentOutputs()
 
 	if err != nil {
@@ -194,12 +277,14 @@ type PageParams struct {
 	Limit  uint64
 }
 
-func getPageParams(offsetPtr *int, limitPtr *int) PageParams {
+func getPageParams(offsetPtr *int, limitPtr *int) (*PageParams, error) {
 	var limit uint64
-
-	if limitPtr == nil {
+	switch {
+	case limitPtr == nil:
 		limit = defaultLimit
-	} else {
+	case *limitPtr < 0:
+		return nil, fmt.Errorf("limit cannot be negative")
+	default:
 		limit = uint64(*limitPtr)
 	}
 
@@ -208,22 +293,26 @@ func getPageParams(offsetPtr *int, limitPtr *int) PageParams {
 	}
 
 	var offset uint64
-
-	if offsetPtr == nil {
+	switch {
+	case offsetPtr == nil:
 		offset = defaultOffset
-	} else {
+	case *offsetPtr >= 0:
 		offset = uint64(*offsetPtr)
+	default:
+		return nil, fmt.Errorf("offset cannot be negative")
 	}
 
-	return PageParams{
+	return &PageParams{
 		Offset: offset,
 		Limit:  limit,
-	}
+	}, nil
 }
 
 func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*FinalityProvidersResponse, error) {
-
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	providersResp, err := s.staker.ListActiveFinalityProviders(pageParams.Limit, pageParams.Offset)
 
@@ -251,7 +340,10 @@ func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*Fin
 }
 
 func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, limit *int) (*ListStakingTransactionsResponse, error) {
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	txResult, err := s.staker.StoredTransactions(pageParams.Limit, pageParams.Offset)
 
@@ -275,7 +367,10 @@ func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, lim
 }
 
 func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, limit *int) (*WithdrawableTransactionsResponse, error) {
-	pageParams := getPageParams(offset, limit)
+	pageParams, err := getPageParams(offset, limit)
+	if err != nil {
+		return nil, err
+	}
 
 	txResult, err := s.staker.WithdrawableTransactions(pageParams.Limit, pageParams.Offset)
 
@@ -289,7 +384,7 @@ func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, li
 		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx))
 	}
 
-	var lastIdx string = "0"
+	lastIdx := "0"
 	if len(stakingDetails) > 0 {
 		// this should ease up pagination i.e in case when whe have 1000 transactions, and we limit query to 50
 		// due to filetring we can retrun  response with 50 transactions when last one have index 400,
@@ -394,7 +489,7 @@ func (s *StakerService) watchStaking(
 		return nil, err
 	}
 
-	var fpPubKeys []*btcec.PublicKey = make([]*btcec.PublicKey, 0)
+	fpPubKeys := make([]*btcec.PublicKey, 0)
 
 	for _, fpPk := range fpBtcPks {
 		fpPkBytes, err := hex.DecodeString(fpPk)
@@ -516,21 +611,14 @@ func (s *StakerService) watchStaking(
 	}, nil
 }
 
-func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string, feeRate *int) (*UnbondingResponse, error) {
+func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string) (*UnbondingResponse, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 
 	if err != nil {
 		return nil, err
 	}
 
-	var feeRateBtc *btcutil.Amount = nil
-
-	if feeRate != nil {
-		amt := btcutil.Amount(*feeRate)
-		feeRateBtc = &amt
-	}
-
-	unbondingTxHash, err := s.staker.UnbondStaking(*txHash, feeRateBtc)
+	unbondingTxHash, err := s.staker.UnbondStaking(*txHash)
 
 	if err != nil {
 		return nil, err
@@ -546,12 +634,14 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		// info AP
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                     rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
-		"staking_details":           rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
-		"spend_stake":               rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
-		"list_staking_transactions": rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
-		"unbond_staking":            rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash,feeRate"),
-		"withdrawable_transactions": rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
+		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
+		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
+		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
+		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 		// watch api
 		"watch_staking_tx": rpc.NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
 
@@ -563,7 +653,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 	}
 }
 
-func (s *StakerService) RunUntilShutdown() error {
+func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	if atomic.AddInt32(&s.started, 1) != 1 {
 		return nil
 	}
@@ -574,8 +664,11 @@ func (s *StakerService) RunUntilShutdown() error {
 
 	defer func() {
 		s.logger.Info("Closing database...")
-		s.db.Close()
-		s.logger.Info("Database closed")
+		if err := s.db.Close(); err != nil {
+			s.logger.Errorf("Error closing database: %v", err)
+		} else {
+			s.logger.Info("Database closed")
+		}
 	}()
 
 	mkErr := func(format string, args ...interface{}) error {
@@ -585,13 +678,16 @@ func (s *StakerService) RunUntilShutdown() error {
 		return fmt.Errorf(format, args...)
 	}
 
-	err := s.staker.Start()
-	if err != nil {
+	//nolint:contextcheck
+	if err := s.staker.Start(); err != nil {
 		return mkErr("error starting staker: %w", err)
 	}
 
 	defer func() {
-		_ = s.staker.Stop()
+		err := s.staker.Stop()
+		if err != nil {
+			s.logger.WithError(err).Info("staker stop with error")
+		}
 		s.logger.Info("staker stop complete")
 	}()
 
@@ -602,8 +698,8 @@ func (s *StakerService) RunUntilShutdown() error {
 	// TODO: investigate if we can use logrus directly to pass it to rpcserver
 	rpcLogger := log.NewTMLogger(s.logger.Writer())
 
-	listeners := make([]net.Listener, len(s.config.RpcListeners))
-	for i, listenAddr := range s.config.RpcListeners {
+	listeners := make([]net.Listener, len(s.config.RPCListeners))
+	for i, listenAddr := range s.config.RPCListeners {
 		listenAddressStr := listenAddr.Network() + "://" + listenAddr.String()
 		mux := http.NewServeMux()
 		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
@@ -629,7 +725,7 @@ func (s *StakerService) RunUntilShutdown() error {
 		// TODO: Add additional middleware, like CORS, TLS, etc.
 		// TODO: Consider we need some websockets for some notications
 		go func() {
-			s.logger.Debug("Starting Json RPC HTTP server ", "address", listenAddressStr)
+			s.logger.Debug("Starting Json RPC HTTP server ", "address: ", listenAddressStr)
 
 			err := rpc.Serve(
 				listener,
@@ -637,8 +733,10 @@ func (s *StakerService) RunUntilShutdown() error {
 				rpcLogger,
 				config,
 			)
-
-			s.logger.Error("Json RPC HTTP server stopped ", "err", err)
+			if err != nil {
+				s.logger.WithError(err).Error("problem at JSON RPC HTTP server")
+			}
+			s.logger.Info("Json RPC HTTP server stopped ")
 		}()
 
 		listeners[i] = listener
@@ -646,9 +744,8 @@ func (s *StakerService) RunUntilShutdown() error {
 
 	s.logger.Info("Staker Service fully started")
 
-	// Wait for shutdown signal from either a graceful service stop or from
-	// the interrupt handler.
-	<-s.interceptor.ShutdownChannel()
+	// Wait for shutdown signal from either a graceful service stop or from cancel()
+	<-ctx.Done()
 
 	s.logger.Info("Received shutdown signal. Stopping...")
 

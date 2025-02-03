@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/babylonlabs-io/btc-staker/utils"
@@ -19,35 +19,19 @@ var (
 )
 
 type sendDelegationRequest struct {
-	utils.Request[*pv.RelayerTxResponse]
+	utils.Request[*bct.RelayerTxResponse]
 	dg                          *DelegationData
-	requiredInclusionBlockDepth uint64
+	requiredInclusionBlockDepth uint32
 }
 
 func newSendDelegationRequest(
 	dg *DelegationData,
-	requiredInclusionBlockDepth uint64,
+	requiredInclusionBlockDepth uint32,
 ) sendDelegationRequest {
 	return sendDelegationRequest{
-		Request:                     utils.NewRequest[*pv.RelayerTxResponse](),
+		Request:                     utils.NewRequest[*bct.RelayerTxResponse](),
 		dg:                          dg,
 		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
-	}
-}
-
-type sendUndelegationRequest struct {
-	utils.Request[*pv.RelayerTxResponse]
-	stakingTxHash *chainhash.Hash
-	ur            *UndelegationRequest
-}
-
-func newSendUndelegationRequest(
-	ur *UndelegationRequest,
-) sendUndelegationRequest {
-	return sendUndelegationRequest{
-		Request:       utils.NewRequest[*pv.RelayerTxResponse](),
-		ur:            ur,
-		stakingTxHash: &ur.StakingTxHash,
 	}
 }
 
@@ -61,11 +45,10 @@ type BabylonMsgSender struct {
 	wg        sync.WaitGroup
 	quit      chan struct{}
 
-	cl                          BabylonClient
-	logger                      *logrus.Logger
-	sendDelegationRequestChan   chan *sendDelegationRequest
-	sendUndelegationRequestChan chan *sendUndelegationRequest
-	s                           *semaphore.Weighted
+	cl                        BabylonClient
+	logger                    *logrus.Logger
+	sendDelegationRequestChan chan *sendDelegationRequest
+	s                         *semaphore.Weighted
 }
 
 func NewBabylonMsgSender(
@@ -75,35 +58,39 @@ func NewBabylonMsgSender(
 ) *BabylonMsgSender {
 	s := semaphore.NewWeighted(int64(maxConcurrentTransactions))
 	return &BabylonMsgSender{
-		quit:                        make(chan struct{}),
-		cl:                          cl,
-		logger:                      logger,
-		sendDelegationRequestChan:   make(chan *sendDelegationRequest),
-		sendUndelegationRequestChan: make(chan *sendUndelegationRequest),
-		s:                           s,
+		quit:                      make(chan struct{}),
+		cl:                        cl,
+		logger:                    logger,
+		sendDelegationRequestChan: make(chan *sendDelegationRequest),
+		s:                         s,
 	}
 }
 
-func (b *BabylonMsgSender) Start() {
-	b.startOnce.Do(func() {
-		b.wg.Add(1)
-		go b.handleSentToBabylon()
+func (m *BabylonMsgSender) Start() {
+	m.startOnce.Do(func() {
+		m.wg.Add(1)
+		go m.handleSentToBabylon()
 	})
 }
 
-func (b *BabylonMsgSender) Stop() {
-	b.stopOnce.Do(func() {
-		close(b.quit)
-		b.wg.Wait()
+func (m *BabylonMsgSender) Stop() {
+	m.stopOnce.Do(func() {
+		close(m.quit)
+		m.wg.Wait()
 	})
 }
 
 // isBabylonBtcLcReady checks if Babylon BTC light client is ready to receive delegation
-func (b *BabylonMsgSender) isBabylonBtcLcReady(
-	requiredInclusionBlockDepth uint64,
+func (m *BabylonMsgSender) isBabylonBtcLcReady(
+	requiredInclusionBlockDepth uint32,
 	req *DelegationData,
 ) error {
-	depth, err := b.cl.QueryHeaderDepth(req.StakingTransactionInclusionBlockHash)
+	// no need to consult Babylon if we send delegation without inclusion proof
+	if req.StakingTransactionInclusionInfo == nil {
+		return nil
+	}
+
+	depth, err := m.cl.QueryHeaderDepth(req.StakingTransactionInclusionInfo.StakingTransactionInclusionBlockHash)
 
 	if err != nil {
 		// If header is not known to babylon, or it is on LCFork, then most probably
@@ -155,41 +142,6 @@ func (m *BabylonMsgSender) sendDelegationAsync(stakingTxHash *chainhash.Hash, re
 	}()
 }
 
-func (m *BabylonMsgSender) sendUndelegationAsync(stakingTxHash *chainhash.Hash, req *sendUndelegationRequest) {
-	// do not check the error, as only way for it to return err is if provided context would be cancelled
-	// which can't happen here
-	_ = m.s.Acquire(context.Background(), 1)
-	m.wg.Add(1)
-	go func() {
-		defer m.s.Release(1)
-		defer m.wg.Done()
-		// TODO pass context to undelegate
-		txResp, err := m.cl.Undelegate(req.ur)
-
-		if err != nil {
-			if errors.Is(err, ErrInvalidBabylonExecution) {
-				// Additional logging if for some reason we send unbonding request which was
-				// accepted by babylon, but failed execution
-				m.logger.WithFields(logrus.Fields{
-					"btcTxHash":          req.stakingTxHash.String(),
-					"babylonTxHash":      txResp.TxHash,
-					"babylonBlockHeight": txResp.Height,
-					"babylonErrorCode":   txResp.Code,
-				}).Error("Invalid delegation data sent to babylon")
-			}
-
-			m.logger.WithFields(logrus.Fields{
-				"btcTxHash": req.stakingTxHash,
-				"err":       err,
-			}).Error("Error while sending undelegation data to babylon")
-
-			req.ErrorChan() <- fmt.Errorf("failed to send unbonding for delegation with staking hash:%s:%w", req.stakingTxHash.String(), err)
-		}
-
-		req.ResultChan() <- txResp
-	}()
-}
-
 func (m *BabylonMsgSender) handleSentToBabylon() {
 	defer m.wg.Done()
 	for {
@@ -214,26 +166,6 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 
 			m.sendDelegationAsync(&stakingTxHash, req)
 
-		case req := <-m.sendUndelegationRequestChan:
-			di, err := m.cl.QueryDelegationInfo(req.stakingTxHash)
-
-			if err != nil {
-				req.ErrorChan() <- fmt.Errorf("failed to retrieve delegation info for staking tx with hash: %s: %w", req.stakingTxHash.String(), err)
-				continue
-			}
-
-			if !di.Active {
-				req.ErrorChan() <- fmt.Errorf("cannot sent unbonding request for staking tx with hash: %s, as delegation is not active", req.stakingTxHash.String())
-				continue
-			}
-
-			if di.UndelegationInfo != nil {
-				req.ErrorChan() <- fmt.Errorf("cannot sent unbonding request for staking tx with hash: %s, as unbonding request was already sent", req.stakingTxHash.String())
-				continue
-			}
-
-			m.sendUndelegationAsync(req.stakingTxHash, req)
-
 		case <-m.quit:
 			return
 		}
@@ -242,28 +174,13 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 
 func (m *BabylonMsgSender) SendDelegation(
 	dg *DelegationData,
-	requiredInclusionBlockDepth uint64,
-) (*pv.RelayerTxResponse, error) {
+	requiredInclusionBlockDepth uint32,
+) (*bct.RelayerTxResponse, error) {
 	req := newSendDelegationRequest(dg, requiredInclusionBlockDepth)
 
-	return utils.SendRequestAndWaitForResponseOrQuit[*pv.RelayerTxResponse, *sendDelegationRequest](
+	return utils.SendRequestAndWaitForResponseOrQuit[*bct.RelayerTxResponse, *sendDelegationRequest](
 		&req,
 		m.sendDelegationRequestChan,
-		m.quit,
-	)
-
-}
-
-// TODO: Curenttly not used.
-// We may introduce the option for staker to self report unbonding tx to babylon.
-func (m *BabylonMsgSender) SendUndelegation(
-	ur *UndelegationRequest,
-) (*pv.RelayerTxResponse, error) {
-	req := newSendUndelegationRequest(ur)
-
-	return utils.SendRequestAndWaitForResponseOrQuit[*pv.RelayerTxResponse, *sendUndelegationRequest](
-		&req,
-		m.sendUndelegationRequestChan,
 		m.quit,
 	)
 }

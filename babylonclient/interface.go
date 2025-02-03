@@ -2,6 +2,7 @@ package babylonclient
 
 import (
 	"fmt"
+	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
@@ -13,8 +14,14 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	pv "github.com/cosmos/relayer/v2/relayer/provider"
 )
+
+type BTCCheckpointParams struct {
+	// K-deep
+	ConfirmationTimeBlocks uint32
+	// W-deep
+	FinalizationTimeoutBlocks uint32
+}
 
 type StakingParams struct {
 	// K-deep
@@ -34,26 +41,29 @@ type StakingParams struct {
 	// The rate at which the staked funds will be slashed, expressed as a decimal.
 	SlashingRate sdkmath.LegacyDec
 
-	// Convenant quorum threshold
+	// Covenant quorum threshold
 	CovenantQuruomThreshold uint32
 
-	// Minimum unbonding time required by bayblon
-	MinUnbondingTime uint16
+	// Minimum unbonding time required by babylon
+	UnbondingTime uint16
 
 	// Fee required by unbonding transaction
 	UnbondingFee btcutil.Amount
 
-	// Minimum staking time required by bayblon
+	// Minimum staking time required by babylon
 	MinStakingTime uint16
 
-	// Maximum staking time required by bayblon
+	// Maximum staking time required by babylon
 	MaxStakingTime uint16
 
-	// Minimum staking value required by bayblon
+	// Minimum staking value required by babylon
 	MinStakingValue btcutil.Amount
 
-	// Maximum staking value required by bayblon
+	// Maximum staking value required by babylon
 	MaxStakingValue btcutil.Amount
+
+	// AllowList expiration height
+	AllowListExpirationHeight uint64
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -65,14 +75,17 @@ type SingleKeyKeyring interface {
 
 type BabylonClient interface {
 	SingleKeyKeyring
+	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
-	Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error)
-	Undelegate(req *UndelegationRequest) (*pv.RelayerTxResponse, error)
+	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
+	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
-	QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error)
+	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
+	GetLatestBlockHeight() (uint64, error)
+	QueryBtcLightClientTipHeight() (uint32, error)
 }
 
 type MockBabylonClient struct {
@@ -86,6 +99,17 @@ var _ BabylonClient = (*MockBabylonClient)(nil)
 
 func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {
+	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) {
+	return &BTCCheckpointParams{
+		ConfirmationTimeBlocks:    m.ClientParams.ConfirmationTimeBlocks,
+		FinalizationTimeoutBlocks: m.ClientParams.FinalizationTimeoutBlocks,
+	}, nil
 }
 
 func (m *MockBabylonClient) Sign(msg []byte) ([]byte, error) {
@@ -114,7 +138,7 @@ func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 	}
 }
 
-func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse, error) {
+func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	msg, err := delegationDataToMsg(dg)
 	if err != nil {
 		return nil, err
@@ -122,10 +146,10 @@ func (m *MockBabylonClient) Delegate(dg *DelegationData) (*pv.RelayerTxResponse,
 
 	m.SentMessages <- msg
 
-	return &pv.RelayerTxResponse{Code: 0}, nil
+	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
-func (m *MockBabylonClient) QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error) {
+func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*FinalityProvidersClientResponse, error) {
 	return &FinalityProvidersClientResponse{
 		FinalityProviders: []FinalityProviderInfo{*m.ActiveFinalityProvider},
 		Total:             1,
@@ -137,27 +161,31 @@ func (m *MockBabylonClient) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*
 		return &FinalityProviderClientResponse{
 			FinalityProvider: *m.ActiveFinalityProvider,
 		}, nil
-	} else {
-		return nil, ErrFinalityProviderDoesNotExist
 	}
+
+	return nil, ErrFinalityProviderDoesNotExist
 }
 
-func (m *MockBabylonClient) QueryHeaderDepth(headerHash *chainhash.Hash) (uint64, error) {
+func (m *MockBabylonClient) QueryHeaderDepth(_ *chainhash.Hash) (uint32, error) {
 	// return always confirmed depth
-	return uint64(m.ClientParams.ConfirmationTimeBlocks) + 1, nil
+	return m.ClientParams.ConfirmationTimeBlocks + 1, nil
 }
 
-func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {
+func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool, error) {
 	return false, nil
 }
 
-func (m *MockBabylonClient) QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error) {
+func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationInfo, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
 func (m *MockBabylonClient) Undelegate(
-	req *UndelegationRequest) (*pv.RelayerTxResponse, error) {
-	return &pv.RelayerTxResponse{Code: 0}, nil
+	_ *UndelegationRequest) (*bct.RelayerTxResponse, error) {
+	return &bct.RelayerTxResponse{Code: 0}, nil
+}
+
+func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
+	return 0, nil
 }
 
 func GetMockClient() *MockBabylonClient {
@@ -199,4 +227,8 @@ func GetMockClient() *MockBabylonClient {
 		SentMessages:           make(chan *types.MsgCreateBTCDelegation),
 		ActiveFinalityProvider: &vi,
 	}
+}
+
+func (m *MockBabylonClient) QueryBtcLightClientTipHeight() (uint32, error) {
+	return 0, nil
 }
