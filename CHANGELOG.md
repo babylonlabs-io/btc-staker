@@ -37,26 +37,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 * [#127](https://github.com/babylonlabs-io/btc-staker/pull/127) Add support for
 taproot addresses bip322 signing
+* [#128](https://github.com/babylonlabs-io/btc-staker/pull/128) Remove watch-staking
+endpoint and post-approval flow
 
 ## v0.15.1
 
 ### Bug fixes
 
-- [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
+* [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
 `btcd` v0.24.2 in `go.mod`
 
 ## v0.15.0
 
 ### Improvements
-- [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
-to create phase-1/phase-2 PoP payload
-- [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
+
+* [#111](https://github.com/babylonlabs*io/btc*staker/pull/111) Add CLI command
+to create phase*1/phase*2 PoP payload
+* [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
 to create payload for phase-1/phase-2 PoP deletion
-- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+* [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
 to sign Cosmos ADR-36 messages
-- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+* [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
 to validate PoP JSON file
-- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+* [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
 to v1.0.0-rc.4
 
 ## v0.14.0
@@ -127,7 +130,7 @@ routine to check for activation after startup
 
 ### Bug fix
 
-- [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
+* [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
 signatures when building unbonding transaction witness
 
 ## v0.7.0
@@ -162,7 +165,6 @@ spends through psbt's
 bitcoind wallets
 * [26](https://github.com/babylonlabs-io/btc-staker/pull/26) Improve phase-1
 commands to check transaction
-
 
 ## v0.5.0
 
