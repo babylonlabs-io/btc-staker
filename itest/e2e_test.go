@@ -732,7 +732,7 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 
 	msg := []byte("test message")
 
-	bip322Signature, err := controller.SignBip322NativeSegwit(msg, segwitAddress)
+	bip322Signature, err := controller.SignBip322Signature(msg, segwitAddress)
 	require.NoError(t, err)
 
 	err = bip322.Verify(msg, bip322Signature, segwitAddress, regtestParams)
@@ -1034,6 +1034,59 @@ func TestPopCreation(t *testing.T) {
 	require.NoError(t, err)
 
 	popResponse, err := popCreator.CreatePop(segwitAddress, "bbn", address)
+	require.NoError(t, err)
+	require.NotNil(t, popResponse)
+}
+
+func TestPopCreationTaprootAddress(t *testing.T) {
+	t.Parallel()
+	manager, err := containers.NewManager(t)
+	require.NoError(t, err)
+	h := NewBitcoindHandler(t, manager)
+	bitcoind := h.Start()
+	passphrase := "pass"
+	walletName := "test-wallet"
+	_ = h.CreateWallet(walletName, passphrase)
+
+	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
+	cfg, c := defaultStakerConfigAndBtc(t, walletName, passphrase, rpcHost)
+
+	// 'bech32m' is taproot address as defined in bip86: https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki
+	taprootAddress, err := c.GetNewAddressType("", "bech32m")
+	require.NoError(t, err)
+	cfg.WalletConfig.WalletName = ""
+	controller, err := walletcontroller.NewRPCWalletController(cfg)
+	require.NoError(t, err)
+
+	keyring, err := keyringcontroller.CreateKeyring(
+		// does not matter for memory keyring
+		"/",
+		"babylon",
+		"memory",
+		nil,
+	)
+	require.NoError(t, err)
+
+	randomKey, _ := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	keyName := "test"
+	err = keyring.ImportPrivKeyHex(keyName, hex.EncodeToString(randomKey.Serialize()), "secp256k1")
+	require.NoError(t, err)
+
+	record, err := keyring.Key(keyName)
+	require.NoError(t, err)
+
+	address, err := record.GetAddress()
+	require.NoError(t, err)
+
+	popCreator := staker.NewPopCreator(controller, keyring)
+	require.NotNil(t, popCreator)
+
+	err = controller.UnlockWallet(30)
+	require.NoError(t, err)
+
+	popResponse, err := popCreator.CreatePop(taprootAddress, "bbn", address)
 	require.NoError(t, err)
 	require.NotNil(t, popResponse)
 }

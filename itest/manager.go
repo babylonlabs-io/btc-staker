@@ -1005,7 +1005,7 @@ func (tm *TestManager) sendWatchedStakingTx(
 
 	babylonAddrHash := tmhash.Sum(tStkData.StakerBabylonAddr.Bytes())
 
-	sig, err := tm.Sa.Wallet().SignBip322NativeSegwit(babylonAddrHash, tm.MinerAddr)
+	sig, err := tm.Sa.Wallet().SignBip322Signature(babylonAddrHash, tm.MinerAddr)
 	require.NoError(t, err)
 
 	pop, err := babylonclient.NewBabylonBip322Pop(
