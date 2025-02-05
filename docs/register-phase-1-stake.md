@@ -34,7 +34,8 @@ requirements and process.
   Specifically, it requires the following:
   - **Global Parameter Versions**: The global parameters file containing the full 
     parameters versions for the phase-1 network you submitted your stake in 
-    (e.g.,[testnet parameters](https://github.com/babylonlabs-io/networks/blob/main/bbn-test-4/parameters/global-params.json)).
+    (e.g.,[phase-1 mainnet
+    parameters](https://github.com/babylonlabs-io/networks/blob/main/bbn-1/parameters/global-params.json)).
   - **Bitcoin Inclusion Height**: The Bitcoin block height in which your staking 
     transaction was included, which will be used in the registration command. 
     You can find this through Bitcoin explorer tools such as 
