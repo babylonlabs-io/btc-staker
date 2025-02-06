@@ -3,7 +3,6 @@ package staker
 import (
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/sirupsen/logrus"
 )
 
@@ -12,46 +11,11 @@ type StakingEvent interface {
 	EventDesc() string
 }
 
-var _ StakingEvent = (*stakingTxBtcConfirmedEvent)(nil)
-var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
 var _ StakingEvent = (*delegationActivatedPreApprovalEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
-
-type stakingTxBtcConfirmedEvent struct {
-	stakingTxHash chainhash.Hash
-	txIndex       uint32
-	blockDepth    uint32
-	blockHash     chainhash.Hash
-	blockHeight   uint32
-	tx            *wire.MsgTx
-	inlusionBlock *wire.MsgBlock
-}
-
-func (event *stakingTxBtcConfirmedEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *stakingTxBtcConfirmedEvent) EventDesc() string {
-	return "STAKING_TX_BTC_CONFIRMED"
-}
-
-type delegationSubmittedToBabylonEvent struct {
-	stakingTxHash              chainhash.Hash
-	babylonBTCDelegationTxHash string
-	unbondingTx                *wire.MsgTx
-	unbondingTime              uint16
-}
-
-func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *delegationSubmittedToBabylonEvent) EventDesc() string {
-	return "DELEGATION_SUBMITTED_TO_BABYLON"
-}
 
 type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
 	stakingTxHash               chainhash.Hash
