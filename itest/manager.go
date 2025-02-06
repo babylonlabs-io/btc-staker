@@ -722,6 +722,7 @@ func (tm *TestManager) createAndRegisterFinalityProviders(t *testing.T, stkData 
 				Moniker: "tester",
 			},
 			pop,
+			"",
 		)
 		require.NoError(t, err)
 

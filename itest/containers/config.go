@@ -1,9 +1,10 @@
 package containers
 
 import (
+	"testing"
+
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 // ImageConfig contains all images and their respective tags

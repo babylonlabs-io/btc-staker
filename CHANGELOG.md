@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Improvements
+
+- [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
+This PR contains a series of PRs on multi-staking support and BTC staking integration.
 * [#127](https://github.com/babylonlabs-io/btc-staker/pull/127) Add support for
 taproot addresses bip322 signing
 
