@@ -795,7 +795,7 @@ func (tm *TestManager) sendStakingTxBTC(
 	return hashFromString
 }
 
-func (tm *TestManager) sendMultipleStakingTx(t *testing.T, tStkData []*testStakingData) []*chainhash.Hash {
+func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testStakingData) []*chainhash.Hash {
 	var hashes []*chainhash.Hash
 	for _, data := range tStkData {
 		txHash := tm.sendStakingTxBTC(t, data)
