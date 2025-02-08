@@ -119,6 +119,8 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
+// btcDelegationFromBtcStakingTx sends a phase 1 tx
+// from a staker to a babylon node
 func (s *StakerService) btcDelegationFromBtcStakingTx(
 	_ *rpctypes.Context,
 	stakerAddress string,
@@ -130,25 +132,25 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	stkTxHash, err := chainhash.NewHashFromStr(btcStkTxHash)
 	if err != nil {
 		s.logger.WithError(err).Info("err parse tx hash")
-		return nil, err
+		return nil, fmt.Errorf("failed to parse tx hash: %w", err)
 	}
 
 	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
 	if err != nil {
 		s.logger.WithError(err).Info("err decode staker addr")
-		return nil, err
+		return nil, fmt.Errorf("failed to decode staker address: %w", err)
 	}
 
 	covenantPks, err := parseCovenantsPubKeyFromHex(covenantPksHex...)
 	if err != nil {
 		s.logger.WithError(err).Infof("err decode covenant pks %s", covenantPksHex)
-		return nil, err
+		return nil, fmt.Errorf("failed to decode covenant public keys: %w", err)
 	}
 
 	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
 	if err != nil {
 		s.logger.WithError(err).Info("err to send phase 1 tx")
-		return nil, err
+		return nil, fmt.Errorf("failed to send phase 1 transaction: %w", err)
 	}
 
 	return &ResultBtcDelegationFromBtcStakingTx{
@@ -156,12 +158,14 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	}, nil
 }
 
+// parseCovenantsPubKeyFromHex parses public keys string to btc public keys
+// the input should be 33 bytes
 func parseCovenantsPubKeyFromHex(covenantPksHex ...string) ([]*btcec.PublicKey, error) {
 	covenantPks := make([]*btcec.PublicKey, len(covenantPksHex))
 	for i, covenantPkHex := range covenantPksHex {
 		covPk, err := parseCovenantPubKeyFromHex(covenantPkHex)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to decode covenant public keys: %w", err)
 		}
 		covenantPks[i] = covPk
 	}
@@ -174,12 +178,12 @@ func parseCovenantsPubKeyFromHex(covenantPksHex ...string) ([]*btcec.PublicKey, 
 func parseCovenantPubKeyFromHex(pkStr string) (*btcec.PublicKey, error) {
 	pkBytes, err := hex.DecodeString(pkStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode public key: %w", err)
 	}
 
 	pk, err := btcec.ParsePubKey(pkBytes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
 
 	return pk, nil
@@ -205,21 +209,49 @@ func (s *StakerService) btcTxBlkDetails(
 	}, nil
 }
 
+// storedStakingDetails returns staking details
+// from staker db
+func (s *StakerService) storedStakingDetails(
+	_ *rpctypes.Context,
+	stakingTxHash string,
+) (*StakingDetails, error) {
+	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse string type of hash to chainhash.Hash: %w", err)
+	}
+
+	storedTx, err := s.staker.GetStoredTransaction(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stored transaction from hash %s: %w", stakingTxHash, err)
+	}
+
+	details := storedTxToStakingDetails(storedTx)
+	return &details, nil
+}
+
+// stakingDetails returns staking details
+// from babylon node directly
 func (s *StakerService) stakingDetails(
 	_ *rpctypes.Context,
 	stakingTxHash string,
 ) (*StakingDetails, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse string type of hash to chainhash.Hash: %w", err)
 	}
 
 	storedTx, err := s.staker.GetStoredTransaction(txHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get stored transaction from hash %s: %w", stakingTxHash, err)
+	}
+
+	di, err := s.staker.BabylonController().QueryDelegationInfo(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query delegation info from babylon: %w", err)
 	}
 
 	details := storedTxToStakingDetails(storedTx)
+	details.StakingState = di.Status
 	return &details, nil
 }
 
@@ -421,6 +453,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
 		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
+		"stored_staking_details":             rpc.NewRPCFunc(s.storedStakingDetails, "stakingTxHash"),
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),

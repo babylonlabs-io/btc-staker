@@ -14,6 +14,21 @@ import (
 	"github.com/urfave/cli"
 )
 
+const (
+	stakingDaemonAddressFlag   = "daemon-address"
+	offsetFlag                 = "offset"
+	limitFlag                  = "limit"
+	fpPksFlag                  = "finality-providers-pks"
+	stakingTransactionHashFlag = "staking-transaction-hash"
+	stakerAddressFlag          = "staker-address"
+	txInclusionHeightFlag      = "tx-inclusion-height"
+)
+
+var (
+	// defaultStakingDaemonAddress is the default address of the staker daemon
+	defaultStakingDaemonAddress = "tcp://127.0.0.1:" + strconv.Itoa(scfg.DefaultRPCPort)
+)
+
 var DaemonCommands = []cli.Command{
 	{
 		Name:      "daemon",
@@ -26,6 +41,7 @@ var DaemonCommands = []cli.Command{
 			babylonFinalityProvidersCmd,
 			stakeCmd,
 			unstakeCmd,
+			storedStakingDetailsCmd,
 			stakingDetailsCmd,
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
@@ -34,20 +50,6 @@ var DaemonCommands = []cli.Command{
 		},
 	},
 }
-
-const (
-	stakingDaemonAddressFlag   = "daemon-address"
-	offsetFlag                 = "offset"
-	limitFlag                  = "limit"
-	fpPksFlag                  = "finality-providers-pks"
-	stakingTransactionHashFlag = "staking-transaction-hash"
-	stakerAddressFlag          = "staker-address"
-	txInclusionHeightFlag      = "tx-inclusion-height"
-)
-
-var (
-	defaultStakingDaemonAddress = "tcp://127.0.0.1:" + strconv.Itoa(scfg.DefaultRPCPort)
-)
 
 var checkDaemonHealthCmd = cli.Command{
 	Name:      "check-health",
@@ -203,9 +205,35 @@ var unbondCmd = cli.Command{
 	Action: unbond,
 }
 
+// stakingDetailsStoredCmd displays details of
+// staking transaction with given hash
+// from the staker db.
+// TODO: removed after test complete
+var storedStakingDetailsCmd = cli.Command{
+	Name:      "staking-details-stored",
+	ShortName: "sds",
+	Usage:     "Displays details of staking transaction with given hash",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  stakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: defaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: storedStakingDetails,
+}
+
+// stakingDetailsCmd displays details of
+// staking transaction with given hash
+// from the babylon node directly
 var stakingDetailsCmd = cli.Command{
 	Name:      "staking-details",
-	ShortName: "sds",
+	ShortName: "sdb",
 	Usage:     "Displays details of staking transaction with given hash",
 	Flags: []cli.Flag{
 		cli.StringFlag{
@@ -455,24 +483,44 @@ func unbond(ctx *cli.Context) error {
 	return nil
 }
 
+// stakingDetailsCmd displays details of staking transaction with given hash
+// from staker db
+// TODO: remove when test complete
+func storedStakingDetails(ctx *cli.Context) error {
+	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("error creating staker service client: %w", err)
+	}
+
+	sctx := context.Background()
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+	result, err := client.StoredStakingDetails(sctx, stakingTransactionHash)
+	if err != nil {
+		return fmt.Errorf("error getting staking details from staker db: %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
+	return nil
+}
+
+// stakingDetailsCmd displays details of staking transaction with given hash
+// from babylon node directly
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating staker service client: %w", err)
 	}
 
 	sctx := context.Background()
-
 	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
-
 	result, err := client.StakingDetails(sctx, stakingTransactionHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting staking details from babylon node: %w", err)
 	}
 
 	helpers.PrintRespJSON(result)
-
 	return nil
 }
 

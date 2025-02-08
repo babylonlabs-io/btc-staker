@@ -404,7 +404,7 @@ type UndelegationInfo struct {
 }
 
 type DelegationInfo struct {
-	Active           bool
+	Status           string
 	UndelegationInfo *UndelegationInfo
 }
 
@@ -834,6 +834,10 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	return err
 }
 
+// QueryDelegationInfo queries a delegation info from babylon
+// In the previous version, DelegationInfo has a Active field, which indicates if the delegation is active.
+// To be widely used, Active field is changed to Status field, including each status represented by a string.
+// To check the ACTIVE state as an usual, compare Status field with BabylonActiveStatus in babylontypes.go
 func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error) {
 	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
 	queryClient := btcstypes.NewQueryClient(clientCtx)
@@ -851,8 +855,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 				// delegation is not found on babylon, do not retry further
 				return retry.Unrecoverable(ErrDelegationNotFound)
 			}
-
-			return err
+			return fmt.Errorf("failed to query delegation info from babylon using client: %w", err)
 		}
 
 		var udi *UndelegationInfo
@@ -863,14 +866,12 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 			for _, covenantSigInfo := range resp.BtcDelegation.UndelegationResponse.CovenantUnbondingSigList {
 				covSig := covenantSigInfo
 				sig, err := covSig.Sig.ToBTCSig()
-
 				if err != nil {
 					return retry.Unrecoverable(fmt.Errorf("malformed covenant sig: %s : %w", err.Error(),
 						ErrInvalidValueReceivedFromBabylonNode))
 				}
 
 				pk, err := covSig.Pk.ToBTCPK()
-
 				if err != nil {
 					return retry.Unrecoverable(fmt.Errorf("malformed covenant pk: %s : %w", err.Error(),
 						ErrInvalidValueReceivedFromBabylonNode))
@@ -885,7 +886,6 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 			}
 
 			tx, _, err := bbntypes.NewBTCTxFromHex(resp.BtcDelegation.UndelegationResponse.UnbondingTxHex)
-
 			if err != nil {
 				return retry.Unrecoverable(fmt.Errorf("malformed unbonding transaction: %s: %w", err.Error(), ErrInvalidValueReceivedFromBabylonNode))
 			}
@@ -903,7 +903,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 		}
 
 		di = &DelegationInfo{
-			Active:           resp.BtcDelegation.Active,
+			Status:           resp.BtcDelegation.StatusDesc,
 			UndelegationInfo: udi,
 		}
 		return nil
@@ -914,22 +914,22 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 			"error":        err,
 		}).Error("Failed to query babylon for the staking transaction")
 	})); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query delegation info: %w", err)
 	}
 
 	return di, nil
 }
 
+// IsTxAlreadyPartOfDelegation checks if the staking transaction
+// is already part of a delegation from babylon.
 func (bc *BabylonController) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {
 	_, err := bc.QueryDelegationInfo(stakingTxHash)
-
 	if err != nil {
 		if errors.Is(err, ErrDelegationNotFound) {
 			return false, nil
 		}
-		return false, err
+		return false, fmt.Errorf("failed to query delegation info: %w", err)
 	}
-
 	return true, nil
 }
 

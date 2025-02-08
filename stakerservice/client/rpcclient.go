@@ -178,6 +178,9 @@ func (c *StakerServiceJSONRPCClient) WithdrawableTransactions(ctx context.Contex
 	return result, nil
 }
 
+// StakingDetails returns staking details
+// from babylon node directly
+// by calling the JSON-RPC "staking_details" method
 func (c *StakerServiceJSONRPCClient) StakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
 	result := new(service.StakingDetails)
 
@@ -185,6 +188,22 @@ func (c *StakerServiceJSONRPCClient) StakingDetails(ctx context.Context, txHash 
 	params["stakingTxHash"] = txHash
 
 	_, err := c.client.Call(ctx, "staking_details", params, result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// StoredStakingDetails returns staking details
+// from staker db directly
+// by calling the JSON-RPC "stored_staking_details" method
+func (c *StakerServiceJSONRPCClient) StoredStakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
+	result := new(service.StakingDetails)
+
+	params := make(map[string]interface{})
+	params["stakingTxHash"] = txHash
+
+	_, err := c.client.Call(ctx, "stored_staking_details", params, result)
 	if err != nil {
 		return nil, err
 	}

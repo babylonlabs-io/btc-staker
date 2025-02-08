@@ -3,6 +3,7 @@ package staker
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
@@ -13,12 +14,21 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/sirupsen/logrus"
 )
 
 // TODO: All functions and types declared in this file should be moved to separate package
 // and be part of new module which will be responsible for communication with babylon chain i.e
 // retrieving data from babylon chain, sending data to babylon chain, queuing data to be send etc.
+
+// These constants are used to indicate the status of a delegation
+// From field in response of BTCDelegation
+const (
+	BabylonPendingStatus  = "PENDING"
+	BabylonVerifiedStatus = "VERIFIED"
+	BabylonActiveStatus   = "ACTIVE"
+)
 
 type inclusionInfo struct {
 	txIndex                 uint32
@@ -145,7 +155,6 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 		select {
 		case <-checkSigTicker.C:
 			di, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
-
 			if err != nil {
 				if errors.Is(err, cl.ErrDelegationNotFound) {
 					// As we only start this handler when we are sure delegation is already on babylon
@@ -161,7 +170,6 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 						"err":           err,
 					}).Error("Error getting delegation info from babylon")
 				}
-
 				continue
 			}
 
@@ -176,7 +184,6 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 			}
 
 			params, err := app.babylonClient.Params()
-
 			if err != nil {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
@@ -187,12 +194,24 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 				continue
 			}
 
-			// we have enough signatures to submit unbonding tx this means that delegation is active
+			// we have enough signatures to submit unbonding tx this means that delegation is available to be activated.
+			// staking tranction is verifed when enough covenant signatures are received.
 			if len(di.UndelegationInfo.CovenantUnbondingSignatures) >= int(params.CovenantQuruomThreshold) {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
 					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
 				}).Debug("Received enough covenant unbonding signatures on babylon")
+
+				if err := app.txTracker.SetTxUnbondingSignaturesReceived(
+					stakingTxHash,
+					babylonCovSigsToDBSigSigs(di.UndelegationInfo.CovenantUnbondingSignatures),
+				); err != nil {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+						"err":           err,
+					}).Error("Error setting unbonding signatures received state for staking tx")
+					continue
+				}
 
 				req := &unbondingTxSignaturesConfirmedOnBabylonEvent{
 					stakingTxHash:               *stakingTxHash,
@@ -251,7 +270,242 @@ func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
 	return signed, nil
 }
 
-// activateVerifiedDelegation must be run in separate goroutine whenever delegation
+// handleActivatedDelegation handles delegation which is already active on babylon
+func (app *App) handleActivatedDelegation(stakingTxHash *chainhash.Hash, stakingTransaction *wire.MsgTx, stakingOutputIndex uint32) {
+	app.logger.WithFields(logrus.Fields{
+		"stakingTxHash": stakingTxHash,
+	}).Debug("Delegation has been activated on the Babylon chain")
+
+	info, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Error("error getting staking transaction details from btc chain")
+
+		// failed to retrieve transaction details from bitcoind node, most probably
+		// connection error, we will try again in next iteration
+		return
+	}
+	if status != walletcontroller.TxInChain {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+		}).Debug("Staking transaction active on babylon, but not on btc chain. Waiting for btc node to catch up")
+		return
+	}
+
+	// delegation has been activated on babylon
+	utils.PushOrQuit[*delegationActivatedEvent](
+		app.delegationActivatedEvChan,
+		&delegationActivatedEvent{
+			stakingTxHash: *stakingTxHash,
+			blockHash:     *info.BlockHash,
+			blockHeight:   info.BlockHeight,
+		},
+		app.quit,
+	)
+}
+
+// handleNotActivatedDelegation handles delegation which is not active yet
+func (app *App) handleNotActivatedDelegation(di *cl.DelegationInfo, stakingTxHash *chainhash.Hash, stakingTransaction *wire.MsgTx, stakingOutputIndex uint32) {
+	// if delegation is not active yet, check transaction is sent to bitcoin chain
+	// covenant signatures are not enough to activate delegation
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Error("Error getting babylon params")
+		// Failed to get params, we cannont do anything, most probably connection error to babylon node
+		// we will try again in next iteration
+		return
+	}
+
+	if len(di.UndelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
+			"required":      params.CovenantQuruomThreshold,
+		}).Debug("Received not enough covenant unbonding signatures on babylon to wait fo activation")
+		return
+	}
+
+	// check if staking tx is already on BTC chain
+	_, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Error("Error checking existence of staking transaction on btc chain")
+		return
+	}
+
+	// waiting for activation since staking transaction is on btc chain
+	if status != walletcontroller.TxNotFound {
+		app.logger.WithFields(logrus.Fields{
+			"status":        status,
+			"stakingTxHash": stakingTxHash,
+		}).Error("Staking transaction found on btc chain, waiting for activation on Babylon")
+		return
+	}
+
+	// at this point we know that:
+	// - delegation is not active and already have quorum of covenant signatures
+	// - staking transaction is not on btc chain
+
+	// check if staking transaction is fully signed
+	isSigned, err := isTransacionFullySigned(stakingTransaction)
+	if err != nil {
+		app.reportCriticialError(
+			*stakingTxHash,
+			err,
+			"Error checking if staking transaction is fully signed",
+		)
+		return
+	}
+
+	// if fully signed, send staking transaction to btc chain
+	if isSigned {
+		if err := app.sendTransactionToBtc(stakingTransaction); err != nil {
+			app.logger.WithFields(logrus.Fields{
+				"err":           err,
+				"stakingTxHash": stakingTxHash,
+			}).Error("failed to sign and send verified staking transaction to btc chain")
+		}
+		return
+	}
+
+	if err := app.signAndSendTransactionToBtc(stakingTransaction); err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"err":           err,
+			"stakingTxHash": stakingTxHash,
+		}).Error("failed to sign and send verified staking transaction to btc chain")
+		return
+	}
+
+	// set staking transaction sent to btc to be checked confirmed in staker db
+	storedTx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
+
+	if err := app.waitForStakingTransactionConfirmation(
+		stakingTxHash,
+		storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].PkScript,
+		params.ConfirmationTimeBlocks,
+		app.currentBestBlockHeight.Load(),
+	); err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"err":           err,
+			"stakingTxHash": stakingTxHash,
+		}).Error("failed to wait for staking transaction confirmation")
+		return
+	}
+}
+
+// signAndSendTransactionToBitcoin signs a transaction and sends it to the bitcoin chain
+// and stores the status to the database with the given txHash
+func (app *App) signAndSendTransactionToBtc(tx *wire.MsgTx) error {
+	// return error if unlocking wallet failed
+	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
+		return fmt.Errorf("failed to unlock wallet to sign staking transaction: %w", err)
+	}
+
+	// staking transaction is not signed, we must sign it before sending to btc chain
+	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	if err != nil {
+		return fmt.Errorf("failed to sign staking transaction: %w", err)
+	}
+
+	// check if staking transaction is fully signed
+	if !fullySigned {
+		return fmt.Errorf("cannot sign staking transction with configured wallet")
+	}
+
+	if err := app.sendTransactionToBtc(signedTx); err != nil {
+		return fmt.Errorf("failed to send staking transaction to btc chain to activate verified delegation: %w", err)
+	}
+	// at this point we send signed staking transaction to BTC chain, we will
+	// still wait for its activation
+	return nil
+}
+
+// sendTransactionToBtc sends a transaction to the bitcoin chain
+// and stores the status to the database with the given txHash
+func (app *App) sendTransactionToBtc(tx *wire.MsgTx) error {
+	_, err := app.wc.SendRawTransaction(tx, true)
+	if err != nil {
+		return fmt.Errorf("failed to send staking transaction to btc chain to activate verified delegation: %w", err)
+	}
+
+	return nil
+}
+
+// waitForStakingTransactionConfirmation waits for staking transaction confirmation
+// on the btc chain
+func (app *App) waitForStakingTransactionConfirmation(
+	stakingTxHash *chainhash.Hash,
+	stakingTxPkScript []byte,
+	requiredBlockDepth uint32,
+	currentBestBlockHeight uint32,
+) error {
+	app.logger.WithFields(logrus.Fields{
+		"stakingTxHash": stakingTxHash.String(),
+	}).Debug("Register waiting for tx confirmation")
+
+	confEvent, err := app.notifier.RegisterConfirmationsNtfn(
+		stakingTxHash,
+		stakingTxPkScript,
+		requiredBlockDepth+1,
+		currentBestBlockHeight,
+		notifier.WithIncludeBlock(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register for staking transaction confirmation: %w", err)
+	}
+
+	app.wg.Add(1)
+	go app.handleBtcConfirmationEvent(*stakingTxHash, confEvent)
+	return nil
+}
+
+// waitForStakingTxConfirmation waits for staking transaction confirmation
+// on the btc chain
+func (app *App) handleBtcConfirmationEvent(
+	txHash chainhash.Hash,
+	ev *notifier.ConfirmationEvent,
+) {
+	defer app.wg.Done()
+
+	for {
+		// TODO add handling of more events like ev.NegativeConf which signals that
+		// transaction have beer reorged out of the chain
+		select {
+		case <-app.quit:
+			// app is quitting, cancel the event
+			ev.Cancel()
+			return
+		case conf := <-ev.Confirmed:
+			txHash := conf.Tx.TxHash()
+			if err := app.txTracker.SetTxConfirmed(
+				&txHash,
+				conf.BlockHash,
+				conf.BlockHeight,
+			); err != nil {
+				app.logger.Fatalf("Error setting state for tx %s: %s", txHash.String(), err)
+			}
+			ev.Cancel()
+			return
+		case u := <-ev.Updates:
+			app.logger.WithFields(logrus.Fields{
+				"btcTxHash": txHash,
+				"confLeft":  u,
+			}).Debugf("Staking transaction received confirmation")
+		}
+	}
+}
+
+// activateVerifiedDelegation is called when we are sure that staking transaction
+// is fully signed by all finality providers.
+// This function must be run in separate goroutine whenever delegation
 // reaches verified state. i.e
 // - delegation is on babylon
 // - delegation has received enough covenant signatures
@@ -267,7 +521,6 @@ func (app *App) activateVerifiedDelegation(
 		select {
 		case <-checkSigTicker.C:
 			di, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
-
 			if err != nil {
 				if errors.Is(err, cl.ErrDelegationNotFound) {
 					// As we only start this handler when we are sure delegation is already on babylon
@@ -283,156 +536,15 @@ func (app *App) activateVerifiedDelegation(
 						"err":           err,
 					}).Error("Error getting delegation info from babylon")
 				}
-
-				continue
-			}
-
-			params, err := app.babylonClient.Params()
-
-			if err != nil {
-				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stakingTxHash,
-					"err":           err,
-				}).Error("Error getting babylon params")
-				// Failed to get params, we cannont do anything, most probably connection error to babylon node
-				// we will try again in next iteration
 				continue
 			}
 
 			// check if check is active
 			// this loop assume there is at least one active vigiliante to activate delegation
-			if di.Active {
-				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stakingTxHash,
-				}).Debug("Delegation has been activated on the Babylon chain")
-
-				info, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
-
-				if err != nil {
-					app.logger.WithFields(logrus.Fields{
-						"stakingTxHash": stakingTxHash,
-						"err":           err,
-					}).Error("error getting staking transaction details from btc chain")
-
-					// failed to retrieve transaction details from bitcoind node, most probably
-					// connection error, we will try again in next iteration
-					continue
-				}
-
-				if status != walletcontroller.TxInChain {
-					app.logger.WithFields(logrus.Fields{
-						"stakingTxHash": stakingTxHash,
-					}).Debug("Staking transaction active on babylon, but not on btc chain. Waiting for btc node to catch up")
-					continue
-				}
-
-				utils.PushOrQuit[*delegationActivatedPreApprovalEvent](
-					app.delegationActivatedPreApprovalEvChan,
-					&delegationActivatedPreApprovalEvent{
-						stakingTxHash: *stakingTxHash,
-						blockHash:     *info.BlockHash,
-						blockHeight:   info.BlockHeight,
-					},
-					app.quit,
-				)
-				return
+			if strings.EqualFold(di.Status, BabylonActiveStatus) {
+				app.handleActivatedDelegation(stakingTxHash, stakingTransaction, stakingOutputIndex)
 			}
-
-			if len(di.UndelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
-				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stakingTxHash,
-					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
-					"required":      params.CovenantQuruomThreshold,
-				}).Debug("Received not enough covenant unbonding signatures on babylon to wait fo activation")
-				continue
-			}
-
-			// check if staking tx is already on BTC chain
-			_, status, err := app.wc.TxDetails(stakingTxHash, stakingTransaction.TxOut[stakingOutputIndex].PkScript)
-
-			if err != nil {
-				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stakingTxHash,
-					"err":           err,
-				}).Error("Error checking existence of staking transaction on btc chain")
-				continue
-			}
-
-			if status != walletcontroller.TxNotFound {
-				app.logger.WithFields(logrus.Fields{
-					"status":        status,
-					"stakingTxHash": stakingTxHash,
-				}).Error("Staking transaction found on btc chain, waiting for activation on Babylon")
-				continue
-			}
-
-			// at this point we know that:
-			// - delegation is not active and already have quorum of covenant signatures
-			// - staking transaction is not on btc chain
-
-			// check if staking transaction is fully signed
-			isSigned, err := isTransacionFullySigned(stakingTransaction)
-
-			if err != nil {
-				app.reportCriticialError(
-					*stakingTxHash,
-					err,
-					"Error checking if staking transaction is fully signed",
-				)
-				return
-			}
-
-			if isSigned {
-				_, err := app.wc.SendRawTransaction(stakingTransaction, true)
-
-				if err != nil {
-					app.logger.WithFields(logrus.Fields{
-						"err":           err,
-						"stakingTxHash": stakingTxHash,
-					}).Error("failed to send staking transaction to btc chain to activate verified delegation")
-				}
-
-				continue
-			}
-
-			err = app.wc.UnlockWallet(defaultWalletUnlockTimeout)
-
-			if err != nil {
-				app.logger.WithFields(logrus.Fields{
-					"err":           err,
-					"stakingTxHash": stakingTxHash,
-				}).Error("failed to unlock wallet to sign staking transaction")
-				continue
-			}
-
-			// staking transaction is not signed, we must sign it before sending to btc chain
-			signedTx, fullySigned, err := app.wc.SignRawTransaction(stakingTransaction)
-
-			if err != nil {
-				app.logger.WithFields(logrus.Fields{
-					"err":           err,
-					"stakingTxHash": stakingTxHash,
-				}).Error("failed to sign staking transaction")
-				continue
-			}
-
-			if !fullySigned {
-				app.logger.WithFields(logrus.Fields{
-					"stakingTxHash": stakingTxHash,
-				}).Debug("cannot sign staking transction with configured wallet")
-				continue
-			}
-
-			_, err = app.wc.SendRawTransaction(signedTx, true)
-
-			if err != nil {
-				app.logger.WithFields(logrus.Fields{
-					"err":           err,
-					"stakingTxHash": stakingTxHash,
-				}).Error("failed to send staking transaction to btc chain to activate verified delegation")
-			}
-			// at this point we send signed staking transaction to BTC chain, we will
-			// still wait for its activation
+			app.handleNotActivatedDelegation(di, stakingTxHash, stakingTransaction, stakingOutputIndex)
 		case <-app.quit:
 			return
 		}

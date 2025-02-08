@@ -788,7 +788,7 @@ func (tm *TestManager) sendStakingTxBTC(
 	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
 	require.NoError(t, err)
 	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
+	require.Equal(t, stakingDetails.StakingState, staker.BabylonPendingStatus)
 
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
@@ -808,7 +808,7 @@ func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testSt
 		stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), hashStr)
 		require.NoError(t, err)
 		require.Equal(t, stakingDetails.StakingTxHash, hashStr)
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
+		require.Equal(t, stakingDetails.StakingState, staker.BabylonPendingStatus)
 	}
 	return hashes
 }
@@ -849,9 +849,25 @@ func (tm *TestManager) spendStakingTxWithHash(t *testing.T, stakingTxHash *chain
 	return spendTxHash, &spendTxValue
 }
 
-func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Hash, expectedState proto.TransactionState) {
+// waitForStakingTxState waits for the staking transaction to reach the expected state
+// queried from the babylon node directly
+func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Hash, expectedState string) {
 	require.Eventually(t, func() bool {
 		detailResult, err := tm.StakerClient.StakingDetails(context.Background(), txHash.String())
+		if err != nil {
+			return false
+		}
+		return detailResult.StakingState == expectedState
+	}, 2*time.Minute, eventuallyPollTime)
+}
+
+// waitForStakingTxStateByStored waits for the staking transaction to reach the expected state
+// queried from the staker db
+// TODO: it only used for querying bitcoin status, should be removed
+// after bitcoin status is available to queried directly from bitcoin node.
+func (tm *TestManager) waitForStakingTxStateByStored(t *testing.T, txHash *chainhash.Hash, expectedState proto.TransactionState) {
+	require.Eventually(t, func() bool {
+		detailResult, err := tm.StakerClient.StoredStakingDetails(context.Background(), txHash.String())
 		if err != nil {
 			return false
 		}

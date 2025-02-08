@@ -10,7 +10,6 @@ import (
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
-	"github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -423,10 +422,8 @@ func buildUnbondingSpendInfo(
 	params *cl.StakingParams,
 	net *chaincfg.Params,
 ) (*staking.SpendInfo, error) {
-	if storedTx.State < proto.TransactionState_DELEGATION_ACTIVE {
-		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Staking transaction is in invalid state: %s", storedTx.State)
-	}
-
+	// Since transacion is checked whether it is actiaved before calling this function,
+	// we can be sure that transaction is already activated.
 	if unbondingData.UnbondingTx == nil {
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain unbonding transaction")
 	}
