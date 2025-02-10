@@ -127,7 +127,7 @@ type App struct {
 
 	stakingRequestedCmdChan                       chan *stakingRequestCmd
 	migrateStakingCmd                             chan *migrateStakingCmd
-	delegationActivatedPreApprovalEvChan          chan *delegationActivatedPreApprovalEvent
+	delegationActivatedEvChan                     chan *delegationActivatedEvent
 	unbondingTxSignaturesConfirmedOnBabylonEvChan chan *unbondingTxSignaturesConfirmedOnBabylonEvent
 	unbondingTxConfirmedOnBtcEvChan               chan *unbondingTxConfirmedOnBtcEvent
 	spendStakeTxConfirmedOnBtcEvChan              chan *spendStakeTxConfirmedOnBtcEvent
@@ -233,7 +233,7 @@ func NewStakerAppFromDeps(
 		// channel to receive requests of transition of BTC staking tx to consumer BTC delegation
 		migrateStakingCmd: make(chan *migrateStakingCmd),
 		// event for when delegation is active on babylon after going through pre approval flow
-		delegationActivatedPreApprovalEvChan: make(chan *delegationActivatedPreApprovalEvent),
+		delegationActivatedEvChan: make(chan *delegationActivatedEvent),
 		// event emitte	d upon transaction which spends staking transaction is confirmed on BTC
 		spendStakeTxConfirmedOnBtcEvChan: make(chan *spendStakeTxConfirmedOnBtcEvent),
 		// channel which receives unbonding signatures from covenant for unbonding
@@ -1224,7 +1224,7 @@ func (app *App) handleStakingEvents() {
 			}
 			app.logStakingEventProcessed(ev)
 
-		case ev := <-app.delegationActivatedPreApprovalEvChan:
+		case ev := <-app.delegationActivatedEvChan:
 			app.logStakingEventReceived(ev)
 			if err := app.txTracker.SetDelegationActiveOnBabylonAndConfirmedOnBtc(
 				&ev.stakingTxHash,

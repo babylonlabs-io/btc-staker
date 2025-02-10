@@ -326,9 +326,9 @@ func (app *App) activateVerifiedDelegation(
 					continue
 				}
 
-				utils.PushOrQuit[*delegationActivatedPreApprovalEvent](
-					app.delegationActivatedPreApprovalEvChan,
-					&delegationActivatedPreApprovalEvent{
+				utils.PushOrQuit[*delegationActivatedEvent](
+					app.delegationActivatedEvChan,
+					&delegationActivatedEvent{
 						stakingTxHash: *stakingTxHash,
 						blockHash:     *info.BlockHash,
 						blockHeight:   info.BlockHeight,
