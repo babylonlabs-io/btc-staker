@@ -1,7 +1,6 @@
 package stakerservice
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	str "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
@@ -20,11 +18,9 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/cometbft/cometbft/libs/log"
 	rpc "github.com/cometbft/cometbft/rpc/jsonrpc/server"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/sirupsen/logrus"
@@ -66,7 +62,6 @@ func storedTxToStakingDetails(storedTx *stakerdb.StoredTransaction) StakingDetai
 		StakingTxHash:  storedTx.StakingTx.TxHash().String(),
 		StakerAddress:  storedTx.StakerAddress,
 		StakingState:   storedTx.State.String(),
-		Watched:        storedTx.Watched,
 		TransactionIdx: strconv.FormatUint(storedTx.StoredTransactionIdx, 10),
 	}
 }
@@ -80,7 +75,6 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	stakingAmount int64,
 	fpBtcPks []string,
 	stakingTimeBlocks int64,
-	sendToBabylonFirst bool,
 ) (*ResultStake, error) {
 	if stakingAmount <= 0 {
 		return nil, fmt.Errorf("staking amount must be positive")
@@ -115,7 +109,7 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 
 	stakingTimeUint16 := uint16(stakingTimeBlocks)
 
-	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16, sendToBabylonFirst)
+	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16)
 	if err != nil {
 		return nil, err
 	}
@@ -401,216 +395,6 @@ func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, li
 	}, nil
 }
 
-func decodeBtcTx(txHex string) (*wire.MsgTx, error) {
-	txBytes, err := hex.DecodeString(txHex)
-
-	if err != nil {
-		return nil, err
-	}
-
-	var txMsg wire.MsgTx
-
-	err = txMsg.Deserialize(bytes.NewReader(txBytes))
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &txMsg, nil
-}
-
-func decodeBtcPk(pkHex string) (*btcec.PublicKey, error) {
-	pkBytes, err := hex.DecodeString(pkHex)
-
-	if err != nil {
-		return nil, err
-	}
-
-	pk, err := schnorr.ParsePubKey(pkBytes)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return pk, nil
-}
-
-func parseTimeBtcLock(timelockTime int) (uint16, error) {
-	if timelockTime <= 0 {
-		return 0, fmt.Errorf("staking time must be positive")
-	}
-
-	if timelockTime > math.MaxUint16 {
-		return 0, fmt.Errorf("staking time %d is too big", timelockTime)
-	}
-
-	return uint16(timelockTime), nil
-}
-
-func parseStakingValue(stakingValue int) (btcutil.Amount, error) {
-	if stakingValue <= 0 {
-		return 0, fmt.Errorf("staking value must be positive")
-	}
-
-	return btcutil.Amount(stakingValue), nil
-}
-
-func (s *StakerService) watchStaking(
-	_ *rpctypes.Context,
-	stakingTx string,
-	stakingTime int,
-	stakingValue int,
-	stakerBtcPk string,
-	fpBtcPks []string,
-	slashingTx string,
-	slashingTxSig string,
-	stakerBabylonAddr string,
-	stakerAddress string,
-	stakerBtcSig string,
-	unbondingTx string,
-	slashUnbondingTx string,
-	slashUnbondingTxSig string,
-	unbondingTime int,
-	popType int,
-) (*ResultStake, error) {
-	stkTx, err := decodeBtcTx(stakingTx)
-	if err != nil {
-		return nil, err
-	}
-
-	slshTx, err := decodeBtcTx(slashingTx)
-	if err != nil {
-		return nil, err
-	}
-
-	stakerBtcPkParsed, err := decodeBtcPk(stakerBtcPk)
-
-	if err != nil {
-		return nil, err
-	}
-
-	fpPubKeys := make([]*btcec.PublicKey, 0)
-
-	for _, fpPk := range fpBtcPks {
-		fpPkBytes, err := hex.DecodeString(fpPk)
-		if err != nil {
-			return nil, err
-		}
-
-		fpSchnorrKey, err := schnorr.ParsePubKey(fpPkBytes)
-		if err != nil {
-			return nil, err
-		}
-
-		fpPubKeys = append(fpPubKeys, fpSchnorrKey)
-	}
-
-	stakingTimeUint16, err := parseTimeBtcLock(stakingTime)
-
-	if err != nil {
-		return nil, err
-	}
-
-	stakingValueBtc, err := parseStakingValue(stakingValue)
-
-	if err != nil {
-		return nil, err
-	}
-
-	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
-	if err != nil {
-		return nil, err
-	}
-
-	slashTxSigBytes, err := hex.DecodeString(slashingTxSig)
-	if err != nil {
-		return nil, err
-	}
-
-	slashingTxSchnorSig, err := schnorr.ParseSignature(slashTxSigBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	stakerBtcSigBytes, err := hex.DecodeString(stakerBtcSig)
-	if err != nil {
-		return nil, err
-	}
-
-	btcPopType, err := babylonclient.IntToPopType(popType)
-	if err != nil {
-		return nil, err
-	}
-
-	proofOfPossesion, err := babylonclient.NewBabylonPop(btcPopType, stakerBtcSigBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	// Unbonding related data
-	unbTx, err := decodeBtcTx(unbondingTx)
-	if err != nil {
-		return nil, err
-	}
-
-	slshUnbTx, err := decodeBtcTx(slashUnbondingTx)
-	if err != nil {
-		return nil, err
-	}
-
-	slashUnbTxSigBytes, err := hex.DecodeString(slashUnbondingTxSig)
-	if err != nil {
-		return nil, err
-	}
-
-	slashUnbTxSig, err := schnorr.ParseSignature(slashUnbTxSigBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	unbTime, err := parseTimeBtcLock(unbondingTime)
-	if err != nil {
-		return nil, err
-	}
-
-	bbnStakerAddr, err := sdk.AccAddressFromBech32(stakerBabylonAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	bbnSignerAddrInConfig := s.staker.BabylonController().GetKeyAddress()
-	if !bbnStakerAddr.Equals(bbnSignerAddrInConfig) {
-		return nil, fmt.Errorf(
-			"bbn staking address in config: %s must match with stakerBabylonAddr in parameters: %s",
-			bbnSignerAddrInConfig.String(), bbnStakerAddr.String(),
-		)
-	}
-
-	hash, err := s.staker.WatchStaking(
-		stkTx,
-		stakingTimeUint16,
-		stakingValueBtc,
-		fpPubKeys,
-		slshTx,
-		slashingTxSchnorSig,
-		bbnStakerAddr,
-		stakerBtcPkParsed,
-		stakerAddr,
-		proofOfPossesion,
-		unbTx,
-		slshUnbTx,
-		slashUnbTxSig,
-		unbTime,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ResultStake{
-		TxHash: hash.String(),
-	}, nil
-}
-
 func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string) (*UnbondingResponse, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 
@@ -634,7 +418,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		// info AP
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
+		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
 		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
@@ -642,8 +426,6 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
 		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
-		// watch api
-		"watch_staking_tx": rpc.NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
 
 		// Wallet api
 		"list_outputs": rpc.NewRPCFunc(s.listOutputs, ""),
