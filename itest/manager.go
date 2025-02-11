@@ -33,7 +33,6 @@ import (
 	ckpttypes "github.com/babylonlabs-io/babylon/x/checkpointing/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/metrics"
-	"github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
@@ -66,6 +65,7 @@ var (
 
 	eventuallyWaitTimeOut = 10 * time.Second
 	eventuallyPollTime    = 250 * time.Millisecond
+	eventuallyTimeout     = 3 * time.Minute
 
 	bitcoindUser = "user"
 	bitcoindPass = "pass"
@@ -767,6 +767,8 @@ func (tm *TestManager) mineBlock(t *testing.T) *wire.MsgBlock {
 	return header
 }
 
+// sendStakingTxBTC sends a staking transaction to Babylon
+// TODO: modify function name to be more descriptive
 func (tm *TestManager) sendStakingTxBTC(
 	t *testing.T,
 	stkData *testStakingData,
@@ -786,11 +788,6 @@ func (tm *TestManager) sendStakingTxBTC(
 	require.NoError(t, err)
 	txHash := res.TxHash
 
-	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
-	require.NoError(t, err)
-	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
-
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
 	return hashFromString
@@ -803,14 +800,6 @@ func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testSt
 		hashes = append(hashes, txHash)
 	}
 
-	for _, txHash := range hashes {
-		txHash := txHash
-		hashStr := txHash.String()
-		stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), hashStr)
-		require.NoError(t, err)
-		require.Equal(t, stakingDetails.StakingTxHash, hashStr)
-		require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
-	}
 	return hashes
 }
 
@@ -850,14 +839,45 @@ func (tm *TestManager) spendStakingTxWithHash(t *testing.T, stakingTxHash *chain
 	return spendTxHash, &spendTxValue
 }
 
-func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Hash, expectedState proto.TransactionState) {
+// waitForStakingTxState waits for the staking transaction to reach the expected state
+// queried from the babylon node directly
+func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Hash, expectedState string) {
 	require.Eventually(t, func() bool {
 		detailResult, err := tm.StakerClient.StakingDetails(context.Background(), txHash.String())
 		if err != nil {
 			return false
 		}
-		return detailResult.StakingState == expectedState.String()
-	}, 2*time.Minute, eventuallyPollTime)
+		return detailResult.StakingState == expectedState
+	}, eventuallyTimeout, eventuallyPollTime)
+}
+
+func (tm *TestManager) waitForTxOutputSpent(t *testing.T, unbondingTxHash *chainhash.Hash) {
+	require.Eventually(t, func() bool {
+		unbondingOutputSpent, err := tm.Sa.Wallet().OutputSpent(unbondingTxHash, 0)
+		if err != nil {
+			return false
+		}
+		return unbondingOutputSpent
+	}, eventuallyTimeout, eventuallyPollTime)
+}
+
+func (tm *TestManager) waitForUnbondingTxConfirmedOnBtc(t *testing.T, txHash, unbondingTxHash *chainhash.Hash) {
+	require.Eventually(t, func() bool {
+		// 1. Check confirmations
+		res, err := tm.Sa.Wallet().TxVerbose(unbondingTxHash)
+		if err != nil {
+			return false
+		}
+		if res.Confirmations >= staker.UnbondingTxConfirmations {
+			storedTx, err := tm.Sa.GetTxTracker().GetTransaction(txHash)
+			if err != nil {
+				return false
+			}
+			return storedTx.UnbondingTxConfirmedOnBtc()
+		}
+
+		return false
+	}, eventuallyTimeout, eventuallyPollTime)
 }
 
 func (tm *TestManager) walletUnspentsOutputsContainsOutput(t *testing.T, from btcutil.Address, withValue btcutil.Amount) bool {

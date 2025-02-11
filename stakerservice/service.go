@@ -61,7 +61,6 @@ func storedTxToStakingDetails(storedTx *stakerdb.StoredTransaction) StakingDetai
 	return StakingDetails{
 		StakingTxHash:  storedTx.StakingTx.TxHash().String(),
 		StakerAddress:  storedTx.StakerAddress,
-		StakingState:   storedTx.State.String(),
 		TransactionIdx: strconv.FormatUint(storedTx.StoredTransactionIdx, 10),
 	}
 }
@@ -211,15 +210,21 @@ func (s *StakerService) stakingDetails(
 ) (*StakingDetails, error) {
 	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse string type of hash to chainhash.Hash: %w", err)
 	}
 
 	storedTx, err := s.staker.GetStoredTransaction(txHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get stored transaction from hash %s: %w", stakingTxHash, err)
+	}
+
+	di, err := s.staker.BabylonController().QueryBTCDelegation(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query delegation info from babylon: %w", err)
 	}
 
 	details := storedTxToStakingDetails(storedTx)
+	details.StakingState = di.BtcDelegation.GetStatusDesc()
 	return &details, nil
 }
 

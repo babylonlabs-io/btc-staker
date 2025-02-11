@@ -41,19 +41,6 @@ type TrackedTransactionStore struct {
 	db kvdb.Backend
 }
 
-type ProofOfPossession struct {
-	BtcSigType            uint32
-	BtcSigOverBabylonAddr []byte
-}
-
-func NewProofOfPossession(
-	btcSchnorrSigOverBabylonAddr []byte,
-) *ProofOfPossession {
-	return &ProofOfPossession{
-		BtcSigOverBabylonAddr: btcSchnorrSigOverBabylonAddr,
-	}
-}
-
 type PubKeySigPair struct {
 	Signature *schnorr.Signature
 	PubKey    *btcec.PublicKey
@@ -111,17 +98,12 @@ type BtcConfirmationInfo struct {
 }
 
 type StoredTransaction struct {
-	StoredTransactionIdx      uint64
-	StakingTx                 *wire.MsgTx
-	StakingOutputIndex        uint32
-	StakingTxConfirmationInfo *BtcConfirmationInfo
-	StakingTime               uint16
-	FinalityProvidersBtcPks   []*btcec.PublicKey
-	Pop                       *ProofOfPossession
-	// Returning address as string, to avoid having to know how to decode address
-	// which requires knowing the network we are on
-	StakerAddress              string
-	State                      proto.TransactionState
+	StoredTransactionIdx       uint64
+	StakingTx                  *wire.MsgTx
+	StakingOutputIndex         uint32
+	StakingTxConfirmationInfo  *BtcConfirmationInfo
+	StakingTime                uint16
+	StakerAddress              string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
 	UnbondingTxData            *UnbondingStoreData
 	BabylonBTCDelegationTxHash string
 }
@@ -325,28 +307,13 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 		return nil, fmt.Errorf("staking time is too large. Max value is %d", math.MaxUint16)
 	}
 
-	fpPubkeys := make([]*btcec.PublicKey, len(ttx.FinalityProvidersBtcPks))
-	for i, pk := range ttx.FinalityProvidersBtcPks {
-		fpPubkeys[i], err = schnorr.ParsePubKey(pk)
-
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return &StoredTransaction{
-		StoredTransactionIdx:      ttx.TrackedTransactionIdx,
-		StakingTx:                 &stakingTx,
-		StakingOutputIndex:        ttx.StakingOutputIdx,
-		StakingTxConfirmationInfo: stakingTxConfgInfo,
-		StakingTime:               uint16(ttx.StakingTime),
-		FinalityProvidersBtcPks:   fpPubkeys,
-		Pop: &ProofOfPossession{
-			BtcSigType:            ttx.BtcSigType,
-			BtcSigOverBabylonAddr: ttx.BtcSigOverBbnStakerAddr,
-		},
+		StoredTransactionIdx:       ttx.TrackedTransactionIdx,
+		StakingTx:                  &stakingTx,
+		StakingOutputIndex:         ttx.StakingOutputIdx,
+		StakingTxConfirmationInfo:  stakingTxConfgInfo,
+		StakingTime:                uint16(ttx.StakingTime),
 		StakerAddress:              ttx.StakerAddress,
-		State:                      ttx.State,
 		UnbondingTxData:            utd,
 		BabylonBTCDelegationTxHash: ttx.BabylonBTCDelegationTxHash,
 	}, nil
@@ -485,28 +452,11 @@ func CreateTrackedTransaction(
 	btcTx *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
 	stakerAddress btcutil.Address,
 ) (*StoredTransaction, error) {
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
 	if err != nil {
 		return nil, err
-	}
-
-	if len(fpPubKeys) == 0 {
-		return nil, fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return nil, fmt.Errorf("cannot add transaction without proof of possession")
 	}
 
 	msg := proto.TrackedTransaction{
@@ -516,11 +466,7 @@ func CreateTrackedTransaction(
 		StakingOutputIdx:             stakingOutputIndex,
 		StakerAddress:                stakerAddress.EncodeAddress(),
 		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
 		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
 		UnbondingTxData:              nil,
 	}
 
@@ -566,12 +512,11 @@ func getInputData(tx *wire.MsgTx) (*inputData, error) {
 	}, nil
 }
 
+// AddTransactionSentToBabylon adds a transaction sent to Babylon
 func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	btcTx *wire.MsgTx,
 	stakingOutputIndex uint32,
 	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
 	stakerAddress btcutil.Address,
 	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
@@ -580,27 +525,11 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
 	if err != nil {
 		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
-	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return fmt.Errorf("cannot add transaction without proof of possession")
-	}
-
 	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-
 	if err != nil {
 		return fmt.Errorf("failed to create unbonding transaction data: %w", err)
 	}
@@ -612,11 +541,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		StakingOutputIdx:             stakingOutputIndex,
 		StakerAddress:                stakerAddress.EncodeAddress(),
 		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
 		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BABYLON,
 		UnbondingTxData:              update,
 		BabylonBTCDelegationTxHash:   btcDelTxHash,
 	}
@@ -632,56 +557,7 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	)
 }
 
-func (c *TrackedTransactionStore) AddTransactionSentToBTC(
-	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
-	stakerAddress btcutil.Address,
-) error {
-	txHash := btcTx.TxHash()
-	txHashBytes := txHash[:]
-	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
-	if err != nil {
-		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
-	}
-
-	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return fmt.Errorf("cannot add transaction without proof of possession")
-	}
-
-	msg := proto.TrackedTransaction{
-		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
-		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
-		UnbondingTxData:              nil,
-	}
-
-	return c.addTransactionInternal(
-		txHashBytes, &msg, nil,
-	)
-}
-
+// setTxState sets the state of a transaction
 func (c *TrackedTransactionStore) setTxState(
 	txHash *chainhash.Hash,
 	stateTransitionFn func(*proto.TrackedTransaction) error,
@@ -728,57 +604,17 @@ func (c *TrackedTransactionStore) setTxState(
 			return err
 		}
 
-		// delegation has been activaten remove used inputs if any exists
-		// TODO(konrad): This is not pretty architecture wise and a bit broken in scenario
-		// that delegation is never activated
-		if storedTx.State == proto.TransactionState_DELEGATION_ACTIVE {
-			inputDataBucket := tx.ReadWriteBucket(inputsDataBucketName)
-			if inputDataBucket == nil {
-				return ErrCorruptedTransactionsDB
-			}
-
-			var stakingTx wire.MsgTx
-			err := stakingTx.Deserialize(bytes.NewReader(storedTx.StakingTransaction))
-
-			if err != nil {
-				return err
-			}
-
-			for _, input := range stakingTx.TxIn {
-				input, err := outpointBytes(&input.PreviousOutPoint)
-
-				if err != nil {
-					return err
-				}
-
-				// if key does not exist, this operation is no-op
-				err = inputDataBucket.Delete(input)
-
-				if err != nil {
-					return err
-				}
-			}
-		}
 		return nil
 	})
 }
 
-func (c *TrackedTransactionStore) SetTxSentToBtc(txHash *chainhash.Hash) error {
-	setTxSentToBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_SENT_TO_BTC
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSentToBtc)
-}
-
+// SetTxConfirmed sets the state of a transaction
 func (c *TrackedTransactionStore) SetTxConfirmed(
 	txHash *chainhash.Hash,
 	blockHash *chainhash.Hash,
 	blockHeight uint32,
 ) error {
 	setTxConfirmed := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_CONFIRMED_ON_BTC
 		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
 			BlockHash:   blockHash.CloneBytes(),
 			BlockHeight: blockHeight,
@@ -789,56 +625,12 @@ func (c *TrackedTransactionStore) SetTxConfirmed(
 	return c.setTxState(txHash, setTxConfirmed)
 }
 
-func (c *TrackedTransactionStore) SetTxSentToBabylon(
-	txHash *chainhash.Hash,
-	babylonBTCDelegationTxHash string,
-	unbondingTx *wire.MsgTx,
-	unbondingTime uint16,
-) error {
-	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-	if err != nil {
-		return err
-	}
-
-	setTxSentToBabylon := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData != nil {
-			return fmt.Errorf("cannot set unbonding started, because unbonding tx data already exists: %w", ErrInvalidUnbondingDataUpdate)
-		}
-
-		tx.State = proto.TransactionState_SENT_TO_BABYLON
-		tx.UnbondingTxData = update
-		tx.BabylonBTCDelegationTxHash = babylonBTCDelegationTxHash
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSentToBabylon)
-}
-
-func (c *TrackedTransactionStore) SetTxSpentOnBtc(txHash *chainhash.Hash) error {
-	setTxSpentOnBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_SPENT_ON_BTC
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSpentOnBtc)
-}
-
-func (c *TrackedTransactionStore) SetDelegationActiveOnBabylon(txHash *chainhash.Hash) error {
-	setTxSpentOnBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_DELEGATION_ACTIVE
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSpentOnBtc)
-}
-
 func (c *TrackedTransactionStore) SetDelegationActiveOnBabylonAndConfirmedOnBtc(
 	txHash *chainhash.Hash,
 	blockHash *chainhash.Hash,
 	blockHeight uint32,
 ) error {
 	setDelegationActiveOnBabylon := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_DELEGATION_ACTIVE
 		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
 			BlockHash:   blockHash.CloneBytes(),
 			BlockHeight: blockHeight,
@@ -861,7 +653,6 @@ func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
 		if len(tx.UnbondingTxData.CovenantSignatures) > 0 {
 			return fmt.Errorf("cannot set unbonding signatures received, because unbonding signatures already exist: %w", ErrInvalidUnbondingDataUpdate)
 		}
-		tx.State = proto.TransactionState_VERIFIED
 		tx.UnbondingTxData.CovenantSignatures = covenantSigsToProto(covenantSignatures)
 		return nil
 	}
@@ -879,7 +670,6 @@ func (c *TrackedTransactionStore) SetTxUnbondingConfirmedOnBtc(
 			return fmt.Errorf("cannot set unbonding confirmed on btc, because unbonding tx data does not exist: %w", ErrUnbondingDataNotFound)
 		}
 
-		tx.State = proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC
 		tx.UnbondingTxData.UnbondingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
 			BlockHash:   blockHash.CloneBytes(),
 			BlockHeight: blockHeight,
@@ -997,7 +787,7 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 			}
 
 			// we have query only for withdrawable transaction i.e transactions which
-			// either in SENT_TO_BABYLON or DELEGATION_ACTIVE or UNBONDING_CONFIRMED_ON_BTC state and which timelock has expired
+			// either in states and which timelock has expired
 			if q.withdrawableTransactionsFilter != nil {
 				var confirmationHeight uint32
 				var scriptTimeLock uint16

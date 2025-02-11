@@ -8,9 +8,9 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	"github.com/babylonlabs-io/babylon/types"
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
-	"github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -29,14 +29,6 @@ type spendStakeTxInfo struct {
 	fundingOutput          *wire.TxOut
 	fundingOutputSpendInfo *staking.SpendInfo
 	calculatedFee          btcutil.Amount
-}
-
-// babylonPopToDBPop receives already validated pop from external sources and converts it to database representation
-func babylonPopToDBPop(pop *cl.BabylonPop) *stakerdb.ProofOfPossession {
-	return &stakerdb.ProofOfPossession{
-		BtcSigType:            pop.PopTypeNum(),
-		BtcSigOverBabylonAddr: pop.BtcSig,
-	}
 }
 
 func babylonCovSigToDBCovSig(covSig cl.CovenantSignatureInfo) stakerdb.PubKeySigPair {
@@ -111,6 +103,7 @@ func slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
 	storedTx *stakerdb.StoredTransaction,
+	fpBtcPubkeys []*btcec.PublicKey,
 	net *chaincfg.Params,
 ) (*wire.MsgTx, *staking.SpendInfo, error) {
 	stakerPubKey := delegationData.stakerPublicKey
@@ -133,7 +126,7 @@ func slashingTxForStakingTx(
 
 	stakingInfo, err := staking.BuildStakingInfo(
 		stakerPubKey,
-		storedTx.FinalityProvidersBtcPks,
+		fpBtcPubkeys,
 		delegationData.babylonParams.CovenantPks,
 		delegationData.babylonParams.CovenantQuruomThreshold,
 		storedTx.StakingTime,
@@ -155,8 +148,8 @@ func slashingTxForStakingTx(
 }
 
 func createDelegationData(
+	req *sendDelegationRequest,
 	stakerBtcPk *btcec.PublicKey,
-	inclusionInfo *inclusionInfo,
 	storedTx *stakerdb.StoredTransaction,
 	slashingTx *wire.MsgTx,
 	slashingTxSignature *schnorr.Signature,
@@ -165,6 +158,7 @@ func createDelegationData(
 ) *cl.DelegationData {
 	var incInfo *cl.StakingTransactionInclusionInfo
 
+	inclusionInfo := req.inclusionInfo
 	if inclusionInfo != nil {
 		inclusionBlockHash := inclusionInfo.inclusionBlock.BlockHash()
 
@@ -180,12 +174,12 @@ func createDelegationData(
 		StakingTransactionInclusionInfo: incInfo,
 		StakingTime:                     storedTx.StakingTime,
 		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
-		FinalityProvidersBtcPks:         storedTx.FinalityProvidersBtcPks,
+		FinalityProvidersBtcPks:         req.fpBtcPubkeys,
 		StakerBtcPk:                     stakerBtcPk,
 		SlashingTransaction:             slashingTx,
 		SlashingTransactionSig:          slashingTxSignature,
 		BabylonStakerAddr:               babylonStakerAddr,
-		BabylonPop:                      storedTx.Pop,
+		BabylonPop:                      req.pop,
 		Ud:                              undelegationData,
 	}
 
@@ -227,6 +221,7 @@ func createSpendStakeTx(
 
 func createSpendStakeTxFromStoredTx(
 	stakerBtcPk *btcec.PublicKey,
+	fpBtcPubkeys []*btcec.PublicKey,
 	covenantPublicKeys []*btcec.PublicKey,
 	covenantThreshold uint32,
 	storedtx *stakerdb.StoredTransaction,
@@ -242,7 +237,7 @@ func createSpendStakeTxFromStoredTx(
 	if storedtx.StakingTxConfirmedOnBtc() && !storedtx.UnbondingTxConfirmedOnBtc() {
 		stakingInfo, err := staking.BuildStakingInfo(
 			stakerBtcPk,
-			storedtx.FinalityProvidersBtcPks,
+			fpBtcPubkeys,
 			covenantPublicKeys,
 			covenantThreshold,
 			storedtx.StakingTime,
@@ -286,7 +281,7 @@ func createSpendStakeTxFromStoredTx(
 
 		unbondingInfo, err := staking.BuildUnbondingInfo(
 			stakerBtcPk,
-			storedtx.FinalityProvidersBtcPks,
+			fpBtcPubkeys,
 			covenantPublicKeys,
 			covenantThreshold,
 			data.UnbondingTime,
@@ -326,7 +321,7 @@ func createSpendStakeTxFromStoredTx(
 			calculatedFee:          *calculatedFee,
 		}, nil
 	}
-	return nil, fmt.Errorf("cannot build spend stake transactions.Staking transaction is in invalid state: %s", storedtx.State)
+	return nil, fmt.Errorf("cannot build spend stake transactions. Staking transaction is in invalid state")
 }
 
 type UnbondingSlashingDesc struct {
@@ -347,6 +342,7 @@ func createUndelegationData(
 	unbondingTime uint16,
 	slashingFee btcutil.Amount,
 	slashingRate sdkmath.LegacyDec,
+	fpBtcPubkeys []*btcec.PublicKey,
 	btcNetwork *chaincfg.Params,
 ) (*UnbondingSlashingDesc, error) {
 	stakingTxHash := storedTx.StakingTx.TxHash()
@@ -369,7 +365,7 @@ func createUndelegationData(
 
 	unbondingInfo, err := staking.BuildUnbondingInfo(
 		stakerPubKey,
-		storedTx.FinalityProvidersBtcPks,
+		fpBtcPubkeys,
 		covenantPubKeys,
 		covenantThreshold,
 		unbondingTime,
@@ -418,15 +414,12 @@ func createUndelegationData(
 // buildUnbondingSpendInfo
 func buildUnbondingSpendInfo(
 	stakerPubKey *btcec.PublicKey,
+	fpBtcPubkeys []*btcec.PublicKey,
 	storedTx *stakerdb.StoredTransaction,
 	unbondingData *stakerdb.UnbondingStoreData,
 	params *cl.StakingParams,
 	net *chaincfg.Params,
 ) (*staking.SpendInfo, error) {
-	if storedTx.State < proto.TransactionState_DELEGATION_ACTIVE {
-		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Staking transaction is in invalid state: %s", storedTx.State)
-	}
-
 	if unbondingData.UnbondingTx == nil {
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain unbonding transaction")
 	}
@@ -437,7 +430,7 @@ func buildUnbondingSpendInfo(
 
 	stakingInfo, err := staking.BuildStakingInfo(
 		stakerPubKey,
-		storedTx.FinalityProvidersBtcPks,
+		fpBtcPubkeys,
 		params.CovenantPks,
 		params.CovenantQuruomThreshold,
 		storedTx.StakingTime,
@@ -471,4 +464,17 @@ func haveDuplicates(btcPKs []*btcec.PublicKey) bool {
 	}
 
 	return false
+}
+
+// convertFpBtcPkToBtcPk converts a slice of finality provider btc pks to a slice of btc pks
+func convertFpBtcPkToBtcPk(fpBtcPKs []types.BIP340PubKey) ([]*btcec.PublicKey, error) {
+	fpPubkeys := make([]*btcec.PublicKey, len(fpBtcPKs))
+	for i, pk := range fpBtcPKs {
+		fpPubkey, err := schnorr.ParsePubKey(pk)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse finality provider btc pk: %w", err)
+		}
+		fpPubkeys[i] = fpPubkey
+	}
+	return fpPubkeys, nil
 }

@@ -15,7 +15,7 @@ import (
 	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
-	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -158,11 +158,6 @@ func (tm *TestManager) sendStakingTxWithCZFPs(t *testing.T, data *testStakingDat
 	require.NoError(t, err)
 	txHash := res.TxHash
 
-	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
-	require.NoError(t, err)
-	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BABYLON.String())
-
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
 	require.NoError(t, err)
 
@@ -198,19 +193,16 @@ func TestRestakingToConsumerChains(t *testing.T) {
 
 	tm.createAndRegisterFinalityProvidersWithCZ(t, data)
 
-	// tm.sendStakingTxWithCZFPs(t, data)
 	txHash := tm.sendStakingTxWithCZFPs(t, data)
-
 	go tm.mineNEmptyBlocks(t, 6, true)
-	// must wait for all covenant signatures to be received, to be able to unbond
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
 
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
 	require.NoError(t, err)
 	require.Len(t, pend, 1)
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_VERIFIED)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonVerifiedStatus)
 
 	require.Eventually(t, func() bool {
 		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{txHash})
@@ -234,5 +226,5 @@ func TestRestakingToConsumerChains(t *testing.T) {
 		proof,
 	)
 	require.NoError(t, err)
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
 }

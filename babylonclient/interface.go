@@ -2,11 +2,12 @@ package babylonclient
 
 import (
 	"fmt"
+
 	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	"github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -84,6 +85,8 @@ type BabylonClient interface {
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
 	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
+	QueryBTCDelegation(stakingTxHash *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error)
+	GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
 	QueryBtcLightClientTipHeight() (uint32, error)
 }
@@ -91,7 +94,7 @@ type BabylonClient interface {
 type MockBabylonClient struct {
 	ClientParams           *StakingParams
 	babylonKey             *secp256k1.PrivKey
-	SentMessages           chan *types.MsgCreateBTCDelegation
+	SentMessages           chan *btcstypes.MsgCreateBTCDelegation
 	ActiveFinalityProvider *FinalityProviderInfo
 }
 
@@ -179,6 +182,14 @@ func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationI
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
+func (m *MockBabylonClient) QueryBTCDelegation(_ *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error) {
+	return nil, fmt.Errorf("delegation do not exist")
+}
+
+func (m *MockBabylonClient) GetUndelegationInfo(_ *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error) {
+	return nil, fmt.Errorf("delegation do not exist")
+}
+
 func (m *MockBabylonClient) Undelegate(
 	_ *UndelegationRequest) (*bct.RelayerTxResponse, error) {
 	return &bct.RelayerTxResponse{Code: 0}, nil
@@ -224,7 +235,7 @@ func GetMockClient() *MockBabylonClient {
 			SlashingRate:              sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
 		},
 		babylonKey:             priv,
-		SentMessages:           make(chan *types.MsgCreateBTCDelegation),
+		SentMessages:           make(chan *btcstypes.MsgCreateBTCDelegation),
 		ActiveFinalityProvider: &vi,
 	}
 }

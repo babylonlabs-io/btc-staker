@@ -21,7 +21,6 @@ import (
 	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
-	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -376,7 +375,7 @@ type DelegationData struct {
 	SlashingTransactionSig          *schnorr.Signature
 	BabylonStakerAddr               sdk.AccAddress
 	StakerBtcPk                     *btcec.PublicKey
-	BabylonPop                      *stakerdb.ProofOfPossession
+	BabylonPop                      *BabylonPop
 	Ud                              *UndelegationData
 }
 
@@ -405,7 +404,7 @@ type UndelegationInfo struct {
 }
 
 type DelegationInfo struct {
-	Active           bool
+	Status           string
 	UndelegationInfo *UndelegationInfo
 }
 
@@ -483,8 +482,8 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		// Note: this should be always safe conversion as we received data from our db
 		StakerAddr: dg.BabylonStakerAddr.String(),
 		Pop: &btcstypes.ProofOfPossessionBTC{
-			BtcSigType: btcstypes.BTCSigType(dg.BabylonPop.BtcSigType),
-			BtcSig:     dg.BabylonPop.BtcSigOverBabylonAddr,
+			BtcSigType: btcstypes.BTCSigType(dg.BabylonPop.popType),
+			BtcSig:     dg.BabylonPop.BtcSig,
 		},
 		BtcPk:        bbntypes.NewBIP340PubKeyFromBTCPK(dg.StakerBtcPk),
 		FpBtcPkList:  fpPksList,
@@ -863,6 +862,84 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	return err
 }
 
+// QueryBTCDelegation queries the delegation info of a staking transaction
+func (bc *BabylonController) QueryBTCDelegation(stakingTxHash *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error) {
+	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
+	queryClient := btcstypes.NewQueryClient(clientCtx)
+
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	var di *btcstypes.QueryBTCDelegationResponse
+	if err := retry.Do(func() error {
+		resp, err := queryClient.BTCDelegation(ctx, &btcstypes.QueryBTCDelegationRequest{
+			StakingTxHashHex: stakingTxHash.String(),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), btcstypes.ErrBTCDelegationNotFound.Error()) {
+				// delegation is not found on babylon, do not retry further
+				return retry.Unrecoverable(ErrDelegationNotFound)
+			}
+			return fmt.Errorf("failed to get delegation info: %w", err)
+		}
+		di = resp
+		return nil
+	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		bc.logger.WithFields(logrus.Fields{
+			"attempt":      n + 1,
+			"max_attempts": RtyAttNum,
+			"error":        err,
+		}).Error("Failed to query babylon for the staking transaction")
+	})); err != nil {
+		return nil, err
+	}
+	return di, nil
+}
+
+// GetUndelegationInfo returns the undelegation info from the response
+func (bc *BabylonController) GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error) {
+	if resp.BtcDelegation.GetUndelegationResponse() == nil {
+		return nil, fmt.Errorf("failed to get undelegation info from empty response")
+	}
+
+	var coventSigInfos []CovenantSignatureInfo
+	for _, covenantSigInfo := range resp.BtcDelegation.UndelegationResponse.CovenantUnbondingSigList {
+		covSig := covenantSigInfo
+		sig, err := covSig.Sig.ToBTCSig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get covenant signature: %w", err)
+		}
+
+		pk, err := covSig.Pk.ToBTCPK()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get covenant public key: %w", err)
+		}
+
+		sigInfo := CovenantSignatureInfo{
+			Signature: sig,
+			PubKey:    pk,
+		}
+		coventSigInfos = append(coventSigInfos, sigInfo)
+	}
+
+	tx, _, err := bbntypes.NewBTCTxFromHex(resp.BtcDelegation.UndelegationResponse.UnbondingTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unbonding transaction from response: %w", err)
+	}
+
+	unbondingTimeU32 := resp.BtcDelegation.UnbondingTime
+	if unbondingTimeU32 > math.MaxUint16 {
+		return nil, fmt.Errorf("unbonding time is too big: %d", unbondingTimeU32)
+	}
+
+	return &UndelegationInfo{
+		UnbondingTransaction:        tx,
+		CovenantUnbondingSignatures: coventSigInfos,
+		UnbondingTime:               uint16(unbondingTimeU32),
+	}, nil
+}
+
+// QueryDelegationInfo queries the delegation info of a staking transaction
 func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error) {
 	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
 	queryClient := btcstypes.NewQueryClient(clientCtx)
@@ -932,7 +1009,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 		}
 
 		di = &DelegationInfo{
-			Active:           resp.BtcDelegation.Active,
+			Status:           resp.BtcDelegation.GetStatusDesc(),
 			UndelegationInfo: udi,
 		}
 		return nil
@@ -950,7 +1027,7 @@ func (bc *BabylonController) QueryDelegationInfo(stakingTxHash *chainhash.Hash) 
 }
 
 func (bc *BabylonController) IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error) {
-	_, err := bc.QueryDelegationInfo(stakingTxHash)
+	_, err := bc.QueryBTCDelegation(stakingTxHash)
 
 	if err != nil {
 		if errors.Is(err, ErrDelegationNotFound) {

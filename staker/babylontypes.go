@@ -13,12 +13,19 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/sirupsen/logrus"
 )
 
 // TODO: All functions and types declared in this file should be moved to separate package
 // and be part of new module which will be responsible for communication with babylon chain i.e
 // retrieving data from babylon chain, sending data to babylon chain, queuing data to be send etc.
+
+const (
+	BabylonPendingStatus  = "PENDING"
+	BabylonVerifiedStatus = "VERIFIED"
+	BabylonActiveStatus   = "ACTIVE"
+)
 
 type inclusionInfo struct {
 	txIndex                 uint32
@@ -33,6 +40,8 @@ type sendDelegationRequest struct {
 	// the inclusion proof
 	inclusionInfo               *inclusionInfo
 	requiredInclusionBlockDepth uint32
+	fpBtcPubkeys                []*btcec.PublicKey
+	pop                         *cl.BabylonPop
 }
 
 func (app *App) buildDelegation(
@@ -51,6 +60,7 @@ func (app *App) buildDelegation(
 		slashingFee,
 		externalData,
 		storedTx,
+		req.fpBtcPubkeys,
 		app.network,
 	)
 	if err != nil {
@@ -74,6 +84,7 @@ func (app *App) buildDelegation(
 		externalData.babylonParams.UnbondingTime,
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
+		req.fpBtcPubkeys,
 		app.network,
 	)
 
@@ -115,8 +126,8 @@ func (app *App) buildDelegation(
 	}
 
 	dg := createDelegationData(
+		req,
 		externalData.stakerPublicKey,
-		req.inclusionInfo,
 		storedTx,
 		stakingSlashingTx,
 		stakingSlashingSig.Signature,
@@ -144,7 +155,7 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 	for {
 		select {
 		case <-checkSigTicker.C:
-			di, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
+			di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
 
 			if err != nil {
 				if errors.Is(err, cl.ErrDelegationNotFound) {
@@ -165,7 +176,7 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 				continue
 			}
 
-			if di.UndelegationInfo == nil {
+			if di.BtcDelegation.UndelegationResponse == nil {
 				// As we only start this handler when we are sure delegation received unbonding request
 				// this can only that:
 				// - babylon node lost data and is still syncing, and not processed unbonding request yet
@@ -176,7 +187,6 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 			}
 
 			params, err := app.babylonClient.Params()
-
 			if err != nil {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
@@ -187,16 +197,32 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 				continue
 			}
 
-			// we have enough signatures to submit unbonding tx this means that delegation is active
-			if len(di.UndelegationInfo.CovenantUnbondingSignatures) >= int(params.CovenantQuruomThreshold) {
+			undelegationInfo, err := app.babylonClient.GetUndelegationInfo(di)
+			if err != nil {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
-					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
+					"err":           err,
+				}).Error("Error getting undelegation info from babylon")
+				continue
+			}
+
+			// we have enough signatures to submit unbonding tx this means that delegation is active
+			if len(undelegationInfo.CovenantUnbondingSignatures) >= int(params.CovenantQuruomThreshold) {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+					"numSignatures": len(undelegationInfo.CovenantUnbondingSignatures),
 				}).Debug("Received enough covenant unbonding signatures on babylon")
+
+				if undelegationInfo.UnbondingTransaction == nil {
+					app.logger.WithFields(logrus.Fields{
+						"stakingTxHash": stakingTxHash,
+					}).Error("No unbonding transaction on babylon")
+					continue
+				}
 
 				req := &unbondingTxSignaturesConfirmedOnBabylonEvent{
 					stakingTxHash:               *stakingTxHash,
-					covenantUnbondingSignatures: di.UndelegationInfo.CovenantUnbondingSignatures,
+					covenantUnbondingSignatures: undelegationInfo.CovenantUnbondingSignatures,
 				}
 
 				utils.PushOrQuit[*unbondingTxSignaturesConfirmedOnBabylonEvent](
@@ -209,7 +235,7 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 			} else {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
-					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
+					"numSignatures": len(undelegationInfo.CovenantUnbondingSignatures),
 					"required":      params.CovenantQuruomThreshold,
 				}).Debug("Received not enough covenant unbonding signatures on babylon")
 			}
@@ -266,8 +292,7 @@ func (app *App) activateVerifiedDelegation(
 	for {
 		select {
 		case <-checkSigTicker.C:
-			di, err := app.babylonClient.QueryDelegationInfo(stakingTxHash)
-
+			di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
 			if err != nil {
 				if errors.Is(err, cl.ErrDelegationNotFound) {
 					// As we only start this handler when we are sure delegation is already on babylon
@@ -301,7 +326,7 @@ func (app *App) activateVerifiedDelegation(
 
 			// check if check is active
 			// this loop assume there is at least one active vigiliante to activate delegation
-			if di.Active {
+			if di.BtcDelegation.Active {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
 				}).Debug("Delegation has been activated on the Babylon chain")
@@ -338,10 +363,19 @@ func (app *App) activateVerifiedDelegation(
 				return
 			}
 
-			if len(di.UndelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+			udi, err := app.babylonClient.GetUndelegationInfo(di)
+			if err != nil {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
-					"numSignatures": len(di.UndelegationInfo.CovenantUnbondingSignatures),
+					"err":           err,
+				}).Error("error getting undelegation info from babylon")
+				continue
+			}
+
+			if len(udi.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+				app.logger.WithFields(logrus.Fields{
+					"stakingTxHash": stakingTxHash,
+					"numSignatures": len(udi.CovenantUnbondingSignatures),
 					"required":      params.CovenantQuruomThreshold,
 				}).Debug("Received not enough covenant unbonding signatures on babylon to wait fo activation")
 				continue
@@ -443,10 +477,14 @@ func newSendDelegationRequest(
 	btcStakingTxHash *chainhash.Hash,
 	inclusionInfo *inclusionInfo,
 	requiredInclusionBlockDepth uint32,
+	fpBtcPubkeys []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
 ) *sendDelegationRequest {
 	return &sendDelegationRequest{
 		btcTxHash:                   *btcStakingTxHash,
 		inclusionInfo:               inclusionInfo,
 		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
+		fpBtcPubkeys:                fpBtcPubkeys,
+		pop:                         pop,
 	}
 }
