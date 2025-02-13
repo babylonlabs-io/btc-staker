@@ -62,23 +62,9 @@ type BtcConfirmationInfo struct {
 }
 
 type StoredTransaction struct {
-	StoredTransactionIdx        uint64
-	StakingTx                   *wire.MsgTx
-	StakingTxConfirmationInfo   *BtcConfirmationInfo
-	UnbondingTxConfirmationInfo *BtcConfirmationInfo
-	StakingTime                 uint16
-	UnbondingTime               uint16
-	StakerAddress               string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
-}
-
-// StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
-func (t *StoredTransaction) StakingTxConfirmedOnBtc() bool {
-	return t.StakingTxConfirmationInfo != nil
-}
-
-// UnbondingTxConfirmedOnBtc returns true only if unbonding transaction was sent and confirmed on bitcoin
-func (t *StoredTransaction) UnbondingTxConfirmedOnBtc() bool {
-	return t.UnbondingTxConfirmationInfo != nil
+	StoredTransactionIdx uint64
+	StakingTx            *wire.MsgTx
+	StakerAddress        string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
 }
 
 type WithdrawableTransactionsFilter struct {
@@ -124,6 +110,7 @@ func NewTrackedTransactionStore(db kvdb.Backend) (*TrackedTransactionStore,
 	return store, nil
 }
 
+// initBuckets creates the buckets needed by the store
 func (c *TrackedTransactionStore) initBuckets() error {
 	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
 		_, err := tx.CreateTopLevelBucket(transactionBucketName)
@@ -146,52 +133,17 @@ func (c *TrackedTransactionStore) initBuckets() error {
 	})
 }
 
-func protoBtcConfirmationInfoToBtcConfirmationInfo(ci *proto.BTCConfirmationInfo) (*BtcConfirmationInfo, error) {
-	if ci == nil {
-		return nil, nil
-	}
-
-	hash, err := chainhash.NewHash(ci.BlockHash)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &BtcConfirmationInfo{
-		Height:    ci.BlockHeight,
-		BlockHash: *hash,
-	}, nil
-}
-
+// protoTxToStoredTransaction converts a TrackedTransaction to a StoredTransaction
 func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransaction, error) {
 	var stakingTx wire.MsgTx
-	err := stakingTx.Deserialize(bytes.NewReader(ttx.StakingTransaction))
-
-	if err != nil {
-		return nil, err
-	}
-
-	// var utd *UnbondingStoreData
-	uci, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.UnbondingTxBtcConfirmationInfo)
-	if err != nil {
-		return nil, err
-	}
-	sci, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.StakingTxBtcConfirmationInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	if ttx.StakingTime > math.MaxUint16 {
-		return nil, fmt.Errorf("staking time is too large. Max value is %d", math.MaxUint16)
+	if err := stakingTx.Deserialize(bytes.NewReader(ttx.StakingTransaction)); err != nil {
+		return nil, fmt.Errorf("failed to deserialize staking transaction: %w", err)
 	}
 
 	return &StoredTransaction{
-		StoredTransactionIdx:        ttx.TrackedTransactionIdx,
-		StakingTx:                   &stakingTx,
-		StakingTxConfirmationInfo:   sci,
-		UnbondingTxConfirmationInfo: uci,
-		StakingTime:                 uint16(ttx.StakingTime),
-		StakerAddress:               ttx.StakerAddress,
+		StoredTransactionIdx: ttx.TrackedTransactionIdx,
+		StakingTx:            &stakingTx,
+		StakerAddress:        ttx.StakerAddress,
 	}, nil
 }
 
@@ -460,9 +412,7 @@ func getInputData(tx *wire.MsgTx) (*inputData, error) {
 // AddTransactionSentToBabylon adds a transaction sent to Babylon
 func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	btcTx *wire.MsgTx,
-	stakingTime uint16,
 	stakerAddress btcutil.Address,
-	unbondingTime uint16,
 ) error {
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
@@ -476,8 +426,6 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		TrackedTransactionIdx: 0,
 		StakingTransaction:    serializedTx,
 		StakerAddress:         stakerAddress.EncodeAddress(),
-		StakingTime:           uint32(stakingTime),
-		UnbondingTime:         uint32(unbondingTime),
 	}
 
 	inputData, err := getInputData(btcTx)
@@ -652,36 +600,28 @@ func (c *TrackedTransactionStore) GetAllStoredTransactions() ([]StoredTransactio
 
 	resp, err := c.QueryStoredTransactions(q)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query stored transactions: %w", err)
 	}
 
 	return resp.Transactions, nil
 }
 
-func isTimeLockExpired(confirmationBlockHeight uint32, lockTime uint16, currentBestBlockHeight uint32) bool {
-	// transaction maybe included/executed only in next possible block
-	nexBlockHeight := int64(currentBestBlockHeight) + 1
-	pastLock := nexBlockHeight - int64(confirmationBlockHeight) - int64(lockTime)
-	return pastLock >= 0
-}
-
+// QueryStoredTransactions queries stored transactions
 func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQuery) (StoredTransactionQueryResult, error) {
 	var resp StoredTransactionQueryResult
 
-	err := c.db.View(func(tx kvdb.RTx) error {
+	if err := c.db.View(func(tx kvdb.RTx) error {
 		transactionsBucket := tx.ReadBucket(transactionBucketName)
 		if transactionsBucket == nil {
 			return ErrCorruptedTransactionsDB
 		}
 
 		transactionIdxBucket := tx.ReadBucket(transactionIndexName)
-
 		if transactionIdxBucket == nil {
 			return ErrCorruptedTransactionsDB
 		}
 
 		numTransactions := getNumTx(transactionIdxBucket)
-
 		if numTransactions == 0 {
 			return nil
 		}
@@ -698,51 +638,20 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 
 			err := pm.Unmarshal(transaction, &protoTx)
 			if err != nil {
-				return false, err
+				return false, fmt.Errorf("failed to unmarshal transaction: %w", err)
 			}
 
 			txFromDB, err := protoTxToStoredTransaction(&protoTx)
-
 			if err != nil {
-				return false, err
+				return false, fmt.Errorf("failed to convert transaction to stored transaction: %w", err)
 			}
 
-			// we have query only for withdrawable transaction i.e transactions which
-			// either in states and which timelock has expired
-			if q.withdrawableTransactionsFilter != nil {
-				var confirmationHeight uint32
-				var scriptTimeLock uint16
-
-				switch {
-				case txFromDB.StakingTxConfirmedOnBtc() && !txFromDB.UnbondingTxConfirmedOnBtc():
-					scriptTimeLock = txFromDB.StakingTime
-					confirmationHeight = txFromDB.StakingTxConfirmationInfo.Height
-				case txFromDB.StakingTxConfirmedOnBtc() && txFromDB.UnbondingTxConfirmedOnBtc():
-					scriptTimeLock = txFromDB.UnbondingTime
-					confirmationHeight = txFromDB.UnbondingTxConfirmationInfo.Height
-				default:
-					return false, nil
-				}
-
-				timeLockExpired := isTimeLockExpired(
-					confirmationHeight,
-					scriptTimeLock,
-					q.withdrawableTransactionsFilter.currentBestBlockHeight,
-				)
-
-				if timeLockExpired {
-					resp.Transactions = append(resp.Transactions, *txFromDB)
-					return true, nil
-				}
-
-				return false, nil
-			}
 			resp.Transactions = append(resp.Transactions, *txFromDB)
 			return true, nil
 		}
 
 		if err := paginator.query(accumulateTransactions); err != nil {
-			return err
+			return fmt.Errorf("failed to query stored transactions: %w", err)
 		}
 
 		if q.Reversed {
@@ -757,10 +666,8 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 		return nil
 	}, func() {
 		resp = StoredTransactionQueryResult{}
-	})
-
-	if err != nil {
-		return resp, err
+	}); err != nil {
+		return resp, fmt.Errorf("failed to query stored transactions: %w", err)
 	}
 
 	return resp, nil

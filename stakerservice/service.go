@@ -370,13 +370,9 @@ func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, lim
 	}, nil
 }
 
-func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, limit *int) (*WithdrawableTransactionsResponse, error) {
-	pageParams, err := getPageParams(offset, limit)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get page params: %w", err)
-	}
-
-	txResult, err := s.staker.WithdrawableTransactions(pageParams.Limit, pageParams.Offset)
+// withdrawableTransactions returns a list of staking transactions that are not yet confirmed in btc
+func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context) (*WithdrawableTransactionsResponse, error) {
+	txResult, err := s.staker.WithdrawableTransactions()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get withdrawable transactions: %w", err)
 	}
@@ -435,7 +431,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, ""),
 		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 
 		// Wallet api

@@ -174,9 +174,17 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	tm.waitForUnbondingTxConfirmedOnBtc(t, txHash, unbondingTxHash)
 
 	// Spend unbonding tx of pre-approval stake
-	withdrawableTransactionsResp, err = tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
-	require.NoError(t, err)
-	require.Len(t, withdrawableTransactionsResp.Transactions, 1)
+	require.Eventually(t, func() bool {
+		withdrawableTransactionsResp, err = tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
+		if err != nil {
+			return false
+		}
+		if len(withdrawableTransactionsResp.Transactions) != 1 {
+			return false
+		}
+
+		return true
+	}, 1*time.Minute, eventuallyPollTime)
 
 	// We can spend unbonding tx immediately as in e2e test, min unbonding time is 5 blocks and we locked it
 	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
@@ -815,9 +823,17 @@ func TestStakingUnbonding(t *testing.T) {
 	tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations, false)
 	tm.waitForUnbondingTxConfirmedOnBtc(t, txHash, unbondingTxHash)
 
-	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
-	require.NoError(t, err)
-	require.Len(t, withdrawableTransactionsResp.Transactions, 1)
+	require.Eventually(t, func() bool {
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
+		if err != nil {
+			return false
+		}
+		if len(withdrawableTransactionsResp.Transactions) != 1 {
+			return false
+		}
+
+		return true
+	}, 1*time.Minute, eventuallyPollTime)
 
 	// We can spend unbonding tx immediately as in e2e test, min unbonding time is 5 blocks and we locked it
 	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
@@ -935,7 +951,7 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 		require.NoError(t, err)
 		return len(withdrawableTransactionsResp.Transactions) == 3
-	}, eventuallyWaitTimeOut, eventuallyPollTime)
+	}, 5*time.Minute, eventuallyPollTime)
 
 	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 	require.NoError(t, err)

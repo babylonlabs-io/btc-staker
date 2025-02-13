@@ -493,7 +493,7 @@ func (app *App) handleActiveTransaction(stakingTxHash *chainhash.Hash, stakingOu
 	// check whether we:
 	// - did not spend tx before restart
 	// - did not send unbonding tx before restart
-	tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
+	// tx, _ := app.mustGetTransactionAndStakerAddress(stakingTxHash)
 
 	// 1. First check if staking output is still unspent on BTC chain
 	stakingOutputSpent, err := app.wc.OutputSpent(stakingTxHash, stakingOutputIndex)
@@ -513,7 +513,7 @@ func (app *App) handleActiveTransaction(stakingTxHash *chainhash.Hash, stakingOu
 	unbondingTxHash := unbondingTx.TxHash()
 	pkScript := unbondingTx.TxOut[0].PkScript
 
-	_, unbondingTxStatus, err := app.wc.TxDetails(
+	confirmationInfo, unbondingTxStatus, err := app.wc.TxDetails(
 		&unbondingTxHash,
 		// unbonding tx always have only one output
 		pkScript,
@@ -554,7 +554,8 @@ func (app *App) handleActiveTransaction(stakingTxHash *chainhash.Hash, stakingOu
 		pkScript,
 		UnbondingTxConfirmations,
 		// unbonding transactions will for sure be included after staking tranasction
-		tx.StakingTxConfirmationInfo.Height,
+		// tx.StakingTxConfirmationInfo.Height,
+		confirmationInfo.BlockHeight,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to register confirmations ntfn: %w", err)
@@ -676,6 +677,7 @@ func (app *App) sendUnbondingTxToBtcWithWitness(
 	stakerAddress btcutil.Address,
 	fpBtcPubkeys []*btcec.PublicKey,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 	undelegationInfo *cl.UndelegationInfo,
 ) error {
@@ -700,6 +702,7 @@ func (app *App) sendUnbondingTxToBtcWithWitness(
 		fpBtcPubkeys,
 		storedTx,
 		stakingOutputIndex,
+		stakingTime,
 		undelegationInfo,
 		params,
 		app.network,
@@ -776,6 +779,7 @@ func (app *App) sendUnbondingTxToBtc(
 	stakingTxHash *chainhash.Hash,
 	stakerAddress btcutil.Address,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 	undelegationInfo *cl.UndelegationInfo,
 	fpBtcPubkeys []*btcec.PublicKey,
@@ -786,6 +790,7 @@ func (app *App) sendUnbondingTxToBtc(
 			stakerAddress,
 			fpBtcPubkeys,
 			stakingOutputIndex,
+			stakingTime,
 			storedTx,
 			undelegationInfo,
 		)
@@ -881,6 +886,7 @@ func (app *App) sendUnbondingTxToBtcTask(
 	stakingTxHash *chainhash.Hash,
 	stakerAddress btcutil.Address,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 	fpBtcPubkeys []*btcec.PublicKey,
 	undelegationInfo *cl.UndelegationInfo,
@@ -894,6 +900,7 @@ func (app *App) sendUnbondingTxToBtcTask(
 		stakingTxHash,
 		stakerAddress,
 		stakingOutputIndex,
+		stakingTime,
 		storedTx,
 		undelegationInfo,
 		fpBtcPubkeys,
@@ -936,9 +943,10 @@ func (app *App) buildAndSendDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 ) (*bct.RelayerTxResponse, *cl.DelegationData, error) {
-	delegation, err := app.buildDelegation(req, stakerAddress, stakingOutputIndex, storedTx)
+	delegation, err := app.buildDelegation(req, stakerAddress, stakingOutputIndex, stakingTime, storedTx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -979,10 +987,12 @@ func (app *App) handleSendDelegationRequest(
 	stakingTxHash := stakingTx.TxHash()
 
 	req := newSendDelegationRequest(&stakingTxHash, inclusionInfo, requiredDepthOnBtcChain, fpBtcPks, pop)
-	resp, delegationData, err := app.buildAndSendDelegation(
+	// resp, delegationData, err := app.buildAndSendDelegation(
+	resp, _, err := app.buildAndSendDelegation(
 		req,
 		stakerAddress,
 		stakingOutputIdx,
+		stakingTime,
 		fakeStoredTx,
 	)
 	if err != nil {
@@ -991,9 +1001,9 @@ func (app *App) handleSendDelegationRequest(
 
 	err = app.txTracker.AddTransactionSentToBabylon(
 		stakingTx,
-		stakingTime,
+		// stakingTime,
 		stakerAddress,
-		delegationData.Ud.UnbondingTxUnbondingTime,
+		// delegationData.Ud.UnbondingTxUnbondingTime,
 	)
 	if err != nil {
 		return nil, btcDelTxHash, err
@@ -1370,18 +1380,90 @@ func (app *App) StoredTransactions(limit, offset uint64) (*stakerdb.StoredTransa
 	return &resp, nil
 }
 
-func (app *App) WithdrawableTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
-	query := stakerdb.StoredTransactionQuery{
-		IndexOffset:        offset,
-		NumMaxTransactions: limit,
-		Reversed:           false,
-	}
-	resp, err := app.txTracker.QueryStoredTransactions(query.WithdrawableTransactionsFilter(app.currentBestBlockHeight.Load()))
-	if err != nil {
-		return nil, err
+// WithdrawableTransactions returns a slice of stakerdb.StoredTransaction
+// that can be withdrawn
+func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResult, error) {
+	var transactions []stakerdb.StoredTransaction
+	reset := func() {
+		transactions = make([]stakerdb.StoredTransaction, 0)
 	}
 
-	return &resp, nil
+	var totalTxCount int
+	// add stored transactions to slice
+	if err := app.txTracker.ScanTrackedTransactions(func(tx *stakerdb.StoredTransaction) error {
+		totalTxCount++
+
+		stakingTxHash := tx.StakingTx.TxHash()
+		di, err := app.babylonClient.QueryBTCDelegation(&stakingTxHash)
+		if err != nil {
+			return fmt.Errorf("failed to get delegation info: %w", err)
+		}
+
+		babylonStatus := di.BtcDelegation.GetStatusDesc()
+		stakingConfirmation, _, err := app.Wallet().TxDetails(
+			&stakingTxHash,
+			tx.StakingTx.TxOut[di.BtcDelegation.StakingOutputIdx].PkScript,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to get staking tx details: %w", err)
+		}
+
+		var scriptTimeLock uint16
+		var confirmationHeight uint32
+
+		switch babylonStatus {
+		case BabylonPendingStatus, BabylonVerifiedStatus:
+			return nil
+		case BabylonExpiredStatus:
+			transactions = append(transactions, *tx)
+			return nil
+		default:
+			udi, err := app.babylonClient.GetUndelegationInfo(di)
+			if err != nil {
+				return fmt.Errorf("failed to get undelegation info: %w", err)
+			}
+
+			unbondingTxHash := udi.UnbondingTransaction.TxHash()
+			unbondingConfirmation, unbondingStatus, err := app.Wallet().TxDetails(
+				&unbondingTxHash,
+				udi.UnbondingTransaction.TxOut[0].PkScript,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to get unbonding tx details: %w", err)
+			}
+
+			switch {
+			case unbondingStatus == walletcontroller.TxNotFound, unbondingConfirmation.BlockHash == nil || unbondingConfirmation.BlockHeight == 0:
+				// unbondign transaction is not found
+				scriptTimeLock = uint16(di.BtcDelegation.StakingTime)
+				confirmationHeight = stakingConfirmation.BlockHeight
+			default:
+				// unbonding transaction is confirmed
+				scriptTimeLock = udi.UnbondingTime
+				confirmationHeight = unbondingConfirmation.BlockHeight
+			}
+		}
+
+		isTimeLockExpired := func(confirmationBlockHeight uint32, lockTime uint16, currentBestBlockHeight uint32) bool {
+			// transaction maybe included/executed only in next possible block
+			nexBlockHeight := int64(currentBestBlockHeight) + 1
+			pastLock := nexBlockHeight - int64(confirmationBlockHeight) - int64(lockTime)
+			return pastLock >= 0
+		}(confirmationHeight, scriptTimeLock, app.currentBestBlockHeight.Load())
+
+		if isTimeLockExpired {
+			transactions = append(transactions, *tx)
+		}
+
+		return nil
+	}, reset); err != nil {
+		return nil, fmt.Errorf("error while checking and handling stored transactions: %w", err)
+	}
+
+	return &stakerdb.StoredTransactionQueryResult{
+		Transactions: transactions,
+		Total:        uint64(totalTxCount),
+	}, nil
 }
 
 func (app *App) GetStoredTransaction(txHash *chainhash.Hash) (*stakerdb.StoredTransaction, error) {
@@ -1569,6 +1651,7 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 		unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmed(
 			pubKey,
 			di.BtcDelegation.StakingOutputIdx,
+			uint16(di.BtcDelegation.StakingTime),
 			fpBtcPubkeys,
 			params.CovenantPks,
 			params.CovenantQuruomThreshold,
@@ -1706,6 +1789,7 @@ func (app *App) UnbondStaking(
 		&stakingTxHash,
 		stakerAddress,
 		di.BtcDelegation.StakingOutputIdx,
+		uint16(di.BtcDelegation.StakingTime),
 		tx,
 		fpBtcPubkeys,
 		undelegationInfo,

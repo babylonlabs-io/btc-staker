@@ -89,6 +89,7 @@ func slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 	fpBtcPubkeys []*btcec.PublicKey,
 	net *chaincfg.Params,
@@ -116,7 +117,7 @@ func slashingTxForStakingTx(
 		fpBtcPubkeys,
 		delegationData.babylonParams.CovenantPks,
 		delegationData.babylonParams.CovenantQuruomThreshold,
-		storedTx.StakingTime,
+		stakingTime,
 		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		net,
 	)
@@ -138,6 +139,7 @@ func createDelegationData(
 	req *sendDelegationRequest,
 	stakerBtcPk *btcec.PublicKey,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 	slashingTx *wire.MsgTx,
 	slashingTxSignature *schnorr.Signature,
@@ -160,7 +162,7 @@ func createDelegationData(
 	dg := cl.DelegationData{
 		StakingTransaction:              storedTx.StakingTx,
 		StakingTransactionInclusionInfo: incInfo,
-		StakingTime:                     storedTx.StakingTime,
+		StakingTime:                     stakingTime,
 		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		FinalityProvidersBtcPks:         req.fpBtcPubkeys,
 		StakerBtcPk:                     stakerBtcPk,
@@ -265,6 +267,7 @@ func createSpendStakeTxUnbondingConfirmed(
 func createSpendStakeTxUnbondingNotConfirmed(
 	stakerBtcPk *btcec.PublicKey,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	fpBtcPubkeys []*btcec.PublicKey,
 	covenantPublicKeys []*btcec.PublicKey,
 	covenantThreshold uint32,
@@ -278,7 +281,7 @@ func createSpendStakeTxUnbondingNotConfirmed(
 		fpBtcPubkeys,
 		covenantPublicKeys,
 		covenantThreshold,
-		storedtx.StakingTime,
+		stakingTime,
 		btcutil.Amount(storedtx.StakingTx.TxOut[stakingOutputIndex].Value),
 		net,
 	)
@@ -298,7 +301,7 @@ func createSpendStakeTxUnbondingNotConfirmed(
 		storedtx.StakingTx.TxOut[stakingOutputIndex],
 		stakingOutputIndex,
 		&stakingTxHash,
-		storedtx.StakingTime,
+		stakingTime,
 		feeRate,
 	)
 	if err != nil {
@@ -407,6 +410,7 @@ func buildUnbondingSpendInfo(
 	fpBtcPubkeys []*btcec.PublicKey,
 	storedTx *stakerdb.StoredTransaction,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	undelegationInfo *cl.UndelegationInfo,
 	params *cl.StakingParams,
 	net *chaincfg.Params,
@@ -424,7 +428,7 @@ func buildUnbondingSpendInfo(
 		fpBtcPubkeys,
 		params.CovenantPks,
 		params.CovenantQuruomThreshold,
-		storedTx.StakingTime,
+		stakingTime,
 		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		net,
 	)

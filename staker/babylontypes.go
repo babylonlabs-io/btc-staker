@@ -25,6 +25,8 @@ const (
 	BabylonPendingStatus  = "PENDING"
 	BabylonVerifiedStatus = "VERIFIED"
 	BabylonActiveStatus   = "ACTIVE"
+	BabylonUnbondedStatus = "UNBONDED"
+	BabylonExpiredStatus  = "EXPIRED"
 )
 
 type inclusionInfo struct {
@@ -48,6 +50,7 @@ func (app *App) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
 	stakingOutputIndex uint32,
+	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 ) (*cl.DelegationData, error) {
 	externalData, err := app.retrieveExternalDelegationData(stakerAddress, req.inclusionInfo)
@@ -61,6 +64,7 @@ func (app *App) buildDelegation(
 		slashingFee,
 		externalData,
 		stakingOutputIndex,
+		stakingTime,
 		storedTx,
 		req.fpBtcPubkeys,
 		app.network,
@@ -132,6 +136,7 @@ func (app *App) buildDelegation(
 		req,
 		externalData.stakerPublicKey,
 		stakingOutputIndex,
+		stakingTime,
 		storedTx,
 		stakingSlashingTx,
 		stakingSlashingSig.Signature,

@@ -11,7 +11,6 @@ import (
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,25 +36,22 @@ func MakeTestStore(t *testing.T) *stakerdb.TrackedTransactionStore {
 	return store
 }
 
-func genStoredTransaction(t *testing.T, r *rand.Rand, maxStakingTime uint16) *stakerdb.StoredTransaction {
+func genStoredTransaction(t *testing.T, r *rand.Rand) *stakerdb.StoredTransaction {
 	btcTx := datagen.GenRandomTx(r)
-	stakingTime := r.Int31n(int32(maxStakingTime)) + 1
-
 	stakerAddr, err := datagen.GenRandomBTCAddress(r, &chaincfg.MainNetParams)
 	require.NoError(t, err)
 
 	return &stakerdb.StoredTransaction{
 		StakingTx:     btcTx,
-		StakingTime:   uint16(stakingTime),
 		StakerAddress: stakerAddr.String(),
 	}
 }
 
-func genNStoredTransactions(t *testing.T, r *rand.Rand, n int, maxStakingTime uint16) []*stakerdb.StoredTransaction {
+func genNStoredTransactions(t *testing.T, r *rand.Rand, n int) []*stakerdb.StoredTransaction {
 	storedTxs := make([]*stakerdb.StoredTransaction, n)
 
 	for i := 0; i < n; i++ {
-		storedTxs[i] = genStoredTransaction(t, r, maxStakingTime)
+		storedTxs[i] = genStoredTransaction(t, r)
 	}
 
 	return storedTxs
@@ -81,17 +77,14 @@ func FuzzStoringTxs(f *testing.F) {
 		s := MakeTestStore(t)
 		maxCreatedTx := 30
 		numTx := r.Intn(maxCreatedTx) + 1
-		generatedStoredTxs := genNStoredTransactions(t, r, numTx, 200)
-		unbodningTime := uint16(r.Int31n(int32(200)) + 1)
+		generatedStoredTxs := genNStoredTransactions(t, r, numTx)
 
 		for _, storedTx := range generatedStoredTxs {
 			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 			require.NoError(t, err)
 			err = s.AddTransactionSentToBabylon(
 				storedTx.StakingTx,
-				storedTx.StakingTime,
 				stakerAddr,
-				unbodningTime,
 			)
 			require.NoError(t, err)
 		}
@@ -101,7 +94,6 @@ func FuzzStoringTxs(f *testing.F) {
 			tx, err := s.GetTransaction(&hash)
 			require.NoError(t, err)
 			require.Equal(t, storedTx.StakingTx, tx.StakingTx)
-			require.Equal(t, storedTx.StakingTime, tx.StakingTime)
 			require.Equal(t, storedTx.StakerAddress, tx.StakerAddress)
 			require.Equal(t, expectedIdx, tx.StoredTransactionIdx)
 			expectedIdx++
@@ -116,7 +108,6 @@ func FuzzStoringTxs(f *testing.F) {
 		// transactions are returned in order of insertion
 		for i, storedTx := range generatedStoredTxs {
 			require.Equal(t, storedTx.StakingTx, storedResult.Transactions[i].StakingTx)
-			require.Equal(t, storedTx.StakingTime, storedResult.Transactions[i].StakingTime)
 			require.Equal(t, storedTx.StakerAddress, storedResult.Transactions[i].StakerAddress)
 		}
 
@@ -138,17 +129,13 @@ func TestPaginator(t *testing.T) {
 	numTx := 45
 	batchSize := 20
 
-	generatedStoredTxs := genNStoredTransactions(t, r, numTx, 200)
-	unbodningTime := uint16(r.Int31n(int32(200)) + 1)
-
+	generatedStoredTxs := genNStoredTransactions(t, r, numTx)
 	for _, storedTx := range generatedStoredTxs {
 		stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 		require.NoError(t, err)
 		err = s.AddTransactionSentToBabylon(
 			storedTx.StakingTx,
-			storedTx.StakingTime,
 			stakerAddr,
-			unbodningTime,
 		)
 		require.NoError(t, err)
 	}
@@ -188,68 +175,8 @@ func TestPaginator(t *testing.T) {
 	require.Equal(t, len(generatedStoredTxs), len(allTransactionsFromDB))
 	for i, storedTx := range generatedStoredTxs {
 		require.Equal(t, storedTx.StakingTx, allTransactionsFromDB[i].StakingTx)
-		require.Equal(t, storedTx.StakingTime, allTransactionsFromDB[i].StakingTime)
 		require.Equal(t, storedTx.StakerAddress, allTransactionsFromDB[i].StakerAddress)
 	}
-}
-
-func FuzzQuerySpendableTx(f *testing.F) {
-	// only 3 seeds as this is pretty slow test opening/closing db
-	datagen.AddRandomSeedsToFuzzer(f, 3)
-
-	f.Fuzz(func(t *testing.T, seed int64) {
-		r := rand.New(rand.NewSource(seed))
-		s := MakeTestStore(t)
-		// generate random transactions between 20 and 50
-		maxCreatedTx := int(r.Int31n(31) + 20)
-		// random staking time between 150 and 250 blocks
-		maxStakingTime := r.Int31n(101) + 150
-		stored := genNStoredTransactions(t, r, maxCreatedTx, uint16(maxStakingTime))
-		unbodningTime := uint16(r.Int31n(int32(200)) + 1)
-
-		for _, storedTx := range stored {
-			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
-			require.NoError(t, err)
-			err = s.AddTransactionSentToBabylon(
-				storedTx.StakingTx,
-				storedTx.StakingTime,
-				stakerAddr,
-				unbodningTime,
-			)
-			require.NoError(t, err)
-		}
-
-		query := stakerdb.DefaultStoredTransactionQuery()
-		// random confirmation block
-		confirmationBlock := uint32(r.Int31n(1000) + 1)
-		halfOfMaxStaking := maxStakingTime / 2
-		currentBestBlock := confirmationBlock + uint32(r.Int31n(halfOfMaxStaking)+1)
-		filteredQuery := query.WithdrawableTransactionsFilter(currentBestBlock)
-
-		var hashesWithExpiredTimeLock []*chainhash.Hash
-		for _, storedTx := range stored {
-			if currentBestBlock+1 >= uint32(storedTx.StakingTime)+confirmationBlock {
-				txHash := storedTx.StakingTx.TxHash()
-				hashesWithExpiredTimeLock = append(hashesWithExpiredTimeLock, &txHash)
-			}
-		}
-
-		storedResult, err := s.QueryStoredTransactions(filteredQuery)
-		require.NoError(t, err)
-		// at this point, all transactions should be non spendable
-		require.Len(t, storedResult.Transactions, 0)
-
-		for _, storedTx := range stored {
-			txHash := storedTx.StakingTx.TxHash()
-			err := s.SetTxConfirmed(&txHash, &txHash, confirmationBlock)
-			require.NoError(t, err)
-		}
-
-		storedResult, err = s.QueryStoredTransactions(filteredQuery)
-		require.NoError(t, err)
-		require.Len(t, storedResult.Transactions, len(hashesWithExpiredTimeLock))
-		require.Equal(t, storedResult.Total, uint64(maxCreatedTx))
-	})
 }
 
 func FuzzTrackInputs(f *testing.F) {
@@ -262,17 +189,13 @@ func FuzzTrackInputs(f *testing.F) {
 		numTx := 45
 		// all gene
 
-		generatedStoredTxs := genNStoredTransactions(t, r, numTx, 200)
-		unbodningTime := uint16(r.Int31n(int32(200)) + 1)
-
+		generatedStoredTxs := genNStoredTransactions(t, r, numTx)
 		for _, storedTx := range generatedStoredTxs {
 			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 			require.NoError(t, err)
 			err = s.AddTransactionSentToBabylon(
 				storedTx.StakingTx,
-				storedTx.StakingTime,
 				stakerAddr,
-				unbodningTime,
 			)
 			require.NoError(t, err)
 		}
@@ -287,7 +210,7 @@ func FuzzTrackInputs(f *testing.F) {
 		}
 
 		// generate few not saved transactions
-		notSaved := genNStoredTransactions(t, r, 20, 200)
+		notSaved := genNStoredTransactions(t, r, 20)
 
 		// check all input are not used
 		for _, storedTx := range notSaved {
@@ -309,17 +232,14 @@ func FuzzStoringAndRemovingTxs(f *testing.F) {
 		s := MakeTestStore(t)
 		maxCreatedTx := 30
 		numTx := r.Intn(maxCreatedTx) + 1
-		generatedStoredTxs := genNStoredTransactions(t, r, numTx, 200)
-		unbodningTime := uint16(r.Int31n(int32(200)) + 1)
+		generatedStoredTxs := genNStoredTransactions(t, r, numTx)
 
 		for _, storedTx := range generatedStoredTxs {
 			stakerAddr, err := btcutil.DecodeAddress(storedTx.StakerAddress, &chaincfg.MainNetParams)
 			require.NoError(t, err)
 			err = s.AddTransactionSentToBabylon(
 				storedTx.StakingTx,
-				storedTx.StakingTime,
 				stakerAddr,
-				unbodningTime,
 			)
 			require.NoError(t, err)
 		}
@@ -329,7 +249,6 @@ func FuzzStoringAndRemovingTxs(f *testing.F) {
 			tx, err := s.GetTransaction(&hash)
 			require.NoError(t, err)
 			require.Equal(t, storedTx.StakingTx, tx.StakingTx)
-			require.Equal(t, storedTx.StakingTime, tx.StakingTime)
 			require.Equal(t, storedTx.StakerAddress, tx.StakerAddress)
 			require.Equal(t, expectedIdx, tx.StoredTransactionIdx)
 			expectedIdx++
@@ -344,7 +263,6 @@ func FuzzStoringAndRemovingTxs(f *testing.F) {
 		// transactions are returned in order of insertion
 		for i, storedTx := range generatedStoredTxs {
 			require.Equal(t, storedTx.StakingTx, storedResult.Transactions[i].StakingTx)
-			require.Equal(t, storedTx.StakingTime, storedResult.Transactions[i].StakingTime)
 			require.Equal(t, storedTx.StakerAddress, storedResult.Transactions[i].StakerAddress)
 		}
 

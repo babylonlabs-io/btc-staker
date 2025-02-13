@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	"github.com/babylonlabs-io/networks/parameters/parser"
@@ -173,7 +174,7 @@ func (c *StakerServiceJSONRPCClient) WithdrawableTransactions(ctx context.Contex
 
 	_, err := c.client.Call(ctx, "withdrawable_transactions", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get withdrawable transactions: %w", err)
 	}
 	return result, nil
 }

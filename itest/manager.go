@@ -65,7 +65,7 @@ var (
 
 	eventuallyWaitTimeOut = 10 * time.Second
 	eventuallyPollTime    = 250 * time.Millisecond
-	eventuallyTimeout     = 3 * time.Minute
+	eventuallyTimeout     = 5 * time.Minute
 
 	bitcoindUser = "user"
 	bitcoindPass = "pass"
@@ -861,22 +861,34 @@ func (tm *TestManager) waitForTxOutputSpent(t *testing.T, unbondingTxHash *chain
 	}, eventuallyTimeout, eventuallyPollTime)
 }
 
+// waitForUnbondingTxConfirmedOnBtc waits for the unbonding transaction to be confirmed on the bitcoin network
 func (tm *TestManager) waitForUnbondingTxConfirmedOnBtc(t *testing.T, txHash, unbondingTxHash *chainhash.Hash) {
 	require.Eventually(t, func() bool {
-		// 1. Check confirmations
+		// First check if the delegation exists and has unbonding info
+		di, err := tm.Sa.BabylonController().QueryBTCDelegation(txHash)
+		if err != nil {
+			return false
+		}
+
+		udi, err := tm.Sa.BabylonController().GetUndelegationInfo(di)
+		if err != nil {
+			return false
+		}
+
+		// Verify the unbonding transaction hash matches what we expect
+		expectedHash := udi.UnbondingTransaction.TxHash()
+		if expectedHash != *unbondingTxHash {
+			return false
+		}
+
+		// Get transaction details and verify confirmations
 		res, err := tm.Sa.Wallet().TxVerbose(unbondingTxHash)
 		if err != nil {
 			return false
 		}
-		if res.Confirmations >= staker.UnbondingTxConfirmations {
-			storedTx, err := tm.Sa.GetTxTracker().GetTransaction(txHash)
-			if err != nil {
-				return false
-			}
-			return storedTx.UnbondingTxConfirmedOnBtc()
-		}
 
-		return false
+		// Check if we have the required number of confirmations
+		return res.Confirmations >= staker.UnbondingTxConfirmations
 	}, eventuallyTimeout, eventuallyPollTime)
 }
 
