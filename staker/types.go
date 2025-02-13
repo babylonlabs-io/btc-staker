@@ -31,20 +31,6 @@ type spendStakeTxInfo struct {
 	calculatedFee          btcutil.Amount
 }
 
-func babylonCovSigToDBCovSig(covSig cl.CovenantSignatureInfo) stakerdb.PubKeySigPair {
-	return stakerdb.NewCovenantMemberSignature(covSig.Signature, covSig.PubKey)
-}
-
-func babylonCovSigsToDBSigSigs(covSigs []cl.CovenantSignatureInfo) []stakerdb.PubKeySigPair {
-	sigSigs := make([]stakerdb.PubKeySigPair, len(covSigs))
-
-	for i := range covSigs {
-		sigSigs[i] = babylonCovSigToDBCovSig(covSigs[i])
-	}
-
-	return sigSigs
-}
-
 // Helper function to sort all signatures in reverse lexicographical order of signing public keys
 // this way signatures are ready to be used in multisig witness with corresponding public keys
 func sortPubKeysForWitness(infos []*btcec.PublicKey) []*btcec.PublicKey {
@@ -66,7 +52,7 @@ func pubKeyToString(pubKey *btcec.PublicKey) string {
 func createWitnessSignaturesForPubKeys(
 	covenantPubKeys []*btcec.PublicKey,
 	covenantQuorum uint32,
-	receivedSignaturePairs []stakerdb.PubKeySigPair,
+	receivedSignaturePairs []cl.CovenantSignatureInfo,
 ) ([]*schnorr.Signature, error) {
 	if len(receivedSignaturePairs) < int(covenantQuorum) {
 		return nil, fmt.Errorf("not enough signatures to create witness. Required: %d, received: %d", covenantQuorum, len(receivedSignaturePairs))
@@ -102,6 +88,7 @@ func createWitnessSignaturesForPubKeys(
 func slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
+	stakingOutputIndex uint32,
 	storedTx *stakerdb.StoredTransaction,
 	fpBtcPubkeys []*btcec.PublicKey,
 	net *chaincfg.Params,
@@ -111,7 +98,7 @@ func slashingTxForStakingTx(
 
 	slashingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
 		storedTx.StakingTx,
-		storedTx.StakingOutputIndex,
+		stakingOutputIndex,
 		delegationData.babylonParams.SlashingPkScript,
 		stakerPubKey,
 		lockSlashTxLockTime,
@@ -130,7 +117,7 @@ func slashingTxForStakingTx(
 		delegationData.babylonParams.CovenantPks,
 		delegationData.babylonParams.CovenantQuruomThreshold,
 		storedTx.StakingTime,
-		btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
+		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		net,
 	)
 
@@ -150,6 +137,7 @@ func slashingTxForStakingTx(
 func createDelegationData(
 	req *sendDelegationRequest,
 	stakerBtcPk *btcec.PublicKey,
+	stakingOutputIndex uint32,
 	storedTx *stakerdb.StoredTransaction,
 	slashingTx *wire.MsgTx,
 	slashingTxSignature *schnorr.Signature,
@@ -173,7 +161,7 @@ func createDelegationData(
 		StakingTransaction:              storedTx.StakingTx,
 		StakingTransactionInclusionInfo: incInfo,
 		StakingTime:                     storedTx.StakingTime,
-		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
+		StakingValue:                    btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		FinalityProvidersBtcPks:         req.fpBtcPubkeys,
 		StakerBtcPk:                     stakerBtcPk,
 		SlashingTransaction:             slashingTx,
@@ -186,6 +174,7 @@ func createDelegationData(
 	return &dg
 }
 
+// createSpendStakeTx creates a spend stake transaction.
 func createSpendStakeTx(
 	destinationScript []byte,
 	fundingOutput *wire.TxOut,
@@ -219,8 +208,63 @@ func createSpendStakeTx(
 	return spendTx, &fee, nil
 }
 
-func createSpendStakeTxFromStoredTx(
+// createSpendStakeTxUnbondingConfirmed creates a spend stake transaction
+// that is already confirmed on the Bitcoin network.
+func createSpendStakeTxUnbondingConfirmed(
 	stakerBtcPk *btcec.PublicKey,
+	fpBtcPubkeys []*btcec.PublicKey,
+	covenantPublicKeys []*btcec.PublicKey,
+	covenantThreshold uint32,
+	destinationScript []byte,
+	feeRate chainfee.SatPerKVByte,
+	undelegationInfo *cl.UndelegationInfo,
+	net *chaincfg.Params,
+) (*spendStakeTxInfo, error) {
+	unbondingInfo, err := staking.BuildUnbondingInfo(
+		stakerBtcPk,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		undelegationInfo.UnbondingTime,
+		btcutil.Amount(undelegationInfo.UnbondingTransaction.TxOut[0].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build staking info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTimeLockPathInfo, err := unbondingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		// unbonding tx has only one output
+		undelegationInfo.UnbondingTransaction.TxOut[0],
+		0,
+		&unbondingTxHash,
+		undelegationInfo.UnbondingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending unbonding transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutput:          undelegationInfo.UnbondingTransaction.TxOut[0],
+		fundingOutputSpendInfo: unbondingTimeLockPathInfo,
+		calculatedFee:          *calculatedFee,
+	}, nil
+}
+
+// createSpendStakeTxUnbondingNotConfirmed creates a spend stake transaction
+// that is not confirmed yet.
+func createSpendStakeTxUnbondingNotConfirmed(
+	stakerBtcPk *btcec.PublicKey,
+	stakingOutputIndex uint32,
 	fpBtcPubkeys []*btcec.PublicKey,
 	covenantPublicKeys []*btcec.PublicKey,
 	covenantThreshold uint32,
@@ -229,99 +273,44 @@ func createSpendStakeTxFromStoredTx(
 	feeRate chainfee.SatPerKVByte,
 	net *chaincfg.Params,
 ) (*spendStakeTxInfo, error) {
-	// Note: we enable withdrawal only even if staking transaction is confirmed on btc.
-	// This is to cover cases:
-	// - staker is unable to sent delegation to babylon
-	// - staking transaction on babylon fail to get covenant signatures
-	//nolint:gocritic
-	if storedtx.StakingTxConfirmedOnBtc() && !storedtx.UnbondingTxConfirmedOnBtc() {
-		stakingInfo, err := staking.BuildStakingInfo(
-			stakerBtcPk,
-			fpBtcPubkeys,
-			covenantPublicKeys,
-			covenantThreshold,
-			storedtx.StakingTime,
-			btcutil.Amount(storedtx.StakingTx.TxOut[storedtx.StakingOutputIndex].Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to build staking info while spending staking transaction: %w", err)
-		}
-
-		stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to build time lock path info while spending staking transaction: %w", err)
-		}
-
-		stakingTxHash := storedtx.StakingTx.TxHash()
-		// transaction is only in sent to babylon state we try to spend staking output directly
-		spendTx, calculatedFee, err := createSpendStakeTx(
-			destinationScript,
-			storedtx.StakingTx.TxOut[storedtx.StakingOutputIndex],
-			storedtx.StakingOutputIndex,
-			&stakingTxHash,
-			storedtx.StakingTime,
-			feeRate,
-		)
-
-		if err != nil {
-			return nil, err
-		}
-
-		return &spendStakeTxInfo{
-			spendStakeTx:           spendTx,
-			fundingOutputSpendInfo: stakingTimeLockPathInfo,
-			fundingOutput:          storedtx.StakingTx.TxOut[storedtx.StakingOutputIndex],
-			calculatedFee:          *calculatedFee,
-		}, nil
-	} else if storedtx.StakingTxConfirmedOnBtc() && storedtx.UnbondingTxConfirmedOnBtc() {
-		data := storedtx.UnbondingTxData
-
-		unbondingInfo, err := staking.BuildUnbondingInfo(
-			stakerBtcPk,
-			fpBtcPubkeys,
-			covenantPublicKeys,
-			covenantThreshold,
-			data.UnbondingTime,
-			btcutil.Amount(data.UnbondingTx.TxOut[0].Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to build staking info while spending unbonding transaction: %w", err)
-		}
-
-		unbondingTimeLockPathInfo, err := unbondingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to build time lock path info while spending unbonding transaction: %w", err)
-		}
-
-		unbondingTxHash := data.UnbondingTx.TxHash()
-
-		spendTx, calculatedFee, err := createSpendStakeTx(
-			destinationScript,
-			// unbonding tx has only one output
-			data.UnbondingTx.TxOut[0],
-			0,
-			&unbondingTxHash,
-			data.UnbondingTime,
-			feeRate,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		return &spendStakeTxInfo{
-			spendStakeTx:           spendTx,
-			fundingOutput:          data.UnbondingTx.TxOut[0],
-			fundingOutputSpendInfo: unbondingTimeLockPathInfo,
-			calculatedFee:          *calculatedFee,
-		}, nil
+	stakingInfo, err := staking.BuildStakingInfo(
+		stakerBtcPk,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		storedtx.StakingTime,
+		btcutil.Amount(storedtx.StakingTx.TxOut[stakingOutputIndex].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build staking info while spending staking transaction: %w", err)
 	}
-	return nil, fmt.Errorf("cannot build spend stake transactions. Staking transaction is in invalid state")
+
+	stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending staking transaction: %w", err)
+	}
+
+	// transaction is only in sent to babylon state we try to spend staking output directly
+	stakingTxHash := storedtx.StakingTx.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		storedtx.StakingTx.TxOut[stakingOutputIndex],
+		stakingOutputIndex,
+		&stakingTxHash,
+		storedtx.StakingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending staking transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutputSpendInfo: stakingTimeLockPathInfo,
+		fundingOutput:          storedtx.StakingTx.TxOut[stakingOutputIndex],
+		calculatedFee:          *calculatedFee,
+	}, nil
 }
 
 type UnbondingSlashingDesc struct {
@@ -343,11 +332,12 @@ func createUndelegationData(
 	slashingFee btcutil.Amount,
 	slashingRate sdkmath.LegacyDec,
 	fpBtcPubkeys []*btcec.PublicKey,
+	stakingOutputIndex uint32,
 	btcNetwork *chaincfg.Params,
 ) (*UnbondingSlashingDesc, error) {
 	stakingTxHash := storedTx.StakingTx.TxHash()
 
-	stakingOutpout := storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex]
+	stakingOutpout := storedTx.StakingTx.TxOut[stakingOutputIndex]
 
 	unbondingOutputValue := stakingOutpout.Value - int64(unbondingTxFee)
 
@@ -378,7 +368,7 @@ func createUndelegationData(
 	}
 
 	unbondingTx := wire.NewMsgTx(2)
-	unbondingTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&stakingTxHash, storedTx.StakingOutputIndex), nil, nil))
+	unbondingTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&stakingTxHash, stakingOutputIndex), nil, nil))
 	unbondingTx.AddTxOut(unbondingInfo.UnbondingOutput)
 
 	slashUnbondingTx, err := staking.BuildSlashingTxFromStakingTxStrict(
@@ -416,16 +406,17 @@ func buildUnbondingSpendInfo(
 	stakerPubKey *btcec.PublicKey,
 	fpBtcPubkeys []*btcec.PublicKey,
 	storedTx *stakerdb.StoredTransaction,
-	unbondingData *stakerdb.UnbondingStoreData,
+	stakingOutputIndex uint32,
+	undelegationInfo *cl.UndelegationInfo,
 	params *cl.StakingParams,
 	net *chaincfg.Params,
 ) (*staking.SpendInfo, error) {
-	if unbondingData.UnbondingTx == nil {
+	if undelegationInfo.UnbondingTransaction == nil {
 		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain unbonding transaction")
 	}
 
-	if len(unbondingData.CovenantSignatures) < int(params.CovenantQuruomThreshold) {
-		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain all necessary signatures. Required: %d, received: %d", params.CovenantQuruomThreshold, len(unbondingData.CovenantSignatures))
+	if len(undelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. Unbonding data does not contain all necessary signatures. Required: %d, received: %d", params.CovenantQuruomThreshold, len(undelegationInfo.CovenantUnbondingSignatures))
 	}
 
 	stakingInfo, err := staking.BuildStakingInfo(
@@ -434,7 +425,7 @@ func buildUnbondingSpendInfo(
 		params.CovenantPks,
 		params.CovenantQuruomThreshold,
 		storedTx.StakingTime,
-		btcutil.Amount(storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex].Value),
+		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
 		net,
 	)
 

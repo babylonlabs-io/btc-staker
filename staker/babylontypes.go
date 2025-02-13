@@ -47,6 +47,7 @@ type sendDelegationRequest struct {
 func (app *App) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
+	stakingOutputIndex uint32,
 	storedTx *stakerdb.StoredTransaction,
 ) (*cl.DelegationData, error) {
 	externalData, err := app.retrieveExternalDelegationData(stakerAddress, req.inclusionInfo)
@@ -59,6 +60,7 @@ func (app *App) buildDelegation(
 	stakingSlashingTx, stakingSlashingSpendInfo, err := slashingTxForStakingTx(
 		slashingFee,
 		externalData,
+		stakingOutputIndex,
 		storedTx,
 		req.fpBtcPubkeys,
 		app.network,
@@ -85,6 +87,7 @@ func (app *App) buildDelegation(
 		app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat),
 		externalData.babylonParams.SlashingRate,
 		req.fpBtcPubkeys,
+		stakingOutputIndex,
 		app.network,
 	)
 
@@ -95,7 +98,7 @@ func (app *App) buildDelegation(
 
 	stakingSlashingSig, err := app.signTaprootScriptSpendUsingWallet(
 		stakingSlashingTx,
-		storedTx.StakingTx.TxOut[storedTx.StakingOutputIndex],
+		storedTx.StakingTx.TxOut[stakingOutputIndex],
 		stakerAddress,
 		&stakingSlashingSpendInfo.RevealedLeaf,
 		&stakingSlashingSpendInfo.ControlBlock,
@@ -128,6 +131,7 @@ func (app *App) buildDelegation(
 	dg := createDelegationData(
 		req,
 		externalData.stakerPublicKey,
+		stakingOutputIndex,
 		storedTx,
 		stakingSlashingTx,
 		stakingSlashingSig.Signature,
@@ -221,8 +225,8 @@ func (app *App) checkForUnbondingTxSignaturesOnBabylon(stakingTxHash *chainhash.
 				}
 
 				req := &unbondingTxSignaturesConfirmedOnBabylonEvent{
-					stakingTxHash:               *stakingTxHash,
-					covenantUnbondingSignatures: undelegationInfo.CovenantUnbondingSignatures,
+					stakingTxHash:      *stakingTxHash,
+					stakingOutputIndex: di.BtcDelegation.StakingOutputIdx,
 				}
 
 				utils.PushOrQuit[*unbondingTxSignaturesConfirmedOnBabylonEvent](

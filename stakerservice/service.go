@@ -57,10 +57,11 @@ func NewStakerService(
 	}
 }
 
-func storedTxToStakingDetails(storedTx *stakerdb.StoredTransaction) StakingDetails {
+func storedTxToStakingDetails(storedTx *stakerdb.StoredTransaction, state string) StakingDetails {
 	return StakingDetails{
 		StakingTxHash:  storedTx.StakingTx.TxHash().String(),
 		StakerAddress:  storedTx.StakerAddress,
+		StakingState:   state,
 		TransactionIdx: strconv.FormatUint(storedTx.StoredTransactionIdx, 10),
 	}
 }
@@ -223,8 +224,7 @@ func (s *StakerService) stakingDetails(
 		return nil, fmt.Errorf("failed to query delegation info from babylon: %w", err)
 	}
 
-	details := storedTxToStakingDetails(storedTx)
-	details.StakingState = di.BtcDelegation.GetStatusDesc()
+	details := storedTxToStakingDetails(storedTx, di.BtcDelegation.GetStatusDesc())
 	return &details, nil
 }
 
@@ -341,20 +341,25 @@ func (s *StakerService) providers(_ *rpctypes.Context, offset, limit *int) (*Fin
 func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, limit *int) (*ListStakingTransactionsResponse, error) {
 	pageParams, err := getPageParams(offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get page params: %w", err)
 	}
 
 	txResult, err := s.staker.StoredTransactions(pageParams.Limit, pageParams.Offset)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get stored transactions: %w", err)
 	}
 
 	var stakingDetails []StakingDetails
+	bc := s.staker.BabylonController()
 
 	for _, tx := range txResult.Transactions {
 		tx := tx
-		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx))
+		stakingTxHash := tx.StakingTx.TxHash()
+		di, err := bc.QueryBTCDelegation(&stakingTxHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query delegation info from babylon: %w", err)
+		}
+		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx, di.BtcDelegation.GetStatusDesc()))
 	}
 
 	totalCount := strconv.FormatUint(txResult.Total, 10)
@@ -368,19 +373,20 @@ func (s *StakerService) listStakingTransactions(_ *rpctypes.Context, offset, lim
 func (s *StakerService) withdrawableTransactions(_ *rpctypes.Context, offset, limit *int) (*WithdrawableTransactionsResponse, error) {
 	pageParams, err := getPageParams(offset, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get page params: %w", err)
 	}
 
 	txResult, err := s.staker.WithdrawableTransactions(pageParams.Limit, pageParams.Offset)
-
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get withdrawable transactions: %w", err)
 	}
 
 	var stakingDetails []StakingDetails
 
 	for _, tx := range txResult.Transactions {
-		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx))
+		// Since withdrawable transactions are always confirmed in btc and activated in babylon,
+		// no need to query babylon for delegation info
+		stakingDetails = append(stakingDetails, storedTxToStakingDetails(&tx, str.BabylonActiveStatus))
 	}
 
 	lastIdx := "0"

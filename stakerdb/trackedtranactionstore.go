@@ -56,56 +56,19 @@ func NewCovenantMemberSignature(
 	}
 }
 
-func covenantSigToProto(c *PubKeySigPair) *proto.CovenantSig {
-	return &proto.CovenantSig{
-		CovenantSig:      c.Signature.Serialize(),
-		CovenantSigBtcPk: schnorr.SerializePubKey(c.PubKey),
-	}
-}
-
-func covenantSigsToProto(c []PubKeySigPair) []*proto.CovenantSig {
-	protoC := make([]*proto.CovenantSig, len(c))
-
-	for i, sig := range c {
-		protoC[i] = covenantSigToProto(&sig)
-	}
-
-	return protoC
-}
-
-func covenantSigFromProto(c *proto.CovenantSig) (*PubKeySigPair, error) {
-	sig, err := schnorr.ParseSignature(c.CovenantSig)
-
-	if err != nil {
-		return nil, err
-	}
-
-	pubKey, err := schnorr.ParsePubKey(c.CovenantSigBtcPk)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &PubKeySigPair{
-		Signature: sig,
-		PubKey:    pubKey,
-	}, nil
-}
-
 type BtcConfirmationInfo struct {
 	Height    uint32
 	BlockHash chainhash.Hash
 }
 
 type StoredTransaction struct {
-	StoredTransactionIdx       uint64
-	StakingTx                  *wire.MsgTx
-	StakingOutputIndex         uint32
-	StakingTxConfirmationInfo  *BtcConfirmationInfo
-	StakingTime                uint16
-	StakerAddress              string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
-	UnbondingTxData            *UnbondingStoreData
-	BabylonBTCDelegationTxHash string
+	StoredTransactionIdx        uint64
+	StakingTx                   *wire.MsgTx
+	StakingTxConfirmationInfo   *BtcConfirmationInfo
+	UnbondingTxConfirmationInfo *BtcConfirmationInfo
+	StakingTime                 uint16
+	UnbondingTime               uint16
+	StakerAddress               string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
 }
 
 // StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
@@ -115,54 +78,16 @@ func (t *StoredTransaction) StakingTxConfirmedOnBtc() bool {
 
 // UnbondingTxConfirmedOnBtc returns true only if unbonding transaction was sent and confirmed on bitcoin
 func (t *StoredTransaction) UnbondingTxConfirmedOnBtc() bool {
-	if t.UnbondingTxData == nil {
-		return false
-	}
-
-	return t.UnbondingTxData.UnbondingTxConfirmationInfo != nil
-}
-
-type UnbondingStoreData struct {
-	UnbondingTx                 *wire.MsgTx
-	UnbondingTime               uint16
-	CovenantSignatures          []PubKeySigPair
-	UnbondingTxConfirmationInfo *BtcConfirmationInfo
-}
-
-func newInitialUnbondingTxData(
-	unbondingTx *wire.MsgTx,
-	unbondingTime uint16,
-) (*proto.UnbondingTxData, error) {
-	if unbondingTx == nil {
-		return nil, fmt.Errorf("cannot create unbonding tx data without unbonding tx")
-	}
-
-	serializedTx, err := utils.SerializeBtcTransaction(unbondingTx)
-
-	if err != nil {
-		return nil, fmt.Errorf("cannot create unbonding tx data: %w", err)
-	}
-
-	unbondingData := &proto.UnbondingTxData{
-		UnbondingTransaction:           serializedTx,
-		UnbondingTime:                  uint32(unbondingTime),
-		CovenantSignatures:             make([]*proto.CovenantSig, 0),
-		UnbondingTxBtcConfirmationInfo: nil,
-	}
-
-	return unbondingData, nil
+	return t.UnbondingTxConfirmationInfo != nil
 }
 
 type WithdrawableTransactionsFilter struct {
 	currentBestBlockHeight uint32
 }
 type StoredTransactionQuery struct {
-	IndexOffset uint64
-
-	NumMaxTransactions uint64
-
-	Reversed bool
-
+	IndexOffset                    uint64
+	NumMaxTransactions             uint64
+	Reversed                       bool
 	withdrawableTransactionsFilter *WithdrawableTransactionsFilter
 }
 
@@ -238,45 +163,6 @@ func protoBtcConfirmationInfoToBtcConfirmationInfo(ci *proto.BTCConfirmationInfo
 	}, nil
 }
 
-func protoUnbondingDataToUnbondingStoreData(ud *proto.UnbondingTxData) (*UnbondingStoreData, error) {
-	// Unbodning txdata should always contains unbonding tx
-	var unbondingTx wire.MsgTx
-	err := unbondingTx.Deserialize(bytes.NewReader(ud.UnbondingTransaction))
-
-	if err != nil {
-		return nil, err
-	}
-
-	if ud.UnbondingTime > math.MaxUint16 {
-		return nil, fmt.Errorf("unbonding time is too large. Max value is %d", math.MaxUint16)
-	}
-
-	var sigs []PubKeySigPair
-
-	for _, sig := range ud.CovenantSignatures {
-		covenantSig, err := covenantSigFromProto(sig)
-
-		if err != nil {
-			return nil, err
-		}
-
-		sigs = append(sigs, *covenantSig)
-	}
-
-	unbondingTxConfirmationInfo, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ud.UnbondingTxBtcConfirmationInfo)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &UnbondingStoreData{
-		UnbondingTx:                 &unbondingTx,
-		UnbondingTime:               uint16(ud.UnbondingTime),
-		CovenantSignatures:          sigs,
-		UnbondingTxConfirmationInfo: unbondingTxConfirmationInfo,
-	}, nil
-}
-
 func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransaction, error) {
 	var stakingTx wire.MsgTx
 	err := stakingTx.Deserialize(bytes.NewReader(ttx.StakingTransaction))
@@ -285,20 +171,12 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 		return nil, err
 	}
 
-	var utd *UnbondingStoreData
-
-	if ttx.UnbondingTxData != nil {
-		unbondingData, err := protoUnbondingDataToUnbondingStoreData(ttx.UnbondingTxData)
-
-		if err != nil {
-			return nil, err
-		}
-
-		utd = unbondingData
+	// var utd *UnbondingStoreData
+	uci, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.UnbondingTxBtcConfirmationInfo)
+	if err != nil {
+		return nil, err
 	}
-
-	stakingTxConfgInfo, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.StakingTxBtcConfirmationInfo)
-
+	sci, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.StakingTxBtcConfirmationInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -308,14 +186,12 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 	}
 
 	return &StoredTransaction{
-		StoredTransactionIdx:       ttx.TrackedTransactionIdx,
-		StakingTx:                  &stakingTx,
-		StakingOutputIndex:         ttx.StakingOutputIdx,
-		StakingTxConfirmationInfo:  stakingTxConfgInfo,
-		StakingTime:                uint16(ttx.StakingTime),
-		StakerAddress:              ttx.StakerAddress,
-		UnbondingTxData:            utd,
-		BabylonBTCDelegationTxHash: ttx.BabylonBTCDelegationTxHash,
+		StoredTransactionIdx:        ttx.TrackedTransactionIdx,
+		StakingTx:                   &stakingTx,
+		StakingTxConfirmationInfo:   sci,
+		UnbondingTxConfirmationInfo: uci,
+		StakingTime:                 uint16(ttx.StakingTime),
+		StakerAddress:               ttx.StakerAddress,
 	}, nil
 }
 
@@ -448,9 +324,81 @@ func (c *TrackedTransactionStore) addTransactionInternal(
 	})
 }
 
+func deleteTrackedTransaction(
+	rwTx kvdb.RwTx,
+	txIdxBucket walletdb.ReadWriteBucket,
+	txBucket walletdb.ReadWriteBucket,
+	txHashBytes []byte,
+) error {
+	// 1. Get current number of transactions
+	numTxBytes := txIdxBucket.Get(numTxKey)
+	if numTxBytes == nil {
+		return ErrCorruptedTransactionsDB
+	}
+	currentNumTx := binary.BigEndian.Uint64(numTxBytes)
+
+	// 2. Delete transaction data
+	indexBytes := txIdxBucket.Get(txHashBytes)
+	if indexBytes == nil {
+		return fmt.Errorf("transaction not found for hash")
+	}
+
+	if err := txBucket.Delete(indexBytes); err != nil {
+		return fmt.Errorf("failed to delete transaction data: %w", err)
+	}
+
+	if err := txIdxBucket.Delete(txHashBytes); err != nil {
+		return fmt.Errorf("failed to delete transaction index: %w", err)
+	}
+
+	// 3. Delete input data
+	inputDataBucket := rwTx.ReadWriteBucket(inputsDataBucketName)
+	if inputDataBucket == nil {
+		return ErrCorruptedTransactionsDB
+	}
+
+	cursor := inputDataBucket.ReadCursor()
+	for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
+		if bytes.Equal(v, txHashBytes) {
+			if err := inputDataBucket.Delete(k); err != nil {
+				return fmt.Errorf("failed to delete input data: %w", err)
+			}
+		}
+	}
+
+	// 4. Update number of transactions
+	if currentNumTx > 0 {
+		if err := txIdxBucket.Put(numTxKey, uint64KeyToBytes(currentNumTx-1)); err != nil {
+			return fmt.Errorf("failed to update transaction count: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *TrackedTransactionStore) deleteTransasctionInternal(txHash []byte) error {
+	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
+		transactionsBucketIdxBucket := tx.ReadWriteBucket(transactionIndexName)
+		if transactionsBucketIdxBucket == nil {
+			return ErrCorruptedTransactionsDB
+		}
+
+		// check if transaction exists
+		if transactionsBucketIdxBucket.Get(txHash) == nil {
+			return fmt.Errorf("transaction not found")
+		}
+
+		transactionsBucket := tx.ReadWriteBucket(transactionBucketName)
+		if transactionsBucket == nil {
+			return ErrCorruptedTransactionsDB
+		}
+
+		return deleteTrackedTransaction(tx, transactionsBucketIdxBucket, transactionsBucket, txHash)
+	})
+}
+
 func CreateTrackedTransaction(
 	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
 	stakingTime uint16,
 	stakerAddress btcutil.Address,
 ) (*StoredTransaction, error) {
@@ -461,13 +409,10 @@ func CreateTrackedTransaction(
 
 	msg := proto.TrackedTransaction{
 		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		StakingTxBtcConfirmationInfo: nil,
-		UnbondingTxData:              nil,
+		TrackedTransactionIdx: 0,
+		StakingTransaction:    serializedTx,
+		StakerAddress:         stakerAddress.EncodeAddress(),
+		StakingTime:           uint32(stakingTime),
 	}
 
 	return protoTxToStoredTransaction(&msg)
@@ -515,12 +460,9 @@ func getInputData(tx *wire.MsgTx) (*inputData, error) {
 // AddTransactionSentToBabylon adds a transaction sent to Babylon
 func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
 	stakingTime uint16,
 	stakerAddress btcutil.Address,
-	unbondingTx *wire.MsgTx,
 	unbondingTime uint16,
-	btcDelTxHash string,
 ) error {
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
@@ -529,21 +471,13 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
-	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-	if err != nil {
-		return fmt.Errorf("failed to create unbonding transaction data: %w", err)
-	}
-
 	msg := proto.TrackedTransaction{
 		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		StakingTxBtcConfirmationInfo: nil,
-		UnbondingTxData:              update,
-		BabylonBTCDelegationTxHash:   btcDelTxHash,
+		TrackedTransactionIdx: 0,
+		StakingTransaction:    serializedTx,
+		StakerAddress:         stakerAddress.EncodeAddress(),
+		StakingTime:           uint32(stakingTime),
+		UnbondingTime:         uint32(unbondingTime),
 	}
 
 	inputData, err := getInputData(btcTx)
@@ -555,6 +489,16 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	return c.addTransactionInternal(
 		txHashBytes, &msg, inputData,
 	)
+}
+
+// DeleteTransactionSentToBabylon deletes a tracked transaction by its hash
+func (c *TrackedTransactionStore) DeleteTransactionSentToBabylon(txHash *chainhash.Hash) error {
+	if txHash == nil {
+		return fmt.Errorf("transaction hash cannot be nil")
+	}
+
+	txHashBytes := txHash[:]
+	return c.deleteTransasctionInternal(txHashBytes)
 }
 
 // setTxState sets the state of a transaction
@@ -641,36 +585,13 @@ func (c *TrackedTransactionStore) SetDelegationActiveOnBabylonAndConfirmedOnBtc(
 	return c.setTxState(txHash, setDelegationActiveOnBabylon)
 }
 
-func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
-	txHash *chainhash.Hash,
-	covenantSignatures []PubKeySigPair,
-) error {
-	setUnbondingSignaturesReceived := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData == nil {
-			return fmt.Errorf("cannot set unbonding signatures received, because unbonding tx data does not exist: %w", ErrUnbondingDataNotFound)
-		}
-
-		if len(tx.UnbondingTxData.CovenantSignatures) > 0 {
-			return fmt.Errorf("cannot set unbonding signatures received, because unbonding signatures already exist: %w", ErrInvalidUnbondingDataUpdate)
-		}
-		tx.UnbondingTxData.CovenantSignatures = covenantSigsToProto(covenantSignatures)
-		return nil
-	}
-
-	return c.setTxState(txHash, setUnbondingSignaturesReceived)
-}
-
 func (c *TrackedTransactionStore) SetTxUnbondingConfirmedOnBtc(
 	txHash *chainhash.Hash,
 	blockHash *chainhash.Hash,
 	blockHeight uint32,
 ) error {
 	setUnbondingConfirmedOnBtc := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData == nil {
-			return fmt.Errorf("cannot set unbonding confirmed on btc, because unbonding tx data does not exist: %w", ErrUnbondingDataNotFound)
-		}
-
-		tx.UnbondingTxData.UnbondingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
+		tx.UnbondingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
 			BlockHash:   blockHash.CloneBytes(),
 			BlockHeight: blockHeight,
 		}
@@ -797,8 +718,8 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 					scriptTimeLock = txFromDB.StakingTime
 					confirmationHeight = txFromDB.StakingTxConfirmationInfo.Height
 				case txFromDB.StakingTxConfirmedOnBtc() && txFromDB.UnbondingTxConfirmedOnBtc():
-					scriptTimeLock = txFromDB.UnbondingTxData.UnbondingTime
-					confirmationHeight = txFromDB.UnbondingTxData.UnbondingTxConfirmationInfo.Height
+					scriptTimeLock = txFromDB.UnbondingTime
+					confirmationHeight = txFromDB.UnbondingTxConfirmationInfo.Height
 				default:
 					return false, nil
 				}

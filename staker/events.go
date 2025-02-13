@@ -1,7 +1,6 @@
 package staker
 
 import (
-	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/sirupsen/logrus"
 )
@@ -18,8 +17,8 @@ var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
 
 type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
-	stakingTxHash               chainhash.Hash
-	covenantUnbondingSignatures []cl.CovenantSignatureInfo
+	stakingTxHash      chainhash.Hash
+	stakingOutputIndex uint32
 }
 
 func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventID() chainhash.Hash {
