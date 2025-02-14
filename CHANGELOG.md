@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.15.2
+
 * [#127](https://github.com/babylonlabs-io/btc-staker/pull/127) Add support for
 taproot addresses bip322 signing
 
