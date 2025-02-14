@@ -143,7 +143,7 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
 
 	// check that there is not error when qury for withdrawable transactions
-	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background())
+	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 	require.NoError(t, err)
 	require.Len(t, withdrawableTransactionsResp.Transactions, 0)
 
@@ -175,7 +175,7 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 
 	// Spend unbonding tx of pre-approval stake
 	require.Eventually(t, func() bool {
-		withdrawableTransactionsResp, err = tm.StakerClient.WithdrawableTransactions(context.Background())
+		withdrawableTransactionsResp, err = tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 		if err != nil {
 			return false
 		}
@@ -824,7 +824,7 @@ func TestStakingUnbonding(t *testing.T) {
 	tm.waitForUnbondingTxConfirmedOnBtc(t, txHash, unbondingTxHash)
 
 	require.Eventually(t, func() bool {
-		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background())
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 		if err != nil {
 			return false
 		}
@@ -948,12 +948,12 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	tm.mineNEmptyBlocks(t, blockForStakingToExpire, false)
 
 	require.Eventually(t, func() bool {
-		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background())
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 		require.NoError(t, err)
 		return len(withdrawableTransactionsResp.Transactions) == 3
 	}, 5*time.Minute, eventuallyPollTime)
 
-	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background())
+	withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
 	require.NoError(t, err)
 	require.Len(t, withdrawableTransactionsResp.Transactions, 3)
 	require.Equal(t, withdrawableTransactionsResp.LastWithdrawableTransactionIndex, "4")

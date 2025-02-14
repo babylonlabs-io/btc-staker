@@ -256,6 +256,16 @@ var withdrawableTransactionsCmd = cli.Command{
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
 			Value: defaultStakingDaemonAddress,
 		},
+		cli.IntFlag{
+			Name:  offsetFlag,
+			Usage: "offset of the first transactions to return",
+			Value: 0,
+		},
+		cli.IntFlag{
+			Name:  limitFlag,
+			Usage: "maximum number of transactions to return",
+			Value: 100,
+		},
 	},
 	Action: withdrawableTransactions,
 }
@@ -514,15 +524,25 @@ func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+		return err
 	}
 
 	sctx := context.Background()
 
-	transactions, err := client.WithdrawableTransactions(sctx)
+	offset := ctx.Int(offsetFlag)
+	if offset < 0 {
+		return cli.NewExitError("Offset must be non-negative", 1)
+	}
+
+	limit := ctx.Int(limitFlag)
+	if limit < 0 {
+		return cli.NewExitError("Limit must be non-negative", 1)
+	}
+
+	transactions, err := client.WithdrawableTransactions(sctx, &offset, &limit)
 
 	if err != nil {
-		return fmt.Errorf("failed to get withdrawable transactions: %w", err)
+		return err
 	}
 
 	helpers.PrintRespJSON(transactions)

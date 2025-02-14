@@ -169,10 +169,20 @@ func (c *StakerServiceJSONRPCClient) ListStakingTransactions(ctx context.Context
 }
 
 // WithdrawableTransactions returns a list of withdrawable transactions
-func (c *StakerServiceJSONRPCClient) WithdrawableTransactions(ctx context.Context) (*service.WithdrawableTransactionsResponse, error) {
+func (c *StakerServiceJSONRPCClient) WithdrawableTransactions(ctx context.Context, offset *int, limit *int) (*service.WithdrawableTransactionsResponse, error) {
 	result := new(service.WithdrawableTransactionsResponse)
 
-	_, err := c.client.Call(ctx, "withdrawable_transactions", nil, result)
+	params := make(map[string]interface{})
+
+	if limit != nil {
+		params["limit"] = limit
+	}
+
+	if offset != nil {
+		params["offset"] = offset
+	}
+
+	_, err := c.client.Call(ctx, "withdrawable_transactions", params, result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call withdrawable_transactions: %w", err)
 	}

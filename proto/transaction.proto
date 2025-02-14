@@ -4,12 +4,6 @@ package proto;
 
 option go_package = "github.com/babylonlabs-io/btc-staker/proto";
 
-// Contains information about btc confirmation
-message BTCConfirmationInfo {
-    uint32 block_height = 1;
-    bytes block_hash = 2;
-}
-
 message TrackedTransaction {
     // index of tracked transaction in database, first tracked transaction has index 1
     uint64 tracked_transaction_idx = 1;

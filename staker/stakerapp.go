@@ -1382,21 +1382,19 @@ func (app *App) StoredTransactions(limit, offset uint64) (*stakerdb.StoredTransa
 
 // WithdrawableTransactions returns a slice of stakerdb.StoredTransaction
 // that can be withdrawn
-func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResult, error) {
-	var transactions []stakerdb.StoredTransaction
-	reset := func() {
-		transactions = make([]stakerdb.StoredTransaction, 0)
+func (app *App) WithdrawableTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
+	transactions, err := app.StoredTransactions(limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query stored transactions: %w", err)
 	}
 
-	var totalTxCount int
-	// add stored transactions to slice
-	if err := app.txTracker.ScanTrackedTransactions(func(tx *stakerdb.StoredTransaction) error {
-		totalTxCount++
+	withdrawableTransactions := make([]stakerdb.StoredTransaction, 0)
 
+	for _, tx := range transactions.Transactions {
 		stakingTxHash := tx.StakingTx.TxHash()
 		di, err := app.babylonClient.QueryBTCDelegation(&stakingTxHash)
 		if err != nil {
-			return fmt.Errorf("failed to get delegation info: %w", err)
+			return nil, fmt.Errorf("failed to get delegation info: %w", err)
 		}
 
 		babylonStatus := di.BtcDelegation.GetStatusDesc()
@@ -1405,7 +1403,7 @@ func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResu
 			tx.StakingTx.TxOut[di.BtcDelegation.StakingOutputIdx].PkScript,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to get staking tx details: %w", err)
+			return nil, fmt.Errorf("failed to get staking tx details: %w", err)
 		}
 
 		var scriptTimeLock uint16
@@ -1413,14 +1411,14 @@ func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResu
 
 		switch babylonStatus {
 		case BabylonPendingStatus, BabylonVerifiedStatus:
-			return nil
+			continue
 		case BabylonExpiredStatus:
-			transactions = append(transactions, *tx)
-			return nil
+			withdrawableTransactions = append(withdrawableTransactions, tx)
+			continue
 		default:
 			udi, err := app.babylonClient.GetUndelegationInfo(di)
 			if err != nil {
-				return fmt.Errorf("failed to get undelegation info: %w", err)
+				return nil, fmt.Errorf("failed to get undelegation info: %w", err)
 			}
 
 			unbondingTxHash := udi.UnbondingTransaction.TxHash()
@@ -1429,12 +1427,12 @@ func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResu
 				udi.UnbondingTransaction.TxOut[0].PkScript,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to get unbonding tx details: %w", err)
+				return nil, fmt.Errorf("failed to get unbonding tx details: %w", err)
 			}
 
 			switch {
 			case unbondingStatus == walletcontroller.TxNotFound, unbondingConfirmation.BlockHash == nil || unbondingConfirmation.BlockHeight == 0:
-				// unbondign transaction is not found
+				// unbonding transaction is not found
 				scriptTimeLock = uint16(di.BtcDelegation.StakingTime)
 				confirmationHeight = stakingConfirmation.BlockHeight
 			default:
@@ -1452,17 +1450,13 @@ func (app *App) WithdrawableTransactions() (*stakerdb.StoredTransactionQueryResu
 		}(confirmationHeight, scriptTimeLock, app.currentBestBlockHeight.Load())
 
 		if isTimeLockExpired {
-			transactions = append(transactions, *tx)
+			withdrawableTransactions = append(withdrawableTransactions, tx)
 		}
-
-		return nil
-	}, reset); err != nil {
-		return nil, fmt.Errorf("error while checking and handling stored transactions: %w", err)
 	}
 
 	return &stakerdb.StoredTransactionQueryResult{
-		Transactions: transactions,
-		Total:        uint64(totalTxCount),
+		Transactions: withdrawableTransactions,
+		Total:        uint64(len(transactions.Transactions)),
 	}, nil
 }
 
