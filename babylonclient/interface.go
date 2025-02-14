@@ -17,6 +17,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// BTCCheckpointParams defines the parameters for a BTC checkpoint
 type BTCCheckpointParams struct {
 	// K-deep
 	ConfirmationTimeBlocks uint32
@@ -24,6 +25,7 @@ type BTCCheckpointParams struct {
 	FinalizationTimeoutBlocks uint32
 }
 
+// StakingParams defines the parameters for staking
 type StakingParams struct {
 	// K-deep
 	ConfirmationTimeBlocks uint32
@@ -84,7 +86,6 @@ type BabylonClient interface {
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
-	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
 	QueryBTCDelegation(stakingTxHash *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error)
 	GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
@@ -176,10 +177,6 @@ func (m *MockBabylonClient) QueryHeaderDepth(_ *chainhash.Hash) (uint32, error) 
 
 func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool, error) {
 	return false, nil
-}
-
-func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationInfo, error) {
-	return nil, fmt.Errorf("delegation do not exist")
 }
 
 func (m *MockBabylonClient) QueryBTCDelegation(_ *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error) {

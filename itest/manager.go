@@ -803,6 +803,7 @@ func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testSt
 	return hashes
 }
 
+// spendStakingTxWithHash sends a spend transaction to Babylon
 func (tm *TestManager) spendStakingTxWithHash(t *testing.T, stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount) {
 	res, err := tm.StakerClient.SpendStakingTransaction(context.Background(), stakingTxHash.String())
 	require.NoError(t, err)
@@ -892,27 +893,14 @@ func (tm *TestManager) waitForUnbondingTxConfirmedOnBtc(t *testing.T, txHash, un
 	}, eventuallyTimeout, eventuallyPollTime)
 }
 
-func (tm *TestManager) walletUnspentsOutputsContainsOutput(t *testing.T, from btcutil.Address, withValue btcutil.Amount) bool {
-	unspentOutputs, err := tm.Sa.ListUnspentOutputs()
-	require.NoError(t, err)
-
-	var containsOutput bool = false
-
-	for _, output := range unspentOutputs {
-		if output.Address == tm.MinerAddr.String() && int64(output.Amount) == int64(withValue) {
-			containsOutput = true
-		}
-	}
-
-	return containsOutput
-}
-
+// insertAllMinedBlocksToBabylon inserts all mined blocks to Babylon
 func (tm *TestManager) insertAllMinedBlocksToBabylon(t *testing.T) {
 	headers := GetAllMinedBtcHeadersSinceGenesis(t, tm.TestRpcBtcClient)
 	_, err := tm.BabylonClient.InsertBtcBlockHeaders(headers)
 	require.NoError(t, err)
 }
 
+// insertCovenantSigForDelegation inserts a covenant signature for a delegation
 func (tm *TestManager) insertCovenantSigForDelegation(
 	t *testing.T,
 	btcDel *btcstypes.BTCDelegationResponse,

@@ -45,10 +45,12 @@ func sortPubKeysForWitness(infos []*btcec.PublicKey) []*btcec.PublicKey {
 	return sortedInfos
 }
 
+// pubKeyToString converts a public key to a string
 func pubKeyToString(pubKey *btcec.PublicKey) string {
 	return hex.EncodeToString(schnorr.SerializePubKey(pubKey))
 }
 
+// createWitnessSignaturesForPubKeys creates a witness script for a given covenant
 func createWitnessSignaturesForPubKeys(
 	covenantPubKeys []*btcec.PublicKey,
 	covenantQuorum uint32,
@@ -85,6 +87,7 @@ func createWitnessSignaturesForPubKeys(
 	return signatures, nil
 }
 
+// slashingTxForStakingTx creates a slapping transaction for a given staking transaction
 func slashingTxForStakingTx(
 	slashingFee btcutil.Amount,
 	delegationData *externalDelegationData,
@@ -135,6 +138,7 @@ func slashingTxForStakingTx(
 	return slashingTx, slashingPathInfo, nil
 }
 
+// createDelegationData creates a delegation data from a send delegation request
 func createDelegationData(
 	req *sendDelegationRequest,
 	stakerBtcPk *btcec.PublicKey,
@@ -446,6 +450,7 @@ func buildUnbondingSpendInfo(
 	return unbondingPathInfo, nil
 }
 
+// haveDuplicates checks if there are any duplicates in a slice of public keys
 func haveDuplicates(btcPKs []*btcec.PublicKey) bool {
 	seen := make(map[string]struct{})
 

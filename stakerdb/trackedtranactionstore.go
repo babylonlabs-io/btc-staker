@@ -8,8 +8,6 @@ import (
 
 	"github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/utils"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -35,68 +33,42 @@ var (
 	numTxKey = []byte("ntk")
 )
 
+// StoredTransactionScanFn is a function which is called for each transaction which is being tracked
 type StoredTransactionScanFn func(tx *StoredTransaction) error
 
+// TrackedTransactionStore is a store which stores transactions which are being tracked
 type TrackedTransactionStore struct {
 	db kvdb.Backend
 }
 
-type PubKeySigPair struct {
-	Signature *schnorr.Signature
-	PubKey    *btcec.PublicKey
-}
-
-func NewCovenantMemberSignature(
-	sig *schnorr.Signature,
-	pubKey *btcec.PublicKey,
-) PubKeySigPair {
-	return PubKeySigPair{
-		sig,
-		pubKey,
-	}
-}
-
-type BtcConfirmationInfo struct {
-	Height    uint32
-	BlockHash chainhash.Hash
-}
-
+// StoredTransaction is a struct which contains the information about a
 type StoredTransaction struct {
 	StoredTransactionIdx uint64
 	StakingTx            *wire.MsgTx
 	StakerAddress        string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
 }
 
-type WithdrawableTransactionsFilter struct {
-	currentBestBlockHeight uint32
-}
+// StoredTransactionQuery is a struct which contains the parameters for a query
 type StoredTransactionQuery struct {
-	IndexOffset                    uint64
-	NumMaxTransactions             uint64
-	Reversed                       bool
-	withdrawableTransactionsFilter *WithdrawableTransactionsFilter
+	IndexOffset        uint64
+	NumMaxTransactions uint64
+	Reversed           bool
 }
 
-func DefaultStoredTransactionQuery() StoredTransactionQuery {
-	return StoredTransactionQuery{
-		IndexOffset:                    0,
-		NumMaxTransactions:             50,
-		Reversed:                       false,
-		withdrawableTransactionsFilter: nil,
-	}
-}
-
-func (q *StoredTransactionQuery) WithdrawableTransactionsFilter(currentBestBlock uint32) StoredTransactionQuery {
-	q.withdrawableTransactionsFilter = &WithdrawableTransactionsFilter{
-		currentBestBlockHeight: currentBestBlock,
-	}
-
-	return *q
-}
-
+// StoredTransactionQueryResult is a struct which contains a slice of
+// StoredTransaction and total number of transactions
 type StoredTransactionQueryResult struct {
 	Transactions []StoredTransaction
 	Total        uint64
+}
+
+// DefaultStoredTransactionQuery returns a default query which returns 50 transactions
+func DefaultStoredTransactionQuery() StoredTransactionQuery {
+	return StoredTransactionQuery{
+		IndexOffset:        0,
+		NumMaxTransactions: 50,
+		Reversed:           false,
+	}
 }
 
 // NewTrackedTransactionStore returns a new store backed by db
@@ -115,18 +87,17 @@ func (c *TrackedTransactionStore) initBuckets() error {
 	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
 		_, err := tx.CreateTopLevelBucket(transactionBucketName)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create transactions bucket: %w", err)
 		}
 
 		_, err = tx.CreateTopLevelBucket(transactionIndexName)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create transaction index bucket: %w", err)
 		}
 
 		_, err = tx.CreateTopLevelBucket(inputsDataBucketName)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create inputs data bucket: %w", err)
 		}
 
 		return nil
@@ -147,12 +118,14 @@ func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransacti
 	}, nil
 }
 
+// uint64KeyToBytes converts a uint64 to a byte slice
 func uint64KeyToBytes(key uint64) []byte {
 	var keyBytes = make([]byte, 8)
 	binary.BigEndian.PutUint64(keyBytes, key)
 	return keyBytes
 }
 
+// nextTxKey returns the next key to use for a transaction
 func nextTxKey(txIdxBucket walletdb.ReadBucket) uint64 {
 	numTxBytes := txIdxBucket.Get(numTxKey)
 	var currKey uint64
@@ -165,6 +138,7 @@ func nextTxKey(txIdxBucket walletdb.ReadBucket) uint64 {
 	return currKey
 }
 
+// getNumTx returns number of transactions stored in the database
 func getNumTx(txIdxBucket walletdb.ReadBucket) uint64 {
 	// we are starting indexing transactions from 1, and nextTxKey always return next key
 	// which should be used when indexing transaction, so to get number of transactions
@@ -194,6 +168,7 @@ func getTxByHash(
 	return maybeTx, txKey, nil
 }
 
+// saveTrackedTransaction saves a tracked transaction to the database
 func saveTrackedTransaction(
 	rwTx kvdb.RwTx,
 	txIdxBucket walletdb.ReadWriteBucket,
@@ -210,23 +185,18 @@ func saveTrackedTransaction(
 	tx.TrackedTransactionIdx = nextTxKey
 
 	marshalled, err := pm.Marshal(tx)
-
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal tracked transaction: %w", err)
 	}
 
 	nextTxKeyBytes := uint64KeyToBytes(nextTxKey)
 
-	err = txBucket.Put(nextTxKeyBytes, marshalled)
-
-	if err != nil {
-		return err
+	if err := txBucket.Put(nextTxKeyBytes, marshalled); err != nil {
+		return fmt.Errorf("failed to save transaction: %w", err)
 	}
 
-	err = txIdxBucket.Put(txHashBytes, nextTxKeyBytes)
-
-	if err != nil {
-		return err
+	if err := txIdxBucket.Put(txHashBytes, nextTxKeyBytes); err != nil {
+		return fmt.Errorf("failed to save transaction index: %w", err)
 	}
 
 	if id != nil {
@@ -237,10 +207,8 @@ func saveTrackedTransaction(
 
 		for _, input := range id.inputs {
 			// save all the inputs to the transaction
-			err = inputDataBucket.Put(input, txHashBytes)
-
-			if err != nil {
-				return err
+			if err := inputDataBucket.Put(input, txHashBytes); err != nil {
+				return fmt.Errorf("failed to save input data: %w", err)
 			}
 		}
 	}
@@ -249,6 +217,7 @@ func saveTrackedTransaction(
 	return txIdxBucket.Put(numTxKey, uint64KeyToBytes(nextTxKey+1))
 }
 
+// addTransactionInternal adds a transaction to the database
 func (c *TrackedTransactionStore) addTransactionInternal(
 	txHashBytes []byte,
 	tt *proto.TrackedTransaction,
@@ -276,20 +245,21 @@ func (c *TrackedTransactionStore) addTransactionInternal(
 	})
 }
 
+// deleteTrackedTransaction deletes a transaction from the database
 func deleteTrackedTransaction(
 	rwTx kvdb.RwTx,
 	txIdxBucket walletdb.ReadWriteBucket,
 	txBucket walletdb.ReadWriteBucket,
 	txHashBytes []byte,
 ) error {
-	// 1. Get current number of transactions
+	// Get current number of transactions
 	numTxBytes := txIdxBucket.Get(numTxKey)
 	if numTxBytes == nil {
 		return ErrCorruptedTransactionsDB
 	}
 	currentNumTx := binary.BigEndian.Uint64(numTxBytes)
 
-	// 2. Delete transaction data
+	// Delete transaction data
 	indexBytes := txIdxBucket.Get(txHashBytes)
 	if indexBytes == nil {
 		return fmt.Errorf("transaction not found for hash")
@@ -303,7 +273,7 @@ func deleteTrackedTransaction(
 		return fmt.Errorf("failed to delete transaction index: %w", err)
 	}
 
-	// 3. Delete input data
+	// Delete input data
 	inputDataBucket := rwTx.ReadWriteBucket(inputsDataBucketName)
 	if inputDataBucket == nil {
 		return ErrCorruptedTransactionsDB
@@ -318,7 +288,7 @@ func deleteTrackedTransaction(
 		}
 	}
 
-	// 4. Update number of transactions
+	// Update number of transactions
 	if currentNumTx > 0 {
 		if err := txIdxBucket.Put(numTxKey, uint64KeyToBytes(currentNumTx-1)); err != nil {
 			return fmt.Errorf("failed to update transaction count: %w", err)
@@ -328,6 +298,7 @@ func deleteTrackedTransaction(
 	return nil
 }
 
+// deleteTransasctionInternal deletes a transaction from the database
 func (c *TrackedTransactionStore) deleteTransasctionInternal(txHash []byte) error {
 	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
 		transactionsBucketIdxBucket := tx.ReadWriteBucket(transactionIndexName)
@@ -349,14 +320,14 @@ func (c *TrackedTransactionStore) deleteTransasctionInternal(txHash []byte) erro
 	})
 }
 
+// CreateTrackedTransaction creates a new tracked transaction
 func CreateTrackedTransaction(
 	btcTx *wire.MsgTx,
-	stakingTime uint16,
 	stakerAddress btcutil.Address,
 ) (*StoredTransaction, error) {
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
 	msg := proto.TrackedTransaction{
@@ -364,17 +335,18 @@ func CreateTrackedTransaction(
 		TrackedTransactionIdx: 0,
 		StakingTransaction:    serializedTx,
 		StakerAddress:         stakerAddress.EncodeAddress(),
-		StakingTime:           uint32(stakingTime),
 	}
 
 	return protoTxToStoredTransaction(&msg)
 }
 
+// inputData is the input data of a transaction
 type inputData struct {
 	inputs [][]byte
 	txHash []byte
 }
 
+// outpointBytes converts an outpoint to a byte slice
 func outpointBytes(op *wire.OutPoint) ([]byte, error) {
 	var buf bytes.Buffer
 	_, err := buf.Write(op.Hash.CloneBytes())
@@ -391,6 +363,7 @@ func outpointBytes(op *wire.OutPoint) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// getInputData returns the input data of a transaction
 func getInputData(tx *wire.MsgTx) (*inputData, error) {
 	var inputs [][]byte
 
@@ -429,7 +402,6 @@ func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	}
 
 	inputData, err := getInputData(btcTx)
-
 	if err != nil {
 		return fmt.Errorf("failed to get input data: %w", err)
 	}
@@ -449,111 +421,12 @@ func (c *TrackedTransactionStore) DeleteTransactionSentToBabylon(txHash *chainha
 	return c.deleteTransasctionInternal(txHashBytes)
 }
 
-// setTxState sets the state of a transaction
-func (c *TrackedTransactionStore) setTxState(
-	txHash *chainhash.Hash,
-	stateTransitionFn func(*proto.TrackedTransaction) error,
-) error {
-	txHashBytes := txHash.CloneBytes()
-
-	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
-		transactionIdxBucket := tx.ReadWriteBucket(transactionIndexName)
-
-		if transactionIdxBucket == nil {
-			return ErrCorruptedTransactionsDB
-		}
-
-		transactionsBucket := tx.ReadWriteBucket(transactionBucketName)
-		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDB
-		}
-
-		maybeTx, txKey, err := getTxByHash(txHashBytes, transactionIdxBucket, transactionsBucket)
-
-		if err != nil {
-			return err
-		}
-
-		var storedTx proto.TrackedTransaction
-		err = pm.Unmarshal(maybeTx, &storedTx)
-		if err != nil {
-			return ErrCorruptedTransactionsDB
-		}
-
-		if err := stateTransitionFn(&storedTx); err != nil {
-			return err
-		}
-
-		marshalled, err := pm.Marshal(&storedTx)
-
-		if err != nil {
-			return err
-		}
-
-		err = transactionsBucket.Put(txKey, marshalled)
-
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-// SetTxConfirmed sets the state of a transaction
-func (c *TrackedTransactionStore) SetTxConfirmed(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setTxConfirmed := func(tx *proto.TrackedTransaction) error {
-		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxConfirmed)
-}
-
-func (c *TrackedTransactionStore) SetDelegationActiveOnBabylonAndConfirmedOnBtc(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setDelegationActiveOnBabylon := func(tx *proto.TrackedTransaction) error {
-		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setDelegationActiveOnBabylon)
-}
-
-func (c *TrackedTransactionStore) SetTxUnbondingConfirmedOnBtc(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setUnbondingConfirmedOnBtc := func(tx *proto.TrackedTransaction) error {
-		tx.UnbondingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setUnbondingConfirmedOnBtc)
-}
-
+// GetTransaction retrieves a transaction by its hash
 func (c *TrackedTransactionStore) GetTransaction(txHash *chainhash.Hash) (*StoredTransaction, error) {
 	var storedTx *StoredTransaction
 	txHashBytes := txHash.CloneBytes()
 
-	err := c.db.View(func(tx kvdb.RTx) error {
+	if err := c.db.View(func(tx kvdb.RTx) error {
 		transactionIdxBucket := tx.ReadBucket(transactionIndexName)
 
 		if transactionIdxBucket == nil {
@@ -566,33 +439,31 @@ func (c *TrackedTransactionStore) GetTransaction(txHash *chainhash.Hash) (*Store
 		}
 
 		maybeTx, _, err := getTxByHash(txHashBytes, transactionIdxBucket, transactionsBucket)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get transaction by hash: %w", err)
 		}
 
 		var storedTxProto proto.TrackedTransaction
 		err = pm.Unmarshal(maybeTx, &storedTxProto)
 		if err != nil {
-			return ErrCorruptedTransactionsDB
+			return fmt.Errorf("failed to unmarshal transaction: %w", err)
 		}
 
 		txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to convert transaction to stored transaction: %w", err)
 		}
 
 		storedTx = txFromDB
 		return nil
-	}, func() {})
-
-	if err != nil {
-		return nil, err
+	}, func() {}); err != nil {
+		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
 
 	return storedTx, nil
 }
 
+// GetAllStoredTransactions returns all stored transactions
 func (c *TrackedTransactionStore) GetAllStoredTransactions() ([]StoredTransaction, error) {
 	q := DefaultStoredTransactionQuery()
 	// MaxUint64 indicates we will scan over all transactions
@@ -636,8 +507,7 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 		accumulateTransactions := func(_, transaction []byte) (bool, error) {
 			protoTx := proto.TrackedTransaction{}
 
-			err := pm.Unmarshal(transaction, &protoTx)
-			if err != nil {
+			if err := pm.Unmarshal(transaction, &protoTx); err != nil {
 				return false, fmt.Errorf("failed to unmarshal transaction: %w", err)
 			}
 
@@ -673,6 +543,7 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 	return resp, nil
 }
 
+// ScanTrackedTransactions iterates over all stored transactions
 func (c *TrackedTransactionStore) ScanTrackedTransactions(scanFunc StoredTransactionScanFn, reset func()) error {
 	return kvdb.View(c.db, func(tx kvdb.RTx) error {
 		transactionsBucket := tx.ReadBucket(transactionBucketName)
@@ -683,16 +554,13 @@ func (c *TrackedTransactionStore) ScanTrackedTransactions(scanFunc StoredTransac
 
 		return transactionsBucket.ForEach(func(_, v []byte) error {
 			var storedTxProto proto.TrackedTransaction
-			err := pm.Unmarshal(v, &storedTxProto)
-
-			if err != nil {
+			if err := pm.Unmarshal(v, &storedTxProto); err != nil {
 				return ErrCorruptedTransactionsDB
 			}
 
 			txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
-
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to convert proto transaction to stored transaction: %w", err)
 			}
 
 			return scanFunc(txFromDB)
@@ -700,6 +568,7 @@ func (c *TrackedTransactionStore) ScanTrackedTransactions(scanFunc StoredTransac
 	}, reset)
 }
 
+// OutpointUsed checks if an outpoint is used by a tracked transaction
 func (c *TrackedTransactionStore) OutpointUsed(op *wire.OutPoint) (bool, error) {
 	used := false
 
@@ -711,14 +580,11 @@ func (c *TrackedTransactionStore) OutpointUsed(op *wire.OutPoint) (bool, error) 
 		}
 
 		opBytes, err := outpointBytes(op)
-
 		if err != nil {
 			return fmt.Errorf("invalid outpoint provided: %w", err)
 		}
 
-		res := inputsBucket.Get(opBytes)
-
-		if res != nil {
+		if inputsBucket.Get(opBytes) != nil {
 			used = true
 		}
 

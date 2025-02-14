@@ -11,10 +11,4 @@ var (
 
 	// ErrDuplicateTransaction The transaction we try to add already exists in db
 	ErrDuplicateTransaction = errors.New("transaction already exists")
-
-	// ErrInvalidUnbondingDataUpdate The unbonding data we try to update is not valid
-	ErrInvalidUnbondingDataUpdate = errors.New("invalid unbonding data update")
-
-	// ErrUnbondingDataNotFound The unbonding data we try to update is not found
-	ErrUnbondingDataNotFound = errors.New("unbonding transaction data not found")
 )

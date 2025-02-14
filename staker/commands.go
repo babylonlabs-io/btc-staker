@@ -14,6 +14,7 @@ import (
 // we can make command to implement StakingEvent interface
 var _ StakingEvent = (*stakingRequestCmd)(nil)
 
+// sendDelegationRequestCmd represents a command to send a delegation request
 type stakingRequestCmd struct {
 	stakerAddress           btcutil.Address
 	stakingOutput           *wire.TxOut
@@ -27,6 +28,7 @@ type stakingRequestCmd struct {
 	successChan             chan *chainhash.Hash
 }
 
+// newOwnedStakingCommand builds a new staking command
 func newOwnedStakingCommand(
 	stakerAddress btcutil.Address,
 	stakingOutput *wire.TxOut,
@@ -51,15 +53,18 @@ func newOwnedStakingCommand(
 	}
 }
 
+// EventID returns the ID of the event
 func (req *stakingRequestCmd) EventID() chainhash.Hash {
 	// we do not have has for this event
 	return chainhash.Hash{}
 }
 
+// EventDesc returns the description of the event
 func (req *stakingRequestCmd) EventDesc() string {
 	return "STAKING_REQUESTED_CMD"
 }
 
+// migrateStakingCmd represents a command to migrate a staking transaction
 type migrateStakingCmd struct {
 	stakerAddr        btcutil.Address
 	notifierTx        *notifier.TxConfirmation
@@ -69,6 +74,7 @@ type migrateStakingCmd struct {
 	successChanTxHash chan string
 }
 
+// newMigrateStakingCmd builds a new migrate staking command
 func newMigrateStakingCmd(
 	stakerAddr btcutil.Address,
 	notifierTx *notifier.TxConfirmation,

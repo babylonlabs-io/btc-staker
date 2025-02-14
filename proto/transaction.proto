@@ -14,9 +14,5 @@ message TrackedTransaction {
     // index of tracked transaction in database, first tracked transaction has index 1
     uint64 tracked_transaction_idx = 1;
     bytes staking_transaction = 2;
-    BTCConfirmationInfo staking_tx_btc_confirmation_info = 3;
-    BTCConfirmationInfo unbonding_tx_btc_confirmation_info = 4;
-    uint32 staking_time = 5;
-    uint32 unbonding_time = 6;
-    string staker_address = 7;
+    string staker_address = 3;
 }

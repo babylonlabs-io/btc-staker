@@ -46,6 +46,7 @@ type sendDelegationRequest struct {
 	pop                         *cl.BabylonPop
 }
 
+// buildDelegation builds a delegation data for a given staker address, staking output index and staking time.
 func (app *App) buildDelegation(
 	req *sendDelegationRequest,
 	stakerAddress btcutil.Address,
@@ -55,7 +56,7 @@ func (app *App) buildDelegation(
 ) (*cl.DelegationData, error) {
 	externalData, err := app.retrieveExternalDelegationData(stakerAddress, req.inclusionInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error retrieving external delegation data: %w", err)
 	}
 
 	slashingFee := app.getSlashingFee(externalData.babylonParams.MinSlashingTxFeeSat)
@@ -261,7 +262,6 @@ func (app *App) finalityProviderExists(fpPk *btcec.PublicKey) error {
 	}
 
 	_, err := app.babylonClient.QueryFinalityProvider(fpPk)
-
 	if err != nil {
 		return fmt.Errorf("error checking if finality provider exists on babylon chain: %w", err)
 	}
@@ -482,6 +482,7 @@ func (app *App) activateVerifiedDelegation(
 	}
 }
 
+// newSendDelegationRequest builds a sendDelegationRequest
 func newSendDelegationRequest(
 	btcStakingTxHash *chainhash.Hash,
 	inclusionInfo *inclusionInfo,
