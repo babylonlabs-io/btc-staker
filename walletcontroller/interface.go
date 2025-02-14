@@ -74,7 +74,11 @@ type WalletController interface {
 	Tx(txHash *chainhash.Hash) (*btcutil.Tx, error)
 	TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error)
 	BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error)
-	SignBip322NativeSegwit(msg []byte, address btcutil.Address) (wire.TxWitness, error)
+	// SignBip322Signature signs arbitrary message using bip322 signing scheme.
+	// Works only for:
+	// - native segwit addresses
+	// - taproot addresses with no script spending path (https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki)
+	SignBip322Signature(msg []byte, address btcutil.Address) (wire.TxWitness, error)
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
 	SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error)

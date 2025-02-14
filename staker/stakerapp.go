@@ -2351,8 +2351,8 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 	}
 
 	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
-	// pop only works for native segwit address
-	sig, err := app.wc.SignBip322NativeSegwit(babylonAddrHash, stakerAddress)
+	// pop only works for native segwit address and taproot bip86 addresses
+	sig, err := app.wc.SignBip322Signature(babylonAddrHash, stakerAddress)
 	if err != nil {
 		return nil, err
 	}

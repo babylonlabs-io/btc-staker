@@ -52,7 +52,7 @@ func (pc *PopCreator) CreatePop(
 		return nil, err
 	}
 
-	signature, err := pc.BitcoinWalletController.SignBip322NativeSegwit(
+	signature, err := pc.BitcoinWalletController.SignBip322Signature(
 		[]byte(bech32cosmosAddressString),
 		btcAddress,
 	)
