@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	//nolint:revive
 	_ "net/http/pprof"
@@ -20,7 +21,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const jwtSecretEnv = "JWT_SECRET"
+const EnvSecretJWT = "JWT_SECRET"
 
 func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	go start(logger, addr, reg)
@@ -57,12 +58,24 @@ func jwtSecret(logger *logrus.Logger) ([]byte, error) {
 		logger.Warnf("Error loading .env file to get metrics: %v", err)
 	}
 
-	secret := os.Getenv(jwtSecretEnv)
+	secret := os.Getenv(EnvSecretJWT)
 	if len(secret) == 0 {
-		return nil, fmt.Errorf("failed to load env %s", jwtSecretEnv)
+		return nil, fmt.Errorf("failed to load env %s", EnvSecretJWT)
 	}
 
 	return []byte(secret), nil
+}
+
+// GenerateToken a JWT token
+func GenerateToken(timeValid time.Duration, secret string) (string, error) {
+	claims := jwt.MapClaims{
+		"exp": time.Now().Add(timeValid).Unix(), // Expiry time
+		"iat": time.Now().Unix(),                // Issued at
+		"sub": "prometheus",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(secret)
 }
 
 // jwtAuth JWT Middleware for authentication

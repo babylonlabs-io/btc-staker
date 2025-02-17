@@ -1,11 +1,14 @@
 package admin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
+	"time"
 
 	babylonApp "github.com/babylonlabs-io/babylon/app"
+	"github.com/babylonlabs-io/btc-staker/metrics"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -14,39 +17,64 @@ import (
 	"github.com/urfave/cli"
 )
 
-var AdminCommands = []cli.Command{
-	{
+const (
+	configFileDirFlag   = "config-file-dir"
+	mnemonicEntropySize = 256
+	secp256k1Type       = "secp256k1"
+
+	chainIDFlag        = "chain-id"
+	keyringBackendFlag = "keyring-backend"
+	keyNameFlag        = "key-name"
+	keyringDir         = "keyring-dir"
+)
+
+var (
+	defaultConfigPath = stakercfg.DefaultConfigFile
+	defaultBBNconfig  = stakercfg.DefaultBBNConfig()
+	defaultChainID    = defaultBBNconfig.ChainID
+	defaultBackend    = defaultBBNconfig.KeyringBackend
+	defaultKeyName    = defaultBBNconfig.Key
+	defaultKeyDir     = defaultBBNconfig.KeyDirectory
+)
+
+func AdminCmd() cli.Command {
+	return cli.Command{
 		Name:      "admin",
 		ShortName: "ad",
 		Usage:     "Different utility and admin commands",
 		Category:  "Admin",
 		Subcommands: []cli.Command{
-			dumpCfgCommand,
-			createCosmosKeyringCommand,
+			dumpCfgCmd(),
+			createCosmosKeyringCmd(),
+			metricsJwtCmd(),
 		},
-	},
+	}
 }
 
-const (
-	configFileDirFlag = "config-file-dir"
-)
-
-var (
-	defaultConfigPath = stakercfg.DefaultConfigFile
-)
-
-var dumpCfgCommand = cli.Command{
-	Name:      "dump-config",
-	ShortName: "dc",
-	Usage:     "Dump default configuration file.",
-	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name:  configFileDirFlag,
-			Usage: "Path to where the default config file will be dumped",
-			Value: defaultConfigPath,
+func dumpCfgCmd() cli.Command {
+	return cli.Command{
+		Name:      "dump-config",
+		ShortName: "dc",
+		Usage:     "Dump default configuration file.",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  configFileDirFlag,
+				Usage: "Path to where the default config file will be dumped",
+				Value: defaultConfigPath,
+			},
 		},
-	},
-	Action: dumpCfg,
+		Action: dumpCfg,
+	}
+}
+
+func metricsJwtCmd() cli.Command {
+	return cli.Command{
+		Name:        "metrics-jwt",
+		ShortName:   "mjwt",
+		Usage:       "stakercli admin metrics-jwt [secret]",
+		Description: "Generates JWT metrics auth token.",
+		Action:      printMetricJwt,
+	}
 }
 
 func dumpCfg(c *cli.Context) error {
@@ -82,23 +110,21 @@ func dumpCfg(c *cli.Context) error {
 	return nil
 }
 
-const (
-	mnemonicEntropySize = 256
-	secp256k1Type       = "secp256k1"
+func printMetricJwt(ctx *cli.Context) error {
+	secret := ctx.Args().First()
+	if len(secret) == 0 {
+		return errors.New("jwt secret arg is empty")
+	}
 
-	chainIDFlag        = "chain-id"
-	keyringBackendFlag = "keyring-backend"
-	keyNameFlag        = "key-name"
-	keyringDir         = "keyring-dir"
-)
+	token, err := metrics.GenerateToken(time.Hour, secret)
+	if err != nil {
+		return err
+	}
 
-var (
-	defaultBBNconfig = stakercfg.DefaultBBNConfig()
-	defaultChainID   = defaultBBNconfig.ChainID
-	defaultBackend   = defaultBBNconfig.KeyringBackend
-	defaultKeyName   = defaultBBNconfig.Key
-	defaultKeyDir    = defaultBBNconfig.KeyDirectory
-)
+	fmt.Printf("Bearer %s", token)
+
+	return nil
+}
 
 func createKey(name string, kr keyring.Keyring) (*keyring.Record, error) {
 	keyringAlgos, _ := kr.SupportedAlgorithms()
@@ -172,32 +198,34 @@ func createKeyRing(c *cli.Context) error {
 	return nil
 }
 
-var createCosmosKeyringCommand = cli.Command{
-	Name:      "create-keyring",
-	ShortName: "ck",
-	Usage: "Create cosmos keyring with secp256k1 key with an account with provided name." +
-		" If account already exists in the keyring, a new address will be created for the given key.",
-	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name:  keyNameFlag,
-			Usage: "Name of the key account to be created",
-			Value: defaultKeyName,
+func createCosmosKeyringCmd() cli.Command {
+	return cli.Command{
+		Name:      "create-keyring",
+		ShortName: "ck",
+		Usage: "Create cosmos keyring with secp256k1 key with an account with provided name." +
+			" If account already exists in the keyring, a new address will be created for the given key.",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:  keyNameFlag,
+				Usage: "Name of the key account to be created",
+				Value: defaultKeyName,
+			},
+			cli.StringFlag{
+				Name:  keyringBackendFlag,
+				Usage: "Backend for keyring",
+				Value: defaultBackend,
+			},
+			cli.StringFlag{
+				Name:  chainIDFlag,
+				Usage: "Chain ID for which account is created",
+				Value: defaultChainID,
+			},
+			cli.StringFlag{
+				Name:  keyringDir,
+				Usage: "Directory in which keyring should be created",
+				Value: defaultKeyDir,
+			},
 		},
-		cli.StringFlag{
-			Name:  keyringBackendFlag,
-			Usage: "Backend for keyring",
-			Value: defaultBackend,
-		},
-		cli.StringFlag{
-			Name:  chainIDFlag,
-			Usage: "Chain ID for which account is created",
-			Value: defaultChainID,
-		},
-		cli.StringFlag{
-			Name:  keyringDir,
-			Usage: "Directory in which keyring should be created",
-			Value: defaultKeyDir,
-		},
-	},
-	Action: createKeyRing,
+		Action: createKeyRing,
+	}
 }
