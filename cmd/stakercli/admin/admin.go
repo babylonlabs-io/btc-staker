@@ -37,7 +37,7 @@ var (
 	defaultKeyDir     = defaultBBNconfig.KeyDirectory
 )
 
-func AdminCmd() cli.Command {
+func Cmd() cli.Command {
 	return cli.Command{
 		Name:      "admin",
 		ShortName: "ad",
