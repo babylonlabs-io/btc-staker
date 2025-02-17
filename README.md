@@ -476,6 +476,24 @@ ZMQPubRawBlock = tcp://127.0.0.1:29001
 ZMQPubRawTx = tcp://127.0.0.1:29002
 ```
 
+#### Metrics configuration
+
+by default prometheus metrics are disabled, although it is possible to enabled it
+in the config file, it looks for a env variable `JWT_SECRET` that should be set
+if the prometheus metrics are enabled.
+
+```bash
+[metricsconfig]
+# if it should be enabled.
+Enabled = false
+
+# host of prometheus server.
+Host = 127.0.0.1
+
+# port of prometheus server.
+ServerPort = 2112
+```
+
 To see the complete list of configuration options, check the `stakerd.conf` file.
 
 ## 4. Starting staker daemon

@@ -2,16 +2,25 @@ package metrics
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
+
 	//nolint:revive
 	_ "net/http/pprof"
 	"regexp"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
+
+const jwtSecretEnv = "JWT_SECRET"
 
 func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	go start(logger, addr, reg)
@@ -25,13 +34,13 @@ func start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	)
 
 	// Expose the registered metrics via HTTP.
-	http.Handle("/metrics", promhttp.HandlerFor(
+	http.Handle("/metrics", jwtAuth(logger, promhttp.HandlerFor(
 		reg,
 		promhttp.HandlerOpts{
 			// Opt into OpenMetrics to support exemplars.
 			EnableOpenMetrics: true,
 		},
-	))
+	)))
 
 	logger.Infof("Successfully started Prometheus metrics server at %s", addr)
 
@@ -40,4 +49,51 @@ func start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Errorf("prometheus server got err: %v", err)
 	}
+}
+
+func jwtSecret(logger *logrus.Logger) ([]byte, error) {
+	err := godotenv.Load()
+	if err != nil {
+		logger.Warnf("Error loading .env file to get metrics: %v", err)
+	}
+
+	secret := os.Getenv(jwtSecretEnv)
+	if len(secret) == 0 {
+		return nil, fmt.Errorf("failed to load env %s", jwtSecretEnv)
+	}
+
+	return []byte(secret), nil
+}
+
+// jwtAuth JWT Middleware for authentication
+func jwtAuth(logger *logrus.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		// Expect "Bearer <token>"
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenString == authHeader {
+			http.Error(w, "Invalid Authorization format", http.StatusUnauthorized)
+			return
+		}
+
+		// Parse and validate JWT
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return jwtSecret(logger)
+		})
+
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
