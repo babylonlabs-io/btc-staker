@@ -1,9 +1,7 @@
 package staker
 
 import (
-	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/sirupsen/logrus"
 )
 
@@ -12,52 +10,17 @@ type StakingEvent interface {
 	EventDesc() string
 }
 
-var _ StakingEvent = (*stakingTxBtcConfirmedEvent)(nil)
-var _ StakingEvent = (*delegationSubmittedToBabylonEvent)(nil)
-var _ StakingEvent = (*delegationActivatedPostApprovalEvent)(nil)
-var _ StakingEvent = (*delegationActivatedPreApprovalEvent)(nil)
 var _ StakingEvent = (*unbondingTxSignaturesConfirmedOnBabylonEvent)(nil)
+var _ StakingEvent = (*delegationActivatedEvent)(nil)
 var _ StakingEvent = (*unbondingTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*spendStakeTxConfirmedOnBtcEvent)(nil)
 var _ StakingEvent = (*criticalErrorEvent)(nil)
 
-type stakingTxBtcConfirmedEvent struct {
-	stakingTxHash chainhash.Hash
-	txIndex       uint32
-	blockDepth    uint32
-	blockHash     chainhash.Hash
-	blockHeight   uint32
-	tx            *wire.MsgTx
-	inlusionBlock *wire.MsgBlock
-}
-
-func (event *stakingTxBtcConfirmedEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *stakingTxBtcConfirmedEvent) EventDesc() string {
-	return "STAKING_TX_BTC_CONFIRMED"
-}
-
-type delegationSubmittedToBabylonEvent struct {
-	stakingTxHash              chainhash.Hash
-	babylonBTCDelegationTxHash string
-	unbondingTx                *wire.MsgTx
-	unbondingTime              uint16
-}
-
-func (event *delegationSubmittedToBabylonEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *delegationSubmittedToBabylonEvent) EventDesc() string {
-	return "DELEGATION_SUBMITTED_TO_BABYLON"
-}
-
+// unbondingTxSignaturesConfirmedOnBabylonEvent represents an event when
+// unbonding tx signatures are confirmed on Babylon
 type unbondingTxSignaturesConfirmedOnBabylonEvent struct {
-	stakingTxHash               chainhash.Hash
-	delegationActive            bool
-	covenantUnbondingSignatures []cl.CovenantSignatureInfo
+	stakingTxHash      chainhash.Hash
+	stakingOutputIndex uint32
 }
 
 func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventID() chainhash.Hash {
@@ -68,6 +31,24 @@ func (event *unbondingTxSignaturesConfirmedOnBabylonEvent) EventDesc() string {
 	return "UNBONDING_TX_SIGNATURES_CONFIRMED_ON_BABYLON"
 }
 
+// delegationActivatedEvent represents an event when
+// a delegation is activated on Babylon
+type delegationActivatedEvent struct {
+	stakingTxHash chainhash.Hash
+	blockHash     chainhash.Hash
+	blockHeight   uint32
+}
+
+func (event *delegationActivatedEvent) EventID() chainhash.Hash {
+	return event.stakingTxHash
+}
+
+func (event *delegationActivatedEvent) EventDesc() string {
+	return "DELEGATION_ACTIVE_ON_BABYLON"
+}
+
+// unbondingTxConfirmedOnBtcEvent represents an event when
+// unbonding tx is confirmed on Bitcoin
 type unbondingTxConfirmedOnBtcEvent struct {
 	stakingTxHash chainhash.Hash
 	blockHash     chainhash.Hash
@@ -82,6 +63,8 @@ func (event *unbondingTxConfirmedOnBtcEvent) EventDesc() string {
 	return "UNBONDING_TX_CONFIRMED_ON_BTC"
 }
 
+// spendStakeTxConfirmedOnBtcEvent represents an event when
+// spend stake tx is confirmed on Bitcoin
 type spendStakeTxConfirmedOnBtcEvent struct {
 	stakingTxHash chainhash.Hash
 }
@@ -94,6 +77,7 @@ func (event *spendStakeTxConfirmedOnBtcEvent) EventDesc() string {
 	return "SPEND_STAKE_TX_CONFIRMED_ON_BTC"
 }
 
+// criticalErrorEvent represents an event when critical error occurs
 type criticalErrorEvent struct {
 	stakingTxHash     chainhash.Hash
 	err               error
@@ -108,6 +92,7 @@ func (event *criticalErrorEvent) EventDesc() string {
 	return "CRITICAL_ERROR"
 }
 
+// logStakingEventReceived logs a received staking event
 func (app *App) logStakingEventReceived(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
 		"eventId": event.EventID(),
@@ -115,35 +100,10 @@ func (app *App) logStakingEventReceived(event StakingEvent) {
 	}).Debug("Received staking event")
 }
 
+// logStakingEventProcessed logs a processed staking event
 func (app *App) logStakingEventProcessed(event StakingEvent) {
 	app.logger.WithFields(logrus.Fields{
 		"eventId": event.EventID(),
 		"event":   event.EventDesc(),
 	}).Debug("Processed staking event")
-}
-
-type delegationActivatedPostApprovalEvent struct {
-	stakingTxHash chainhash.Hash
-}
-
-func (event *delegationActivatedPostApprovalEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *delegationActivatedPostApprovalEvent) EventDesc() string {
-	return "DELEGATION_ACTIVE_ON_BABYLON_POST_APPROVAL_EVENT"
-}
-
-type delegationActivatedPreApprovalEvent struct {
-	stakingTxHash chainhash.Hash
-	blockHash     chainhash.Hash
-	blockHeight   uint32
-}
-
-func (event *delegationActivatedPreApprovalEvent) EventID() chainhash.Hash {
-	return event.stakingTxHash
-}
-
-func (event *delegationActivatedPreApprovalEvent) EventDesc() string {
-	return "DELEGATION_ACTIVE_ON_BABYLON_PRE_APPROVAL_EVENT"
 }
