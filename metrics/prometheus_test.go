@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"strings"
 	"testing"
-	"time"
 
 	//nolint:revive
 
@@ -17,18 +15,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 )
 
-func TestJWTAuthMiddleware(t *testing.T) {
-	r := rand.New(rand.NewSource(time.Now().Unix()))
-	jwtSecret := datagen.GenRandomHexStr(r, 10)
-
-	t.Setenv(metrics.EnvSecretJWT, jwtSecret)
+func TestMetrics(t *testing.T) {
+	t.Parallel()
 	addr := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	testRegistry := prometheus.NewRegistry()
 
@@ -38,14 +32,8 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	testServer := httptest.NewServer(server.Handler)
 	defer testServer.Close()
 
-	validToken, err := metrics.GenerateToken(time.Hour, jwtSecret)
-	require.NoError(t, err)
-
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, testServer.URL+"/metrics", nil)
 	require.NoError(t, err)
-
-	// Add the JWT Bearer token in Authorization header
-	req.Header.Set("Authorization", "Bearer "+validToken)
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

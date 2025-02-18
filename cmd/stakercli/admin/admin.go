@@ -1,14 +1,11 @@
 package admin
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path"
-	"time"
 
 	babylonApp "github.com/babylonlabs-io/babylon/app"
-	"github.com/babylonlabs-io/btc-staker/metrics"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -46,7 +43,6 @@ func Cmd() cli.Command {
 		Subcommands: []cli.Command{
 			dumpCfgCmd(),
 			createCosmosKeyringCmd(),
-			metricsJwtCmd(),
 		},
 	}
 }
@@ -64,16 +60,6 @@ func dumpCfgCmd() cli.Command {
 			},
 		},
 		Action: dumpCfg,
-	}
-}
-
-func metricsJwtCmd() cli.Command {
-	return cli.Command{
-		Name:        "metrics-jwt",
-		ShortName:   "mjwt",
-		Usage:       "stakercli admin metrics-jwt [secret]",
-		Description: "Generates JWT metrics auth token.",
-		Action:      printMetricJwt,
 	}
 }
 
@@ -106,22 +92,6 @@ func dumpCfg(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-
-	return nil
-}
-
-func printMetricJwt(ctx *cli.Context) error {
-	secret := ctx.Args().First()
-	if len(secret) == 0 {
-		return errors.New("jwt secret arg is empty")
-	}
-
-	token, err := metrics.GenerateToken(time.Hour, secret)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Bearer %s", token)
 
 	return nil
 }
