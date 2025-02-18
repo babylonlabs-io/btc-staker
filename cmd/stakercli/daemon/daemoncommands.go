@@ -131,10 +131,6 @@ var stakeCmd = cli.Command{
 			Usage:    "Staking time in BTC blocks",
 			Required: true,
 		},
-		cli.BoolFlag{
-			Name:  helpers.SendToBabylonFirstFlag,
-			Usage: "Whether staking transaction should be first to Babylon or BTC",
-		},
 	},
 	Action: stake,
 }
@@ -274,11 +270,12 @@ var withdrawableTransactionsCmd = cli.Command{
 	Action: withdrawableTransactions,
 }
 
+// checkHealth checks if staker daemon is running.
 func checkHealth(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -286,7 +283,7 @@ func checkHealth(ctx *cli.Context) error {
 	health, err := client.Health(sctx)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check health: %w", err)
 	}
 
 	helpers.PrintRespJSON(health)
@@ -294,11 +291,12 @@ func checkHealth(ctx *cli.Context) error {
 	return nil
 }
 
+// listOutputs lists current unspent outputs in connected wallet.
 func listOutputs(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -306,7 +304,7 @@ func listOutputs(ctx *cli.Context) error {
 	outputs, err := client.ListOutputs(sctx)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to list outputs: %w", err)
 	}
 
 	helpers.PrintRespJSON(outputs)
@@ -314,11 +312,12 @@ func listOutputs(ctx *cli.Context) error {
 	return nil
 }
 
+// babylonFinalityProviders lists current finality providers.
 func babylonFinalityProviders(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -338,7 +337,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 	finalityProviders, err := client.BabylonFinalityProviders(sctx, &offset, &limit)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get finality providers: %w", err)
 	}
 
 	helpers.PrintRespJSON(finalityProviders)
@@ -346,11 +345,12 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 	return nil
 }
 
+// stake stakes a BTC.
 func stake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -359,11 +359,10 @@ func stake(ctx *cli.Context) error {
 	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
 	fpPks := ctx.StringSlice(fpPksFlag)
 	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
-	sendToBabylonFirst := ctx.Bool(helpers.SendToBabylonFirstFlag)
 
-	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, sendToBabylonFirst)
+	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to stake: %w", err)
 	}
 
 	helpers.PrintRespJSON(results)
@@ -371,11 +370,12 @@ func stake(ctx *cli.Context) error {
 	return nil
 }
 
+// stakeFromPhase1TxBTC delegates a staking transaction from a phase 1 tx BTC.
 func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -415,14 +415,17 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 
 	stakerAddress := ctx.String(stakerAddressFlag)
 	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to delegate from btc staking tx: %w", err)
+	}
+	return nil
 }
 
 func unstake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -431,7 +434,7 @@ func unstake(ctx *cli.Context) error {
 
 	result, err := client.SpendStakingTransaction(sctx, stakingTransactionHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to spend staking transaction: %w", err)
 	}
 
 	helpers.PrintRespJSON(result)
@@ -439,11 +442,12 @@ func unstake(ctx *cli.Context) error {
 	return nil
 }
 
+// unbondStaking unbonds a staking transaction.
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -452,7 +456,7 @@ func unbond(ctx *cli.Context) error {
 
 	result, err := client.UnbondStaking(sctx, stakingTransactionHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unbond staking: %w", err)
 	}
 
 	helpers.PrintRespJSON(result)
@@ -460,11 +464,12 @@ func unbond(ctx *cli.Context) error {
 	return nil
 }
 
+// stakingDetails gets the details of a staking transaction.
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -473,7 +478,7 @@ func stakingDetails(ctx *cli.Context) error {
 
 	result, err := client.StakingDetails(sctx, stakingTransactionHash)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get staking details: %w", err)
 	}
 
 	helpers.PrintRespJSON(result)
@@ -481,11 +486,12 @@ func stakingDetails(ctx *cli.Context) error {
 	return nil
 }
 
+// listStakingTransactions lists all the staking transactions.
 func listStakingTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
 
 	sctx := context.Background()
@@ -505,7 +511,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 	transactions, err := client.ListStakingTransactions(sctx, &offset, &limit)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get staking transactions: %w", err)
 	}
 
 	helpers.PrintRespJSON(transactions)
@@ -513,6 +519,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 	return nil
 }
 
+// withdrawableTransactions lists all the withdrawable staking transactions.
 func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
 	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
@@ -523,13 +530,11 @@ func withdrawableTransactions(ctx *cli.Context) error {
 	sctx := context.Background()
 
 	offset := ctx.Int(offsetFlag)
-
 	if offset < 0 {
 		return cli.NewExitError("Offset must be non-negative", 1)
 	}
 
 	limit := ctx.Int(limitFlag)
-
 	if limit < 0 {
 		return cli.NewExitError("Limit must be non-negative", 1)
 	}
