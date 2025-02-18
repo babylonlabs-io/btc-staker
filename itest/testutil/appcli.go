@@ -55,7 +55,7 @@ func TestApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "stakercli"
 	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
-	app.Commands = append(app.Commands, cmdadmin.Cmd())
+	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
 	app.Commands = append(app.Commands, transaction.TransactionCommands...)
 	app.Commands = append(app.Commands, pop.PopCommands...)
 	return app

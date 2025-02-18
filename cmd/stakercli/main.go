@@ -56,7 +56,7 @@ func main() {
 	}
 
 	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
-	app.Commands = append(app.Commands, cmdadmin.Cmd())
+	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
 	app.Commands = append(app.Commands, cmdtx.TransactionCommands...)
 	app.Commands = append(app.Commands, cmdpop.PopCommands...)
 
