@@ -1,10 +1,10 @@
 package metrics_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +28,7 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	jwtSecret := datagen.GenRandomHexStr(r, 10)
 
-	os.Setenv(metrics.EnvSecretJWT, jwtSecret)
+	t.Setenv(metrics.EnvSecretJWT, jwtSecret)
 	addr := fmt.Sprintf("127.0.0.1:%d", testutil.AllocateUniquePort(t))
 	testRegistry := prometheus.NewRegistry()
 
@@ -41,7 +41,7 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	validToken, err := metrics.GenerateToken(time.Hour, jwtSecret)
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("GET", testServer.URL+"/metrics", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, testServer.URL+"/metrics", nil)
 	require.NoError(t, err)
 
 	// Add the JWT Bearer token in Authorization header
@@ -50,6 +50,7 @@ func TestJWTAuthMiddleware(t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+	defer resp.Body.Close()
 
 	fullBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
