@@ -93,8 +93,10 @@ func main() {
 		dbBackend,
 	)
 
-	addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
-	metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
+	if cfg.MetricsConfig.Enabled {
+		addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
+		metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
+	}
 
 	if err = service.RunUntilShutdown(ctx); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
