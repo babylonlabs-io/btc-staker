@@ -479,8 +479,7 @@ ZMQPubRawTx = tcp://127.0.0.1:29002
 #### Metrics configuration
 
 by default prometheus metrics are disabled, although it is possible to enabled it
-in the config file, it looks for a env variable `JWT_SECRET` that should be set
-if the prometheus metrics are enabled.
+in the config file.
 
 ```bash
 [metricsconfig]
