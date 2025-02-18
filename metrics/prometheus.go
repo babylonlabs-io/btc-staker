@@ -14,8 +14,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const EnvSecretJWT = "JWT_SECRET"
-
 func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	svr := Server(logger, addr, reg)
 
