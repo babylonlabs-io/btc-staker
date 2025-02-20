@@ -2,11 +2,12 @@ package babylonclient
 
 import (
 	"fmt"
+
 	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	"github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -16,6 +17,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// BTCCheckpointParams defines the parameters for a BTC checkpoint
 type BTCCheckpointParams struct {
 	// K-deep
 	ConfirmationTimeBlocks uint32
@@ -23,6 +25,7 @@ type BTCCheckpointParams struct {
 	FinalizationTimeoutBlocks uint32
 }
 
+// StakingParams defines the parameters for staking
 type StakingParams struct {
 	// K-deep
 	ConfirmationTimeBlocks uint32
@@ -83,7 +86,8 @@ type BabylonClient interface {
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
 	IsTxAlreadyPartOfDelegation(stakingTxHash *chainhash.Hash) (bool, error)
-	QueryDelegationInfo(stakingTxHash *chainhash.Hash) (*DelegationInfo, error)
+	QueryBTCDelegation(stakingTxHash *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error)
+	GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
 	QueryBtcLightClientTipHeight() (uint32, error)
 }
@@ -91,7 +95,7 @@ type BabylonClient interface {
 type MockBabylonClient struct {
 	ClientParams           *StakingParams
 	babylonKey             *secp256k1.PrivKey
-	SentMessages           chan *types.MsgCreateBTCDelegation
+	SentMessages           chan *btcstypes.MsgCreateBTCDelegation
 	ActiveFinalityProvider *FinalityProviderInfo
 }
 
@@ -175,7 +179,11 @@ func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool
 	return false, nil
 }
 
-func (m *MockBabylonClient) QueryDelegationInfo(_ *chainhash.Hash) (*DelegationInfo, error) {
+func (m *MockBabylonClient) QueryBTCDelegation(_ *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error) {
+	return nil, fmt.Errorf("delegation do not exist")
+}
+
+func (m *MockBabylonClient) GetUndelegationInfo(_ *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
@@ -224,7 +232,7 @@ func GetMockClient() *MockBabylonClient {
 			SlashingRate:              sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
 		},
 		babylonKey:             priv,
-		SentMessages:           make(chan *types.MsgCreateBTCDelegation),
+		SentMessages:           make(chan *btcstypes.MsgCreateBTCDelegation),
 		ActiveFinalityProvider: &vi,
 	}
 }

@@ -11,10 +11,11 @@ import (
 
 	"github.com/babylonlabs-io/babylon/testutil/datagen"
 	bbntypes "github.com/babylonlabs-io/babylon/types"
+	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
 	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
 	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
-	"github.com/babylonlabs-io/btc-staker/proto"
+	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -153,28 +154,11 @@ func (tm *TestManager) sendStakingTxWithCZFPs(t *testing.T, data *testStakingDat
 		data.StakingAmount,
 		fpBTCPKs,
 		int64(data.StakingTime),
-		false,
 	)
 	require.NoError(t, err)
 	txHash := res.TxHash
 
-	stakingDetails, err := tm.StakerClient.StakingDetails(context.Background(), txHash)
-	require.NoError(t, err)
-	require.Equal(t, stakingDetails.StakingTxHash, txHash)
-	require.Equal(t, stakingDetails.StakingState, proto.TransactionState_SENT_TO_BTC.String())
-
 	hashFromString, err := chainhash.NewHashFromStr(txHash)
-	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
-		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{hashFromString})
-		return len(txFromMempool) == 1
-	}, eventuallyWaitTimeOut, eventuallyPollTime)
-
-	mBlock := tm.mineBlock(t)
-	require.Equal(t, 2, len(mBlock.Transactions))
-
-	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
 	require.NoError(t, err)
 
 	return hashFromString
@@ -210,14 +194,37 @@ func TestRestakingToConsumerChains(t *testing.T) {
 	tm.createAndRegisterFinalityProvidersWithCZ(t, data)
 
 	txHash := tm.sendStakingTxWithCZFPs(t, data)
-
-	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_SENT_TO_BABYLON)
+	go tm.mineNEmptyBlocks(t, 6, true)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
 
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
 	require.NoError(t, err)
 	require.Len(t, pend, 1)
 	// need to activate delegation to unbond
 	tm.insertCovenantSigForDelegation(t, pend[0])
-	tm.waitForStakingTxState(t, txHash, proto.TransactionState_DELEGATION_ACTIVE)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
 }

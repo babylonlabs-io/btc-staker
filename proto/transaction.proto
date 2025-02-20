@@ -4,68 +4,9 @@ package proto;
 
 option go_package = "github.com/babylonlabs-io/btc-staker/proto";
 
-enum TransactionState {
-    SENT_TO_BTC = 0;
-    CONFIRMED_ON_BTC = 1;
-    SENT_TO_BABYLON = 2;
-    VERIFIED = 3;
-    DELEGATION_ACTIVE = 4;
-    UNBONDING_CONFIRMED_ON_BTC = 5;
-    SPENT_ON_BTC = 6;
-}
-
-message WatchedTxData {
-    bytes slashing_transaction = 1;
-    bytes slashing_transaction_sig = 2;
-    string staker_babylon_addr = 3;
-    bytes staker_btc_pk = 4;
-    // TODO: Consider improving data model as currently for watched transactions
-    // unbonding_transaction and unbonding_time are duplicated with UnbondingTxData
-    // which is stored in TrackedTransaction
-    bytes unbonding_transaction = 5;
-    bytes slashing_unbonding_transaction = 6;
-    bytes slashing_unbonding_transaction_sig = 7;
-    uint32 unbonding_time = 8;
-}
-
-// Contains information about btc confirmation
-message BTCConfirmationInfo {
-    uint32 block_height = 1;
-    bytes block_hash = 2;
-}
-
-message CovenantSig {
-    bytes covenant_sig = 1;
-    bytes covenant_sig_btc_pk = 2;
-}
-
-message UnbondingTxData {
-    bytes unbonding_transaction = 1;
-    uint32 unbonding_time = 2;
-    repeated CovenantSig covenant_signatures = 3;
-    // this data is only filed if tracked transactions state is >= UNBONDING_CONFIRMED_ON_BTC,
-    // and it is filled as last piece of information in unbonding process
-    BTCConfirmationInfo unbonding_tx_btc_confirmation_info = 4;
-}
-
 message TrackedTransaction {
     // index of tracked transaction in database, first tracked transaction has index 1
     uint64 tracked_transaction_idx = 1;
     bytes staking_transaction = 2;
-    uint32 staking_output_idx = 3;
-    // address to retrive private key from connected wallet
-    string staker_address = 4;
-    // time lock on staking transaction
-    uint32 staking_time = 5;
-    // Public keys of finality providers to which we delegated
-    repeated bytes finality_providers_btc_pks = 6;
-    // this data is only filed if tracked transactions state is >= CONFIRMED_ON_BTC
-    BTCConfirmationInfo staking_tx_btc_confirmation_info = 7;
-    uint32 btc_sig_type = 8;
-    bytes btc_sig_over_bbn_staker_addr = 9;
-    TransactionState state = 10;
-    bool watched = 11;
-   // this data is only filled if tracked transactions state is >= SENT_TO_BABYLON
-    UnbondingTxData unbonding_tx_data = 12;
-    string babylonBTCDelegationTxHash = 13;
+    string staker_address = 3;
 }
