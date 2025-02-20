@@ -12,6 +12,8 @@ const (
 
 // MetricsConfig defines the server's basic configuration
 type MetricsConfig struct {
+	// Enalbed if the prometheus server should be enabled
+	Enabled bool `long:"enabled" description:"if it should be enabled."`
 	// IP of the prometheus server
 	Host string `long:"host" description:"host of prometheus server."`
 	// Port of the prometheus server
@@ -33,6 +35,7 @@ func (cfg *MetricsConfig) Validate() error {
 
 func DefaultMetricsConfig() MetricsConfig {
 	return MetricsConfig{
+		Enabled:    false,
 		ServerPort: defaultMetricsServerPort,
 		Host:       defaultMetricsHost,
 	}
