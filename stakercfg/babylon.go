@@ -4,7 +4,10 @@ import (
 	"time"
 
 	bbncfg "github.com/babylonlabs-io/babylon/client/config"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
+
+const DefaultKeyringBackend = keyring.BackendFile
 
 type BBNConfig struct {
 	Key            string        `long:"key" description:"name of the BTC staker key name inside the keyring to sign transactions with"`
@@ -32,7 +35,7 @@ func DefaultBBNConfig() BBNConfig {
 		RPCAddr:        dc.RPCAddr,
 		GRPCAddr:       dc.GRPCAddr,
 		AccountPrefix:  dc.AccountPrefix,
-		KeyringBackend: dc.KeyringBackend,
+		KeyringBackend: DefaultKeyringBackend,
 		GasAdjustment:  dc.GasAdjustment,
 		GasPrices:      dc.GasPrices,
 		KeyDirectory:   DefaultStakerdDir,

@@ -48,6 +48,7 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkquerytypes "github.com/cosmos/cosmos-sdk/types/query"
@@ -367,6 +368,7 @@ func StartManagerStakerApp(
 	// need to use this one to send otherwise we will have account sequence mismatch
 	// errors
 	cfg.BabylonConfig.Key = "test-spending-key"
+	cfg.BabylonConfig.KeyringBackend = keyring.BackendTest
 
 	// Big adjustment to make sure we have enough gas in our transactions
 	cfg.BabylonConfig.GasAdjustment = 3.0
