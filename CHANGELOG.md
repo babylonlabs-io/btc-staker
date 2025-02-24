@@ -37,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
+- [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
+keyring backend to "file" type
 - [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
 configuration to enabled it (disabled by default).
 
