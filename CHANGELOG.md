@@ -44,6 +44,7 @@ configuration to enabled it (disabled by default).
 * [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
 This PR contains a series of PRs on multi-staking support and BTC staking integration.
 * [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
+* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
 
 ## v0.15.2
 

@@ -11,6 +11,7 @@ import (
 	"github.com/babylonlabs-io/babylon/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
@@ -254,6 +255,14 @@ func (w *RPCWalletController) CreateTransaction(
 
 	if err != nil {
 		return nil, err
+	}
+
+	err = utils.CheckTransaction(tx)
+
+	if err != nil {
+		// returning error here means our tx building code is buggy, but it will save
+		// user from submitting invalid transaction to the network
+		return nil, fmt.Errorf("transaction is not standard: %w", err)
 	}
 
 	return tx, err

@@ -12,6 +12,7 @@ import (
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -209,6 +210,11 @@ func createSpendStakeTx(
 
 	if spendTx.TxOut[0].Value <= 0 {
 		return nil, nil, fmt.Errorf("too big fee rate for spend stake tx. calculated fee: %d. funding output value: %d", fee, fundingOutput.Value)
+	}
+
+	// sanity check that transaction is standard
+	if err := utils.CheckTransaction(spendTx); err != nil {
+		return nil, nil, fmt.Errorf("failed to build spend stake tx: %w", err)
 	}
 
 	return spendTx, &fee, nil
