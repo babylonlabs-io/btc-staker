@@ -133,6 +133,18 @@ func (app *App) buildDelegation(
 		return nil, fmt.Errorf("failed to receive unbondingSlashingSig.Signature ")
 	}
 
+	// sanity check that all our transactions are standard
+	// if they are not this can mean bug either in Babylon parameters or in Staker code
+	if err := utils.CheckTransaction(stakingSlashingTx); err != nil {
+		return nil, fmt.Errorf("failed to build delegation data: failed to build staking slashing tx: %w", err)
+	}
+	if err := utils.CheckTransaction(undelegationDesc.UnbondingTransaction); err != nil {
+		return nil, fmt.Errorf("failed to build delegation data: failed to build unbonding tx: %w", err)
+	}
+	if err := utils.CheckTransaction(undelegationDesc.SlashUnbondingTransaction); err != nil {
+		return nil, fmt.Errorf("failed to build delegation data: failed to build unbondingslashing tx: %w", err)
+	}
+
 	dg := createDelegationData(
 		req,
 		externalData.stakerPublicKey,
