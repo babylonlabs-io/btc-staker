@@ -534,7 +534,7 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 
 		// Start standard HTTP server serving json-rpc
 		// TODO: Add additional middleware, like CORS, TLS, etc.
-		// TODO: Consider we need some websockets for some notications
+		// TODO: Consider we need some websockets for some notifications
 		go func() {
 			s.logger.Debug("Starting Json RPC HTTP server ", "address: ", listenAddressStr)
 
