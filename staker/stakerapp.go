@@ -1715,7 +1715,7 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 	)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("spend tx sent. Error registering confirmation notifcation: %w", err)
+		return nil, nil, fmt.Errorf("spend tx sent. Error registering confirmation notification: %w", err)
 	}
 
 	// We are gonna mark our staking transaction as spent on BTC network, only when
