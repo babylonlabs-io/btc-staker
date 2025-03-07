@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.15.4
+
 * [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
 
 ## v0.15.3
