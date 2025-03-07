@@ -821,8 +821,12 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	pop *btcstypes.ProofOfPossessionBTC,
 ) error {
 	registerMsg := &btcstypes.MsgCreateFinalityProvider{
-		Addr:        fpAddr.String(),
-		Commission:  commission,
+		Addr: fpAddr.String(),
+		Commission: btcstypes.CommissionRates{
+			Rate:          *commission,
+			MaxRate:       *commission,
+			MaxChangeRate: *commission,
+		},
 		BtcPk:       btcPubKey,
 		Description: description,
 		Pop:         pop,
