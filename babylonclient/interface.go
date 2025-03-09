@@ -79,6 +79,7 @@ type SingleKeyKeyring interface {
 type BabylonClient interface {
 	SingleKeyKeyring
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
+	AllBtcStakingParams() ([]StakingParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)

@@ -440,6 +440,20 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
+// btc_staking_parameters unbonds a staking transaction
+func (s *StakerService) btcStakingParameters(_ *rpctypes.Context) (*BtcStakingParams, error) {
+
+	unbondingTxHash, err := s.staker.
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to unbond staking: %w", err)
+	}
+
+	return &UnbondingResponse{
+		UnbondingTxHash: unbondingTxHash.String(),
+	}, nil
+}
+
 // GetRoutes returns a list of routes this service handles
 func (s *StakerService) GetRoutes() RoutesMap {
 	return RoutesMap{
@@ -452,6 +466,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"btc_staking_parameters":             rpc.NewRPCFunc(s.btcStakingParameters, ""),
 		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 

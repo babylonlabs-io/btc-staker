@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
 	"github.com/babylonlabs-io/networks/parameters/parser"
-	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 )
 
@@ -138,7 +138,7 @@ var stakeCmd = cli.Command{
 var stakeFromPhase1Cmd = cli.Command{
 	Name:      "stake-from-phase1",
 	ShortName: "stfp1",
-	Usage: "\nstakercli daemon stake-from-phase1 [fullpath/to/global_parameters.json]" +
+	Usage: "\nstakercli daemon stake-from-phase1" +
 		" --staking-transaction-hash [txHashHex] --staker-address [btcStakerAddrHex] --tx-inclusion-height [blockHeightTxInclusion]",
 	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking transaction",
 	Flags: []cli.Flag{
@@ -389,8 +389,8 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return errors.New("json file input is empty")
 	}
 
-	if !os.FileExists(inputGlobalParamsFilePath) {
-		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
+	if _, err := os.Stat(inputGlobalParamsFilePath); err != nil {
+		return fmt.Errorf("json file input %s does not exist: %w", inputGlobalParamsFilePath, err)
 	}
 
 	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
@@ -398,6 +398,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
 	}
 
+	client.BtcTxDetails()
 	blockHeighTxInclusion := ctx.Uint64(txInclusionHeightFlag)
 	if blockHeighTxInclusion == 0 {
 		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)

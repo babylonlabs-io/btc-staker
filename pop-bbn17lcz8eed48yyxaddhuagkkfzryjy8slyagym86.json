@@ -1,0 +1,8 @@
+{
+  "babyAddress": "bbn17lcz8eed48yyxaddhuagkkfzryjy8slyagym86",
+  "btcAddress": "bc1qnjkxfzn6mpl0vm6flgqesql3uxxhg07l4y6yun",
+  "btcPublicKey": "4c1c8a2c3a96f7a48223f219b3be78cafba3f9f28a003866a6fb42e1b5e96ba9",
+  "btcSignBaby": "AkcwRAIgKoWYM44MwpDpPx6W/0kGSTtfd31zNBVG2bqnHtqkkxQCIF4nTi2qILmaihrShX+Hae23O76vkkihGSPtaNpK2rrcASECTByKLDqW96SCI/IZs754yvuj+fKKADhmpvtC4bXpa6k=",
+  "babySignBtc": "TcCQHOygmW625nKewL+EHsTJMA/C/brezTS6AryOs2JB6AjDn8Grvfrq2by1voEqJD+bBQYdg9Q7TVGkKp8Brw==",
+  "babyPublicKey": "A0eE6yPdIIyzkujVZD1KhL+dD29hEHpTO05d00fH2+N8"
+}

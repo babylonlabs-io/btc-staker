@@ -231,3 +231,15 @@ func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash s
 	}
 	return result, nil
 }
+
+// BtcStakingParameters returns an slice of staking parameters from the babylon chain
+func (c *StakerServiceJSONRPCClient) BtcStakingParameters(ctx context.Context) (*service.UnbondingResponse, error) {
+	result := new(service.UnbondingResponse)
+
+	params := make(map[string]interface{})
+	_, err := c.client.Call(ctx, "btc_staking_parameters", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call btc_staking_parameters: %w", err)
+	}
+	return result, nil
+}
