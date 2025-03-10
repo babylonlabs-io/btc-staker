@@ -22,8 +22,9 @@ const (
 
 // NewImageConfig returns ImageConfig needed for running e2e test.
 func NewImageConfig(t *testing.T) ImageConfig {
-	// TODO: new tag with https://github.com/babylonlabs-io/babylon/pull/655
-	// should be released and updated.
+	// TODO: when new docker hub of babylon is released with
+	// https://github.com/babylonlabs-io/babylon/pull/655
+	// use the babylon version from go.mod.
 	// babylondVersion, err := testutil.GetBabylonVersion()
 	// require.NoError(t, err)
 
@@ -31,6 +32,6 @@ func NewImageConfig(t *testing.T) ImageConfig {
 		BitcoindRepository: dockerBitcoindRepository,
 		BitcoindVersion:    dockerBitcoindVersionTag,
 		BabylonRepository:  dockerBabylondRepository,
-		BabylonVersion:     "v1.0.0-rc.7",
+		BabylonVersion:     "v1.99.0-snapshot.250131",
 	}
 }
