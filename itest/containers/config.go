@@ -2,9 +2,6 @@ package containers
 
 import (
 	"testing"
-
-	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/stretchr/testify/require"
 )
 
 // ImageConfig contains all images and their respective tags
@@ -25,13 +22,15 @@ const (
 
 // NewImageConfig returns ImageConfig needed for running e2e test.
 func NewImageConfig(t *testing.T) ImageConfig {
-	babylondVersion, err := testutil.GetBabylonVersion()
-	require.NoError(t, err)
+	// TODO: new tag with https://github.com/babylonlabs-io/babylon/pull/655
+	// should be released and updated.
+	// babylondVersion, err := testutil.GetBabylonVersion()
+	// require.NoError(t, err)
 
 	return ImageConfig{
 		BitcoindRepository: dockerBitcoindRepository,
 		BitcoindVersion:    dockerBitcoindVersionTag,
 		BabylonRepository:  dockerBabylondRepository,
-		BabylonVersion:     babylondVersion,
+		BabylonVersion:     "v1.0.0-rc.7",
 	}
 }
