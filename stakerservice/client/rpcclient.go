@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
-	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
@@ -97,16 +96,18 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	versionedParams *parser.ParsedVersionedGlobalParams,
+	tag []byte,
+	covPks []*btcec.PublicKey,
+	covenantQuorum uint32,
 ) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
 	result := new(service.ResultBtcDelegationFromBtcStakingTx)
 
 	params := make(map[string]interface{})
 	params["stakerAddress"] = stakerAddress
 	params["btcStkTxHash"] = btcStkTxHash
-	params["tag"] = versionedParams.Tag
-	params["covenantPksHex"] = parseCovenantsPubKeyToHex(versionedParams.CovenantPks...)
-	params["covenantQuorum"] = versionedParams.CovenantQuorum
+	params["tag"] = tag
+	params["covenantPksHex"] = parseCovenantsPubKeyToHex(covPks...)
+	params["covenantQuorum"] = covenantQuorum
 
 	_, err := c.client.Call(ctx, "btc_delegation_from_btc_staking_tx", params, result)
 	if err != nil {

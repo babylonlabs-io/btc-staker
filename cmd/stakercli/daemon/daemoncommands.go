@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
+	"github.com/babylonlabs-io/btc-staker/stakerservice"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
-	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/urfave/cli"
 )
 
@@ -376,18 +375,9 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return errors.New("staking tx hash hex is empty")
 	}
 
-	inputGlobalParamsFilePath := ctx.Args().First()
-	if len(inputGlobalParamsFilePath) == 0 {
-		return errors.New("json file input is empty")
-	}
-
-	if _, err := os.Stat(inputGlobalParamsFilePath); err != nil {
-		return fmt.Errorf("json file input %s does not exist: %w", inputGlobalParamsFilePath, err)
-	}
-
-	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
+	btcStakingParams, err := client.BtcStakingParameters(sctx)
 	if err != nil {
-		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
+		return fmt.Errorf("failed to get btc staking parameters: %w", err)
 	}
 
 	blockHeighTxInclusion := ctx.Uint64(helpers.TxInclusionHeightFlag)
@@ -400,15 +390,31 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		blockHeighTxInclusion = uint64(resp.Blk.Height)
 	}
 
-	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(blockHeighTxInclusion)
-	if paramsForHeight == nil {
-		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, blockHeighTxInclusion)
+	btcStakingParamsForHeight := GetBtcStakingParamsForHeight(btcStakingParams.StakingParams, uint32(blockHeighTxInclusion))
+	if btcStakingParamsForHeight == nil {
+		return fmt.Errorf("error getting params version from btc staking params %+v with height %d", btcStakingParams, blockHeighTxInclusion)
 	}
 
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, []byte{}, btcStakingParamsForHeight.CovenantPks, btcStakingParamsForHeight.CovenantQuorum)
 	if err != nil {
 		return fmt.Errorf("failed to delegate from btc staking tx: %w", err)
+	}
+	return nil
+}
+
+// GetBtcStakingParamsForHeight return the btc staking params which
+// are applicable at the given BTC btcHeight. If there in no btc params
+// applicable at the given btcHeight, it will return nil.
+func GetBtcStakingParamsForHeight(params []stakerservice.BtcStakingParams, btcHeight uint32) *stakerservice.BtcStakingParams {
+	// Iterate the list in reverse (i.e. decreasing ActivationHeight)
+	// and identify the first element that has an activation height below
+	// the specified BTC height.
+	for i := len(params) - 1; i >= 0; i-- {
+		p := params[i]
+		if p.BtcActivationHeight <= btcHeight {
+			return &p
+		}
 	}
 	return nil
 }

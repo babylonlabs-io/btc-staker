@@ -197,30 +197,6 @@ func (bc *BabylonController) queryStakingTrackerWithRetries() (*StakingTrackerRe
 	return stakingTrackerParams, nil
 }
 
-// QueryAllStakingTrackerWithRetries is a helper function to query the babylon client for the btc staking tracker parameters from all versions
-func (bc *BabylonController) queryAllStakingTrackerWithRetries() ([]StakingTrackerResponse, error) {
-	// var stakingTrackerParams *StakingTrackerResponse
-	resp := make([]StakingTrackerResponse, 0)
-	if err := retry.Do(func() error {
-		// trackerParams, err := bc.QueryStakingTracker()
-		// if err != nil {
-		// 	return fmt.Errorf("failed to get staking tracker params: %w", err)
-		// }
-		// stakingTrackerParams = trackerParams
-		return nil
-	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
-		bc.logger.WithFields(logrus.Fields{
-			"attempt":      n + 1,
-			"max_attempts": RtyAttNum,
-			"error":        err,
-		}).Error("Failed to query babylon client for staking tracker params")
-	})); err != nil {
-		return nil, fmt.Errorf("failed to get staking tracker params after multiple retries: %w", err)
-	}
-
-	return resp, nil
-}
-
 // Params is a helper function to query the babylon client for the staking parameters
 func (bc *BabylonController) Params() (*StakingParams, error) {
 	bccParams, err := bc.btccheckpointParamsWithRetry()
