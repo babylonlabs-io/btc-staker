@@ -68,10 +68,11 @@ type BtcTxAndBlockResponse struct {
 }
 
 type BtcStakingParametersResponse struct {
-	StakingParams string `json:"staking_params"`
+	StakingParams []BtcStakingParams `json:"staking_params"`
 }
 
 type BtcStakingParams struct {
-	CovenantPks    []*btcec.PublicKey
-	CovenantQuorum uint32
+	BtcActivationHeight uint32
+	CovenantPks         []*btcec.PublicKey
+	CovenantQuorum      uint32
 }

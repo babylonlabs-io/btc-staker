@@ -27,11 +27,11 @@ type BTCCheckpointParams struct {
 
 // StakingParams defines the parameters for staking
 type StakingParams struct {
-	// K-deep
-	ConfirmationTimeBlocks uint32
-	// W-deep
-	FinalizationTimeoutBlocks uint32
+	BTCCheckpointParams
+	BtcStakingParams
+}
 
+type BtcStakingParams struct {
 	// Minimum amount of satoshis required for slashing transaction
 	MinSlashingTxFeeSat btcutil.Amount
 
@@ -67,6 +67,9 @@ type StakingParams struct {
 
 	// AllowList expiration height
 	AllowListExpirationHeight uint64
+
+	// BtcActivationHeight which BTC block height this parameter got activated
+	BtcActivationHeight uint32
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -79,7 +82,7 @@ type SingleKeyKeyring interface {
 type BabylonClient interface {
 	SingleKeyKeyring
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
-	AllBtcStakingParams() ([]StakingParams, error)
+	AllBtcStakingParams() ([]BtcStakingParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
@@ -91,6 +94,24 @@ type BabylonClient interface {
 	GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
 	QueryBtcLightClientTipHeight() (uint32, error)
+}
+
+func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResponse) BtcStakingParams {
+	return BtcStakingParams{
+		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
+		CovenantPks:               stakingTrackerParams.CovenantPks,
+		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
+		SlashingRate:              stakingTrackerParams.SlashingRate,
+		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
+		UnbondingFee:              stakingTrackerParams.UnbondingFee,
+		MinStakingTime:            stakingTrackerParams.MinStakingTime,
+		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
+		MinStakingValue:           stakingTrackerParams.MinStakingValue,
+		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+		BtcActivationHeight:       stakingTrackerParams.BtcActivationHeight,
+	}
 }
 
 type MockBabylonClient struct {
@@ -106,7 +127,7 @@ func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
 }
 
-func (m *MockBabylonClient) AllBtcStakingParams() ([]StakingParams, error) {
+func (m *MockBabylonClient) AllBtcStakingParams() ([]BtcStakingParams, error) {
 	return nil, nil
 }
 
@@ -229,12 +250,16 @@ func GetMockClient() *MockBabylonClient {
 
 	return &MockBabylonClient{
 		ClientParams: &StakingParams{
-			ConfirmationTimeBlocks:    2,
-			FinalizationTimeoutBlocks: 5,
-			MinSlashingTxFeeSat:       btcutil.Amount(1000),
-			CovenantPks:               []*btcec.PublicKey{covenantPk.PubKey()},
-			SlashingPkScript:          slashingPkScript,
-			SlashingRate:              sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
+			BTCCheckpointParams: BTCCheckpointParams{
+				ConfirmationTimeBlocks:    2,
+				FinalizationTimeoutBlocks: 5,
+			},
+			BtcStakingParams: BtcStakingParams{
+				MinSlashingTxFeeSat: btcutil.Amount(1000),
+				CovenantPks:         []*btcec.PublicKey{covenantPk.PubKey()},
+				SlashingPkScript:    slashingPkScript,
+				SlashingRate:        sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
+			},
 		},
 		babylonKey:             priv,
 		SentMessages:           make(chan *btcstypes.MsgCreateBTCDelegation),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -115,6 +116,7 @@ type StakingTrackerResponse struct {
 	MinStakingValue           btcutil.Amount
 	MaxStakingValue           btcutil.Amount
 	AllowListExpirationHeight uint64
+	BtcActivationHeight       uint32
 }
 
 // FinalityProviderInfo is a response from the finality provider tracker
@@ -234,26 +236,9 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
-		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
-		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
-		CovenantPks:               stakingTrackerParams.CovenantPks,
-		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
-		SlashingRate:              stakingTrackerParams.SlashingRate,
-		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		UnbondingTime:             stakingTrackerParams.UnbondingTime,
-		UnbondingFee:              stakingTrackerParams.UnbondingFee,
-		MinStakingTime:            stakingTrackerParams.MinStakingTime,
-		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
-		MinStakingValue:           stakingTrackerParams.MinStakingValue,
-		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
-		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+		BTCCheckpointParams: *bccParams,
+		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
-}
-
-func (app *BabylonController) AllBtcStakingParams() ([]StakingParams, error) {
-
-	return nil, nil
 }
 
 // queryStakingTrackerByBtcHeightWithRetries is a helper function to query the babylon client for the staking tracker parameters by btc height
@@ -296,20 +281,8 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
-		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
-		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
-		CovenantPks:               stakingTrackerParams.CovenantPks,
-		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
-		SlashingRate:              stakingTrackerParams.SlashingRate,
-		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		UnbondingTime:             stakingTrackerParams.UnbondingTime,
-		UnbondingFee:              stakingTrackerParams.UnbondingFee,
-		MinStakingTime:            stakingTrackerParams.MinStakingTime,
-		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
-		MinStakingValue:           stakingTrackerParams.MinStakingValue,
-		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
-		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+		BTCCheckpointParams: *bccParams,
+		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
 }
 
@@ -654,7 +627,26 @@ func parseParams(params *btcstypes.Params) (*StakingTrackerResponse, error) {
 		MinStakingValue:           btcutil.Amount(params.MinStakingValueSat),
 		MaxStakingValue:           btcutil.Amount(params.MaxStakingValueSat),
 		AllowListExpirationHeight: params.AllowListExpirationHeight,
+		BtcActivationHeight:       params.BtcActivationHeight,
 	}, nil
+}
+
+func (bc *BabylonController) AllBtcStakingParams() ([]BtcStakingParams, error) {
+	btcStakingTracker, err := bc.QueryAllBtcStakingTracker()
+	if err != nil {
+		return nil, err
+	}
+
+	resp := make([]BtcStakingParams, len(btcStakingTracker))
+	for i, tracker := range btcStakingTracker {
+		resp[i] = BtcStakingParamsFromStakingTracker(tracker)
+	}
+
+	sort.Slice(resp, func(i, j int) bool {
+		return resp[i].BtcActivationHeight > resp[j].BtcActivationHeight
+	})
+
+	return nil, nil
 }
 
 // QueryStakingTracker queries the staking tracker from the Babylon node

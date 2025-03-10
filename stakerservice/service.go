@@ -440,17 +440,24 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
-// btc_staking_parameters unbonds a staking transaction
-func (s *StakerService) btcStakingParameters(_ *rpctypes.Context) (*BtcStakingParams, error) {
-
-	unbondingTxHash, err := s.staker.
-
+// btc_staking_parameters loads all the BTC staking parameters from babylon
+func (s *StakerService) btcStakingParameters(_ *rpctypes.Context) (*BtcStakingParametersResponse, error) {
+	stakingParams, err := s.staker.BabylonController().AllBtcStakingParams()
 	if err != nil {
-		return nil, fmt.Errorf("failed to unbond staking: %w", err)
+		return nil, fmt.Errorf("failed to load all the btc staking params: %w", err)
 	}
 
-	return &UnbondingResponse{
-		UnbondingTxHash: unbondingTxHash.String(),
+	resp := make([]BtcStakingParams, len(stakingParams))
+	for i, stkP := range stakingParams {
+		resp[i] = BtcStakingParams{
+			BtcActivationHeight: stkP.BtcActivationHeight,
+			CovenantPks:         stkP.CovenantPks,
+			CovenantQuorum:      stkP.CovenantQuruomThreshold,
+		}
+	}
+
+	return &BtcStakingParametersResponse{
+		StakingParams: resp,
 	}, nil
 }
 

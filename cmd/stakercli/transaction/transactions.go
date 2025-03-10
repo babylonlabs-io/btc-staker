@@ -696,20 +696,9 @@ func createPhase1UnbondingTransaction(ctx *cli.Context) error {
 		return err
 	}
 
-	stakingTxInclusionHeight := ctx.Uint64(helpers.TxInclusionHeightFlag)
-	if stakingTxInclusionHeight == 0 {
-		daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-		client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
-		if err != nil {
-			return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
-		}
-
-		resp, err := client.BtcTxDetails(context.Background(), stakingTxHex)
-		if err != nil {
-			return fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTxHex, err)
-		}
-
-		stakingTxInclusionHeight = uint64(resp.Blk.Height)
+	stakingTxInclusionHeight, err := stakingTxInclusionBlkHeight(ctx)
+	if err != nil {
+		return err
 	}
 
 	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
@@ -887,8 +876,13 @@ var createPhase1WithdrawalTransactionCmd = cli.Command{
 			Name:  unbondingTransactionFlag,
 			Usage: "hex encoded unbonding transaction. This should only be provided, if withdrawal is being done from unbonding output",
 		},
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
 	},
-	Action: createPhase1WitdrawalTransaction,
+	Action: createPhase1WithdrawalTransaction,
 }
 
 type CreateWithdrawalTxResponse struct {
@@ -1007,7 +1001,7 @@ func createWithdrawalInfo(
 	}, nil
 }
 
-func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
+func createPhase1WithdrawalTransaction(ctx *cli.Context) error {
 	inputFilePath := ctx.Args().First()
 	if len(inputFilePath) == 0 {
 		return errors.New("json file input is empty")
@@ -1053,7 +1047,10 @@ func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
 		return err
 	}
 
-	stakingTxInclusionHeight := ctx.Uint64(helpers.TxInclusionHeightFlag)
+	stakingTxInclusionHeight, err := stakingTxInclusionBlkHeight(ctx)
+	if err != nil {
+		return err
+	}
 
 	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
 
@@ -1151,4 +1148,25 @@ func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
 
 	helpers.PrintRespJSON(resp)
 	return nil
+}
+
+func stakingTxInclusionBlkHeight(ctx *cli.Context) (uint64, error) {
+	stakingTxInclusionHeight := ctx.Uint64(helpers.TxInclusionHeightFlag)
+	if stakingTxInclusionHeight == 0 {
+		daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+		client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+		}
+
+		stakingTxHex := ctx.String(stakingTransactionFlag)
+		resp, err := client.BtcTxDetails(context.Background(), stakingTxHex)
+		if err != nil {
+			return 0, fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTxHex, err)
+		}
+
+		return uint64(resp.Blk.Height), nil
+	}
+
+	return stakingTxInclusionHeight, nil
 }
