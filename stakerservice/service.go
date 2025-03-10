@@ -440,7 +440,7 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
-// btc_staking_parameters loads all the BTC staking parameters from babylon
+// btcStakingParameters loads all the BTC staking parameters from babylon
 func (s *StakerService) btcStakingParameters(_ *rpctypes.Context) (*BtcStakingParametersResponse, error) {
 	stakingParams, err := s.staker.BabylonController().AllBtcStakingParams()
 	if err != nil {
