@@ -617,12 +617,15 @@ func (bc *BabylonController) AllBtcStakingParams() ([]BtcStakingParams, error) {
 	for i, tracker := range btcStakingTracker {
 		resp[i] = BtcStakingParamsFromStakingTracker(tracker)
 	}
-
-	sort.Slice(resp, func(i, j int) bool {
-		return resp[i].BtcActivationHeight > resp[j].BtcActivationHeight
-	})
+	SortBtcStakingParams(resp)
 
 	return nil, nil
+}
+
+func SortBtcStakingParams(params []BtcStakingParams) {
+	sort.Slice(params, func(i, j int) bool {
+		return params[i].BtcActivationHeight < params[j].BtcActivationHeight
+	})
 }
 
 // QueryStakingTracker queries the staking tracker from the Babylon node
