@@ -674,25 +674,43 @@ func (bc *BabylonController) QueryStakingTracker() (*StakingTrackerResponse, err
 }
 
 // QueryAllBtcStakingTracker queries all the staking tracker parameters from the Babylon node
-func (bc *BabylonController) QueryAllBtcStakingTracker(limit uint64, nextKey []byte) (btcstypes.QueryParamsVersionsResponse, error) {
+func (bc *BabylonController) QueryAllBtcStakingTracker() ([]*StakingTrackerResponse, error) {
 	ctx, cancel := getQueryContext(bc.cfg.Timeout)
 	defer cancel()
 
 	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
 	queryClient := btcstypes.NewQueryClient(clientCtx)
 
-	response, err := queryClient.ParamsVersions(ctx, &btcstypes.QueryParamsVersionsRequest{
-		Pagination: &bq.PageRequest{
-			Key:   nextKey,
-			Limit: limit,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to query babylon params: %w", err)
+	limit := uint64(20)
+	pg := &bq.PageRequest{
+		Limit: limit,
 	}
 
-	return nil, nil
-	// return parseParams(&response.Params)
+	resp := make([]*StakingTrackerResponse, 0)
+	req := &btcstypes.QueryParamsVersionsRequest{Pagination: pg}
+	for {
+		queryResp, err := queryClient.ParamsVersions(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query babylon params: %w", err)
+		}
+
+		for _, vsp := range queryResp.Params {
+			stkTracker, err := parseParams(&vsp.Params)
+			if err != nil {
+				return nil, err
+			}
+			resp = append(resp, stkTracker)
+		}
+
+		if len(queryResp.Params) != int(limit) || len(queryResp.Pagination.NextKey) == 0 {
+			break
+		}
+
+		pg.Key = queryResp.Pagination.NextKey
+		req = &btcstypes.QueryParamsVersionsRequest{Pagination: pg}
+	}
+
+	return resp, nil
 }
 
 // QueryStakingTrackerByBtcHeight queries the staking tracker from the Babylon node

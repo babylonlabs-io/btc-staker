@@ -106,6 +106,10 @@ func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
 }
 
+func (m *MockBabylonClient) AllBtcStakingParams() ([]StakingParams, error) {
+	return nil, nil
+}
+
 func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {
 	return m.ClientParams, nil
 }
