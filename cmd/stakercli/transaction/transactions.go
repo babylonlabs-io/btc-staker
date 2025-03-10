@@ -96,7 +96,7 @@ type CheckPhase1StakingTxResponse struct {
 	ValidityInfo []*ValidityInfo `json:"validity_info"`
 }
 
-func validateTxAgainstParams(
+func ValidateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
@@ -190,7 +190,7 @@ func checkPhase1StakingTransactionParams(ctx *cli.Context) error {
 		return err
 	}
 
-	resp := validateTxAgainstParams(stakingTx, globalParams, currentNetwork)
+	resp := ValidateTxAgainstParams(stakingTx, globalParams, currentNetwork)
 
 	helpers.PrintRespJSON(resp)
 
