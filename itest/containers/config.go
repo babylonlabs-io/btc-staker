@@ -32,6 +32,7 @@ func NewImageConfig(t *testing.T) ImageConfig {
 		BitcoindRepository: dockerBitcoindRepository,
 		BitcoindVersion:    dockerBitcoindVersionTag,
 		BabylonRepository:  dockerBabylondRepository,
-		BabylonVersion:     "v1.99.0-snapshot.250131",
+		// https://hub.docker.com/layers/babylonlabs/babylond/16525b71a7ebc207e0c40ed4561ec613f674ee30/images/sha256-1f286d406a320e7050a4de02833820bdf4405e10beec9a253b0f200a95fcbcb6
+		BabylonVersion: "16525b71a7ebc207e0c40ed4561ec613f674ee30",
 	}
 }
