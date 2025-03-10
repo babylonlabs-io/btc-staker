@@ -8,6 +8,8 @@ import (
 )
 
 func TestSortBtcStakingParams(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		title    string
 		params   []babylonclient.BtcStakingParams
