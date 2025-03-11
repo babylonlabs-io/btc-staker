@@ -13,7 +13,9 @@ import (
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakerservice"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
+	"github.com/joho/godotenv"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -98,8 +100,33 @@ func main() {
 		metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
 	}
 
-	if err = service.RunUntilShutdown(ctx); err != nil {
+	if err := godotenv.Load(); err != nil {
+		msg := fmt.Sprintf("Error loading .env file: %s.\nThe enviroment variables %s and %s are used to authenticate the daemon routes", err.Error(), stakerservice.EnvRouteAuthUser, stakerservice.EnvRouteAuthPwd)
+		cfgLogger.Info(msg)
+	}
+
+	expUsername, expPwd, err := getEnvBasicAuth()
+	if err != nil {
+		cfgLogger.Errorf("failed to create staker app: %v", err)
+		os.Exit(1)
+	}
+
+	if err = service.RunUntilShutdown(ctx, expUsername, expPwd); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func getEnvBasicAuth() (expUsername, expPwd string, err error) {
+	expUsername = os.Getenv(stakerservice.EnvRouteAuthUser)
+	if len(expUsername) == 0 {
+		return "", "", fmt.Errorf("the enviroment variable %s to authenticate the daemon routes is not set", stakerservice.EnvRouteAuthUser)
+	}
+
+	expPwd = os.Getenv(stakerservice.EnvRouteAuthPwd)
+	if len(expPwd) == 0 {
+		return "", "", fmt.Errorf("the enviroment variable %s to authenticate the daemon routes is not set", stakerservice.EnvRouteAuthPwd)
+	}
+
+	return expUsername, expPwd, nil
 }

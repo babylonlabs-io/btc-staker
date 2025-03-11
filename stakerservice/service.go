@@ -27,9 +27,11 @@ import (
 )
 
 const (
-	defaultOffset = 0
-	defaultLimit  = 50
-	maxLimit      = 100
+	defaultOffset    = 0
+	defaultLimit     = 50
+	maxLimit         = 100
+	EnvRouteAuthUser = "BTCSTAKER_USERNAME"
+	EnvRouteAuthPwd  = "BTCSTAKER_PASSWORD"
 )
 
 type RoutesMap map[string]*rpc.RPCFunc
@@ -464,7 +466,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 }
 
 // RunUntilShutdown runs the service until the context is canceled
-func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
+func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd string) error {
 	if atomic.AddInt32(&s.started, 1) != 1 {
 		return nil
 	}
@@ -515,6 +517,10 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 		mux := http.NewServeMux()
 		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
 
+		for funcName, _ := range routes {
+			mux.Handle("/"+funcName, basicAuthMiddleware(mux, expUser, expPwd))
+		}
+
 		listener, err := rpc.Listen(
 			listenAddressStr,
 			config.MaxOpenConnections,
@@ -560,4 +566,18 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	s.logger.Info("Received shutdown signal. Stopping...")
 
 	return nil
+}
+
+// basicAuthMiddleware handles the authentication of username and password
+// of this router
+func basicAuthMiddleware(next http.Handler, expUsername, expPwd string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || !strings.EqualFold(user, expUsername) || strings.EqualFold(pass, expPwd) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

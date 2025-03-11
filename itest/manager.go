@@ -70,6 +70,9 @@ var (
 
 	bitcoindUser = "user"
 	bitcoindPass = "pass"
+
+	daemonRouteUser = "admin"
+	daemonRoutePwd  = "securepwd"
 )
 
 // keyToAddr maps the passed private to corresponding p2pkh address.
@@ -407,7 +410,7 @@ func StartManagerStakerApp(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := stakerService.RunUntilShutdown(ctx)
+		err := stakerService.RunUntilShutdown(ctx, daemonRouteUser, daemonRoutePwd)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
@@ -491,7 +494,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := service.RunUntilShutdown(ctx)
+		err := service.RunUntilShutdown(ctx, daemonRouteUser, daemonRoutePwd)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
