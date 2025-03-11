@@ -440,24 +440,18 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
-// btcStakingParameters loads all the BTC staking parameters from babylon
-func (s *StakerService) btcStakingParameters(_ *rpctypes.Context) (*BtcStakingParametersResponse, error) {
-	stakingParams, err := s.staker.BabylonController().AllBtcStakingParams()
+// btcStakingParamsByBtcHeight loads the BTC staking params for the BTC block height from babylon
+func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeight uint32) (*BtcStakingParamsByBtcHeightResponse, error) {
+	stakingParams, err := s.staker.BabylonController().ParamsByBtcHeight(btcHeight)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load all the btc staking params: %w", err)
+		return nil, fmt.Errorf("failed to load all the btc staking params by BTC height: %w", err)
 	}
 
-	resp := make([]BtcStakingParams, len(stakingParams))
-	for i, stkP := range stakingParams {
-		resp[i] = BtcStakingParams{
-			BtcActivationHeight: stkP.BtcActivationHeight,
-			CovenantPks:         stkP.CovenantPks,
-			CovenantQuorum:      stkP.CovenantQuruomThreshold,
-		}
-	}
-
-	return &BtcStakingParametersResponse{
-		StakingParams: resp,
+	return &BtcStakingParamsByBtcHeightResponse{
+		StakingParams: BtcStakingParams{
+			CovenantPks:    stakingParams.CovenantPks,
+			CovenantQuorum: stakingParams.CovenantQuruomThreshold,
+		},
 	}, nil
 }
 
@@ -473,7 +467,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"btc_staking_parameters":             rpc.NewRPCFunc(s.btcStakingParameters, ""),
+		"btc_staking_param_by_btc_height":    rpc.NewRPCFunc(s.btcStakingParamsByBtcHeight, ""),
 		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 

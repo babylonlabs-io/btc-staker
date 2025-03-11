@@ -82,7 +82,6 @@ type SingleKeyKeyring interface {
 type BabylonClient interface {
 	SingleKeyKeyring
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
-	AllBtcStakingParams() ([]BtcStakingParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
@@ -125,10 +124,6 @@ var _ BabylonClient = (*MockBabylonClient)(nil)
 
 func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
-}
-
-func (m *MockBabylonClient) AllBtcStakingParams() ([]BtcStakingParams, error) {
-	return nil, nil
 }
 
 func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {

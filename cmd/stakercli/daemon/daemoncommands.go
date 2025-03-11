@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
-	"github.com/babylonlabs-io/btc-staker/stakerservice"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
 	"github.com/urfave/cli"
 )
@@ -375,11 +374,6 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return errors.New("staking tx hash hex is empty")
 	}
 
-	btcStakingParams, err := client.BtcStakingParameters(sctx)
-	if err != nil {
-		return fmt.Errorf("failed to get btc staking parameters: %w", err)
-	}
-
 	blockHeighTxInclusion := ctx.Uint64(helpers.TxInclusionHeightFlag)
 	if blockHeighTxInclusion == 0 {
 		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
@@ -390,31 +384,16 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		blockHeighTxInclusion = uint64(resp.Blk.Height)
 	}
 
-	btcStakingParamsForHeight := GetBtcStakingParamsForHeight(btcStakingParams.StakingParams, uint32(blockHeighTxInclusion))
-	if btcStakingParamsForHeight == nil {
-		return fmt.Errorf("error getting params version from btc staking params %+v with height %d", btcStakingParams, blockHeighTxInclusion)
+	respParamsByHeight, err := client.BtcStakingParamByBtcHeight(sctx, uint32(blockHeighTxInclusion))
+	if err != nil {
+		return fmt.Errorf("failed to get btc staking parameters: %w", err)
 	}
+	btcStakingParams := respParamsByHeight.StakingParams
 
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, []byte{}, btcStakingParamsForHeight.CovenantPks, btcStakingParamsForHeight.CovenantQuorum)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, []byte{}, btcStakingParams.CovenantPks, btcStakingParams.CovenantQuorum)
 	if err != nil {
 		return fmt.Errorf("failed to delegate from btc staking tx: %w", err)
-	}
-	return nil
-}
-
-// GetBtcStakingParamsForHeight return the btc staking params which
-// are applicable at the given BTC btcHeight. If there in no btc params
-// applicable at the given btcHeight, it will return nil.
-func GetBtcStakingParamsForHeight(params []stakerservice.BtcStakingParams, btcHeight uint32) *stakerservice.BtcStakingParams {
-	// Iterate the list in reverse (i.e. decreasing ActivationHeight)
-	// and identify the first element that has an activation height below
-	// the specified BTC height.
-	for i := len(params) - 1; i >= 0; i-- {
-		p := params[i]
-		if p.BtcActivationHeight <= btcHeight {
-			return &p
-		}
 	}
 	return nil
 }
