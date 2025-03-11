@@ -67,9 +67,6 @@ type BtcStakingParams struct {
 
 	// AllowList expiration height
 	AllowListExpirationHeight uint64
-
-	// BtcActivationHeight which BTC block height this parameter got activated
-	BtcActivationHeight uint32
 }
 
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
@@ -109,7 +106,6 @@ func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResp
 		MinStakingValue:           stakingTrackerParams.MinStakingValue,
 		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
 		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
-		BtcActivationHeight:       stakingTrackerParams.BtcActivationHeight,
 	}
 }
 

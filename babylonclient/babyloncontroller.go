@@ -115,7 +115,6 @@ type StakingTrackerResponse struct {
 	MinStakingValue           btcutil.Amount
 	MaxStakingValue           btcutil.Amount
 	AllowListExpirationHeight uint64
-	BtcActivationHeight       uint32
 }
 
 // FinalityProviderInfo is a response from the finality provider tracker
@@ -602,7 +601,6 @@ func parseParams(params *btcstypes.Params) (*StakingTrackerResponse, error) {
 		MinStakingValue:           btcutil.Amount(params.MinStakingValueSat),
 		MaxStakingValue:           btcutil.Amount(params.MaxStakingValueSat),
 		AllowListExpirationHeight: params.AllowListExpirationHeight,
-		BtcActivationHeight:       params.BtcActivationHeight,
 	}, nil
 }
 

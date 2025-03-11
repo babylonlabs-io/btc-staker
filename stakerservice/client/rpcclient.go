@@ -233,7 +233,7 @@ func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash s
 	return result, nil
 }
 
-// BtcStakingParamByBtcHeight returns an slice of staking parameters from the babylon chain
+// BtcStakingParamByBtcHeight returns the btc staking parameter for the BTC block height from the babylon chain
 func (c *StakerServiceJSONRPCClient) BtcStakingParamByBtcHeight(ctx context.Context, btcHeight uint32) (*service.BtcStakingParamsByBtcHeightResponse, error) {
 	result := new(service.BtcStakingParamsByBtcHeightResponse)
 
