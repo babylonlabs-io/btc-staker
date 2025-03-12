@@ -37,6 +37,7 @@ type Bitcoind struct {
 	BlockPollingInterval time.Duration `long:"blockpollinginterval" description:"The interval that will be used to poll bitcoind for new blocks. Only used if rpcpolling is true."`
 	TxPollingInterval    time.Duration `long:"txpollinginterval" description:"The interval that will be used to poll bitcoind for new tx. Only used if rpcpolling is true."`
 	BlockCacheSize       uint64        `long:"block-cache-size" description:"size of the Bitcoin blocks cache"`
+	DisableTLS           bool          `long:"noclienttls" description:"disables tls for the wallet rpc client"`
 }
 
 func DefaultBitcoindConfig() Bitcoind {
@@ -52,5 +53,6 @@ func DefaultBitcoindConfig() Bitcoind {
 		ZMQPubRawBlock:       defaultZMQPubRawBlock,
 		ZMQPubRawTx:          defaultZMQPubRawTx,
 		ZMQReadDeadline:      defaultZMQReadDeadline,
+		DisableTLS:           true,
 	}
 }
