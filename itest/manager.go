@@ -308,6 +308,9 @@ func StartManager(
 	ctx context.Context,
 	numMatureOutputsInWallet uint32,
 ) *TestManager {
+	os.Setenv(service.EnvRouteAuthUser, "admim")
+	os.Setenv(service.EnvRouteAuthPwd, "securepwd")
+
 	manager, err := containers.NewManager(t)
 	require.NoError(t, err)
 
