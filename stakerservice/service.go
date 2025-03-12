@@ -130,7 +130,6 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	_ *rpctypes.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	tag []byte,
 	covenantPksHex []string,
 	covenantQuorum uint32,
 ) (*ResultBtcDelegationFromBtcStakingTx, error) {
@@ -152,7 +151,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, fmt.Errorf("error decoding covenant public keys: %w", err)
 	}
 
-	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
+	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, covenantPks, covenantQuorum)
 	if err != nil {
 		s.logger.WithError(err).Info("err to send phase 1 tx")
 		return nil, fmt.Errorf("error sending phase 1 transaction: %w", err)
@@ -442,6 +441,21 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
+// btcStakingParamsByBtcHeight loads the BTC staking params for the BTC block height from babylon
+func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeight uint32) (*BtcStakingParamsByBtcHeightResponse, error) {
+	stakingParams, err := s.staker.BabylonController().ParamsByBtcHeight(btcHeight)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load all the btc staking params by BTC height: %w", err)
+	}
+
+	return &BtcStakingParamsByBtcHeightResponse{
+		StakingParams: BtcStakingParams{
+			CovenantPks:    stakingParams.CovenantPks,
+			CovenantQuorum: stakingParams.CovenantQuruomThreshold,
+		},
+	}, nil
+}
+
 // GetRoutes returns a list of routes this service handles
 func (s *StakerService) GetRoutes() RoutesMap {
 	return RoutesMap{
@@ -449,11 +463,12 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
-		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
+		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, ""),
 		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 

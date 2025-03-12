@@ -5,14 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 
 	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
-	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
-	"github.com/babylonlabs-io/networks/parameters/parser"
-	"github.com/cometbft/cometbft/libs/os"
 	"github.com/urfave/cli"
 )
 
@@ -38,17 +34,11 @@ var DaemonCommands = []cli.Command{
 }
 
 const (
-	stakingDaemonAddressFlag   = "daemon-address"
 	offsetFlag                 = "offset"
 	limitFlag                  = "limit"
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
-	txInclusionHeightFlag      = "tx-inclusion-height"
-)
-
-var (
-	defaultStakingDaemonAddress = "tcp://127.0.0.1:" + strconv.Itoa(scfg.DefaultRPCPort)
 )
 
 var checkDaemonHealthCmd = cli.Command{
@@ -57,9 +47,9 @@ var checkDaemonHealthCmd = cli.Command{
 	Usage:     "Check if staker daemon is running.",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "Full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 	},
 	Action: checkHealth,
@@ -71,9 +61,9 @@ var listOutputsCmd = cli.Command{
 	Usage:     "List unspent outputs in connected wallet.",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "Full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 	},
 	Action: listOutputs,
@@ -85,9 +75,9 @@ var babylonFinalityProvidersCmd = cli.Command{
 	Usage:     "List current BTC finality providers on Babylon chain",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.IntFlag{
 			Name:  offsetFlag,
@@ -109,9 +99,9 @@ var stakeCmd = cli.Command{
 	Usage:     "Stake an amount of BTC to Babylon",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
 			Name:     stakerAddressFlag,
@@ -140,14 +130,14 @@ var stakeCmd = cli.Command{
 var stakeFromPhase1Cmd = cli.Command{
 	Name:      "stake-from-phase1",
 	ShortName: "stfp1",
-	Usage: "\nstakercli daemon stake-from-phase1 [fullpath/to/global_parameters.json]" +
+	Usage: "\nstakercli daemon stake-from-phase1" +
 		" --staking-transaction-hash [txHashHex] --staker-address [btcStakerAddrHex] --tx-inclusion-height [blockHeightTxInclusion]",
 	Description: "Creates a Babylon BTC delegation transaction from the Phase1 BTC staking transaction",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
 			Name:     stakingTransactionHashFlag,
@@ -160,7 +150,7 @@ var stakeFromPhase1Cmd = cli.Command{
 			Required: true,
 		},
 		cli.Uint64Flag{
-			Name:  txInclusionHeightFlag,
+			Name:  helpers.TxInclusionHeightFlag,
 			Usage: "Expected BTC height at which transaction was included. This value is important to choose correct global parameters for transaction, if set doesn't query bitcoin to get the block height from txHash",
 		},
 	},
@@ -173,9 +163,9 @@ var unstakeCmd = cli.Command{
 	Usage:     "Spends staking transaction and sends funds back to staker; this can only be done after timelock of staking transaction expires",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
 			Name:     stakingTransactionHashFlag,
@@ -192,9 +182,9 @@ var unbondCmd = cli.Command{
 	Usage:     "initiates unbonding flow: build unbonding tx, send to babylon, wait for signatures, and send unbonding tx to bitcoin",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
 			Name:     stakingTransactionHashFlag,
@@ -211,9 +201,9 @@ var stakingDetailsCmd = cli.Command{
 	Usage:     "Displays details of staking transaction with given hash",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
 			Name:     stakingTransactionHashFlag,
@@ -230,9 +220,9 @@ var listStakingTransactionsCmd = cli.Command{
 	Usage:     "List current staking transactions in db",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.IntFlag{
 			Name:  offsetFlag,
@@ -254,9 +244,9 @@ var withdrawableTransactionsCmd = cli.Command{
 	Usage:     "List current tranactions that can be withdrawn i.e funds can be transferred back to staker address",
 	Flags: []cli.Flag{
 		cli.StringFlag{
-			Name:  stakingDaemonAddressFlag,
+			Name:  helpers.StakingDaemonAddressFlag,
 			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
-			Value: defaultStakingDaemonAddress,
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.IntFlag{
 			Name:  offsetFlag,
@@ -274,7 +264,7 @@ var withdrawableTransactionsCmd = cli.Command{
 
 // checkHealth checks if staker daemon is running.
 func checkHealth(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -295,7 +285,7 @@ func checkHealth(ctx *cli.Context) error {
 
 // listOutputs lists current unspent outputs in connected wallet.
 func listOutputs(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -316,7 +306,7 @@ func listOutputs(ctx *cli.Context) error {
 
 // babylonFinalityProviders lists current finality providers.
 func babylonFinalityProviders(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -349,7 +339,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 
 // stake stakes a BTC.
 func stake(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -374,7 +364,7 @@ func stake(ctx *cli.Context) error {
 
 // stakeFromPhase1TxBTC delegates a staking transaction from a phase 1 tx BTC.
 func stakeFromPhase1TxBTC(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -386,21 +376,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		return errors.New("staking tx hash hex is empty")
 	}
 
-	inputGlobalParamsFilePath := ctx.Args().First()
-	if len(inputGlobalParamsFilePath) == 0 {
-		return errors.New("json file input is empty")
-	}
-
-	if !os.FileExists(inputGlobalParamsFilePath) {
-		return fmt.Errorf("json file input %s does not exist", inputGlobalParamsFilePath)
-	}
-
-	globalParams, err := parser.NewParsedGlobalParamsFromFile(inputGlobalParamsFilePath)
-	if err != nil {
-		return fmt.Errorf("error parsing file %s: %w", inputGlobalParamsFilePath, err)
-	}
-
-	blockHeighTxInclusion := ctx.Uint64(txInclusionHeightFlag)
+	blockHeighTxInclusion := ctx.Uint64(helpers.TxInclusionHeightFlag)
 	if blockHeighTxInclusion == 0 {
 		resp, err := client.BtcTxDetails(sctx, stakingTransactionHash)
 		if err != nil {
@@ -410,13 +386,14 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 		blockHeighTxInclusion = uint64(resp.Blk.Height)
 	}
 
-	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(blockHeighTxInclusion)
-	if paramsForHeight == nil {
-		return fmt.Errorf("error getting param version from global params %s with height %d", inputGlobalParamsFilePath, blockHeighTxInclusion)
+	respParamsByHeight, err := client.BtcStakingParamByBtcHeight(sctx, uint32(blockHeighTxInclusion))
+	if err != nil {
+		return fmt.Errorf("failed to get btc staking parameters: %w", err)
 	}
+	btcStakingParams := respParamsByHeight.StakingParams
 
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, paramsForHeight)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, btcStakingParams.CovenantPks, btcStakingParams.CovenantQuorum)
 	if err != nil {
 		return fmt.Errorf("failed to delegate from btc staking tx: %w", err)
 	}
@@ -424,7 +401,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 }
 
 func unstake(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -446,7 +423,7 @@ func unstake(ctx *cli.Context) error {
 
 // unbondStaking unbonds a staking transaction.
 func unbond(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -468,7 +445,7 @@ func unbond(ctx *cli.Context) error {
 
 // stakingDetails gets the details of a staking transaction.
 func stakingDetails(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -490,7 +467,7 @@ func stakingDetails(ctx *cli.Context) error {
 
 // listStakingTransactions lists all the staking transactions.
 func listStakingTransactions(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
@@ -523,7 +500,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 
 // withdrawableTransactions lists all the withdrawable staking transactions.
 func withdrawableTransactions(ctx *cli.Context) error {
-	daemonAddress := ctx.String(stakingDaemonAddressFlag)
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
