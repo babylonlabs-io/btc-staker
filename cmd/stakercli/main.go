@@ -8,7 +8,6 @@ import (
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	cmdpop "github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
 	cmdtx "github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
-	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	"github.com/joho/godotenv"
 	"github.com/urfave/cli"
 )
@@ -27,9 +26,7 @@ const (
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Printf("Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes", err.Error(), service.EnvRouteAuthUser, service.EnvRouteAuthPwd)
-	}
+	_ = godotenv.Load()
 
 	app := cli.NewApp()
 	app.Name = "stakercli"
