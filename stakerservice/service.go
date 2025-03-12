@@ -34,7 +34,7 @@ const (
 	EnvRouteAuthPwd  = "BTCSTAKER_PASSWORD"
 )
 
-type RoutesMap map[string]*rpc.RPCFunc
+type RoutesMap map[string]*RPCFunc
 
 type StakerService struct {
 	started int32
@@ -446,22 +446,22 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 func (s *StakerService) GetRoutes() RoutesMap {
 	return RoutesMap{
 		// info AP
-		"health": rpc.NewRPCFunc(s.health, ""),
+		"health": NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
-		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
-		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
-		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
-		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
-		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
-		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
+		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
+		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
+		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
+		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
+		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 
 		// Wallet api
-		"list_outputs": rpc.NewRPCFunc(s.listOutputs, ""),
+		"list_outputs": NewRPCFunc(s.listOutputs, ""),
 
 		// Babylon api
-		"babylon_finality_providers": rpc.NewRPCFunc(s.providers, "offset,limit"),
+		"babylon_finality_providers": NewRPCFunc(s.providers, "offset,limit"),
 	}
 }
 
@@ -515,11 +515,9 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd st
 	for i, listenAddr := range s.config.RPCListeners {
 		listenAddressStr := listenAddr.Network() + "://" + listenAddr.String()
 		mux := http.NewServeMux()
-		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
 
-		for funcName, _ := range routes {
-			mux.Handle("/"+funcName, basicAuthMiddleware(mux, expUser, expPwd))
-		}
+		authMiddleware := BasicAuthMiddleware(expUser, expPwd)
+		RegisterRPCFuncs(mux, routes, rpcLogger, authMiddleware)
 
 		listener, err := rpc.Listen(
 			listenAddressStr,
@@ -568,16 +566,18 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd st
 	return nil
 }
 
-// basicAuthMiddleware handles the authentication of username and password
+// BasicAuthMiddleware handles the authentication of username and password
 // of this router
-func basicAuthMiddleware(next http.Handler, expUsername, expPwd string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok || !strings.EqualFold(user, expUsername) || strings.EqualFold(pass, expPwd) {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
+func BasicAuthMiddleware(expUsername, expPwd string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			user, pass, ok := r.BasicAuth()
+			if !ok || !strings.EqualFold(user, expUsername) || !strings.EqualFold(pass, expPwd) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
 		}
-		next.ServeHTTP(w, r)
-	})
+	}
 }
