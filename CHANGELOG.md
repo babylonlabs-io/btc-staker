@@ -37,12 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
-* [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
-  This PR contains a series of PRs on multi-staking support and BTC staking integration.
-* [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
-* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
-
 
 ## v0.15.4
 
