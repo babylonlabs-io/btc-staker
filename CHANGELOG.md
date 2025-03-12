@@ -37,14 +37,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
-- [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
-keyring backend to "file" type
+- [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
+This PR contains a series of PRs on multi-staking support and BTC staking integration.
+- [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
 - [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
 configuration to enabled it (disabled by default).
-* [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
-This PR contains a series of PRs on multi-staking support and BTC staking integration.
-* [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
-* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
+- [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
+keyring backend to "file" type
+- [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
+- [#157](https://github.com/babylonlabs-io/btc-staker/pull/157) Move stakerapp creation from main to stakerservice
 
 ## v0.15.2
 
