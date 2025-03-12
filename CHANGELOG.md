@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Improvements
 
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
+* [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
 
 ## v0.15.4
 
