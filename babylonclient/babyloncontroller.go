@@ -210,20 +210,8 @@ func (bc *BabylonController) Params() (*StakingParams, error) {
 	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
-		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
-		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
-		CovenantPks:               stakingTrackerParams.CovenantPks,
-		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
-		SlashingRate:              stakingTrackerParams.SlashingRate,
-		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		UnbondingTime:             stakingTrackerParams.UnbondingTime,
-		UnbondingFee:              stakingTrackerParams.UnbondingFee,
-		MinStakingTime:            stakingTrackerParams.MinStakingTime,
-		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
-		MinStakingValue:           stakingTrackerParams.MinStakingValue,
-		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
-		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+		BTCCheckpointParams: *bccParams,
+		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
 }
 
@@ -267,20 +255,8 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 	}
 
 	return &StakingParams{
-		ConfirmationTimeBlocks:    bccParams.ConfirmationTimeBlocks,
-		FinalizationTimeoutBlocks: bccParams.FinalizationTimeoutBlocks,
-		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
-		CovenantPks:               stakingTrackerParams.CovenantPks,
-		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
-		SlashingRate:              stakingTrackerParams.SlashingRate,
-		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
-		UnbondingTime:             stakingTrackerParams.UnbondingTime,
-		UnbondingFee:              stakingTrackerParams.UnbondingFee,
-		MinStakingTime:            stakingTrackerParams.MinStakingTime,
-		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
-		MinStakingValue:           stakingTrackerParams.MinStakingValue,
-		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
-		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+		BTCCheckpointParams: *bccParams,
+		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
 }
 
