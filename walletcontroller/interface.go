@@ -92,7 +92,6 @@ func StkTxV0ParsedWithBlock(
 	wc WalletController,
 	btcNetwork *chaincfg.Params,
 	stkTxHash *chainhash.Hash,
-	tag []byte,
 	covenantPks []*secp256k1.PublicKey,
 	covenantQuorum uint32,
 ) (*staking.ParsedV0StakingTx, *notifier.TxConfirmation, TxStatus, error) {
@@ -102,9 +101,7 @@ func StkTxV0ParsedWithBlock(
 	}
 
 	wireStkTx := stkTx.MsgTx()
-	var parsedStakingTx *staking.ParsedV0StakingTx
-
-	parsedStakingTx, err = ParseV0StakingTx(btcNetwork, wireStkTx, tag, covenantPks, covenantQuorum)
+	parsedStakingTx, err := staking.ParseV0StakingTxWithoutTag(wireStkTx, covenantPks, covenantQuorum, btcNetwork)
 	if err != nil {
 		return nil, nil, TxNotFound, err
 	}
@@ -115,17 +112,4 @@ func StkTxV0ParsedWithBlock(
 	}
 
 	return parsedStakingTx, notifierTx, status, nil
-}
-
-func ParseV0StakingTx(
-	btcNetwork *chaincfg.Params,
-	wireStkTx *wire.MsgTx,
-	tag []byte,
-	covenantPks []*secp256k1.PublicKey,
-	covenantQuorum uint32,
-) (*staking.ParsedV0StakingTx, error) {
-	if len(tag) > 0 {
-		return staking.ParseV0StakingTx(wireStkTx, tag, covenantPks, covenantQuorum, btcNetwork)
-	}
-	return staking.ParseV0StakingTxWithoutTag(wireStkTx, covenantPks, covenantQuorum, btcNetwork)
 }

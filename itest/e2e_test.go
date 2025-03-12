@@ -507,7 +507,7 @@ func TestStakeFromPhase1(t *testing.T) {
 
 	stakerAddrStr := tmBTC.MinerAddr.String()
 	stkTxHash := signedStkTx.TxHash().String()
-	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, lastParamsVersioned.Tag, lastParamsVersioned.CovenantPks, lastParamsVersioned.CovenantQuorum)
+	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, lastParamsVersioned.CovenantPks, lastParamsVersioned.CovenantQuorum)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 

@@ -96,7 +96,6 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	tag []byte,
 	covPks []*btcec.PublicKey,
 	covenantQuorum uint32,
 ) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
@@ -105,7 +104,6 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	params := make(map[string]interface{})
 	params["stakerAddress"] = stakerAddress
 	params["btcStkTxHash"] = btcStkTxHash
-	params["tag"] = tag
 	params["covenantPksHex"] = parseCovenantsPubKeyToHex(covPks...)
 	params["covenantQuorum"] = covenantQuorum
 

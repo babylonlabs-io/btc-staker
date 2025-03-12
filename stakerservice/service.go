@@ -128,7 +128,6 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 	_ *rpctypes.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	tag []byte,
 	covenantPksHex []string,
 	covenantQuorum uint32,
 ) (*ResultBtcDelegationFromBtcStakingTx, error) {
@@ -150,7 +149,7 @@ func (s *StakerService) btcDelegationFromBtcStakingTx(
 		return nil, fmt.Errorf("error decoding covenant public keys: %w", err)
 	}
 
-	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, tag, covenantPks, covenantQuorum)
+	babylonBTCDelegationTxHash, err := s.staker.SendPhase1Transaction(stakerAddr, stkTxHash, covenantPks, covenantQuorum)
 	if err != nil {
 		s.logger.WithError(err).Info("err to send phase 1 tx")
 		return nil, fmt.Errorf("error sending phase 1 transaction: %w", err)
@@ -462,7 +461,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": rpc.NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
-		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,tag,covenantPksHex,covenantQuorum"),
+		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
