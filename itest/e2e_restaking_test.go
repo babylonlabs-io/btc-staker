@@ -168,6 +168,7 @@ func TestRestakingToConsumerChains(t *testing.T) {
 	// need to have at least 300 block on testnet as only then segwit is activated.
 	// Mature output is out which has 100 confirmations, which means 200mature outputs
 	// will generate 300 blocks
+	t.Parallel()
 	numMatureOutputs := uint32(200)
 	ctx, cancel := context.WithCancel(context.Background())
 	tm := StartManager(t, ctx, numMatureOutputs)
