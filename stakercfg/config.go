@@ -34,7 +34,7 @@ const (
 	// for different transaction types are not very accurate and if we would use 1 sat/vbyte (minimum accepted by bitcoin network)
 	// we risk into having transactions rejected by the network due to low fee.
 	DefaultMinFeeRate = 2
-	DefaultMaxFeeRate = 25
+	DefaultMaxFeeRate = 200
 )
 
 var (

@@ -46,6 +46,7 @@ This PR contains a series of PRs on multi-staking support and BTC staking integr
 * [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
 * [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
+* [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
 
 ## v0.15.2
 
