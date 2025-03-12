@@ -101,7 +101,7 @@ func StkTxV0ParsedWithBlock(
 	}
 
 	wireStkTx := stkTx.MsgTx()
-	parsedStakingTx, err := staking.ParseV0StakingTxWithoutTag(wireStkTx, covenantPks, covenantQuorum, btcNetwork)
+	parsedStakingTx, err := ParseV0StakingTxWithoutTag(wireStkTx, covenantPks, covenantQuorum, btcNetwork)
 	if err != nil {
 		return nil, nil, TxNotFound, err
 	}

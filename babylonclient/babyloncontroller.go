@@ -865,7 +865,7 @@ func (bc *BabylonController) RegisterFinalityProvider(
 ) error {
 	registerMsg := &btcstypes.MsgCreateFinalityProvider{
 		Addr:        fpAddr.String(),
-		Commission:  btcstypes.NewCommissionRates(*commission, commission.Add(sdkmath.LegacyOneDec()), sdkmath.LegacyOneDec()),
+		Commission:  commission,
 		BtcPk:       btcPubKey,
 		Description: description,
 		Pop:         pop,
