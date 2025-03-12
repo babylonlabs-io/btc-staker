@@ -563,7 +563,6 @@ func NewStakerServiceJSONRPCClient(remoteAddressWithoutAuth string) (*dc.StakerS
 		return nil, err
 	}
 	parsedURL.User = url.UserPassword(user, pwd)
-	parsedURL.Opaque = ""
 
 	return dc.NewStakerServiceJSONRPCClient(parsedURL.String())
 }
