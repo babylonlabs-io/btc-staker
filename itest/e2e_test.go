@@ -94,7 +94,7 @@ func TestSendingStakingTransaction(t *testing.T) {
 	params, err := cl.Params()
 	require.NoError(t, err)
 
-	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 100000, 1)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestSendingStakingTransactionWithPreApproval(t *testing.T) {
 	params, err := cl.Params()
 	require.NoError(t, err)
 
-	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 100000, 1)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	stakingTime4 := minStakingTime + 2
 	stakingTime5 := minStakingTime + 3
 
-	testStakingData1 := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime1, 10000, 1)
+	testStakingData1 := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime1, 100000, 1)
 	testStakingData2 := testStakingData1.withStakingTime(stakingTime2)
 	testStakingData3 := testStakingData1.withStakingTime(stakingTime3)
 	testStakingData4 := testStakingData1.withStakingTime(stakingTime4)
@@ -754,7 +754,7 @@ func TestRecoverAfterRestartDuringWithdrawal(t *testing.T) {
 	params, err := cl.Params()
 	require.NoError(t, err)
 
-	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 10000, 1)
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, params.MinStakingTime, 100000, 1)
 
 	hashed, err := chainhash.NewHash(datagen.GenRandomByteArray(r, 32))
 	require.NoError(t, err)
@@ -822,7 +822,7 @@ func TestStakeFromPhase1(t *testing.T) {
 
 	minStakingTime := uint16(100)
 	stakerAddr := datagen.GenRandomAccount().GetAddress()
-	testStakingData := GetTestStakingData(t, tmBTC.WalletPubKey, minStakingTime, 10000, 1, stakerAddr)
+	testStakingData := GetTestStakingData(t, tmBTC.WalletPubKey, minStakingTime, 100000, 1, stakerAddr)
 
 	fpPkHex := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.FinalityProviderBtcKeys[0]))
 	btcStakerPkHex := hex.EncodeToString(schnorr.SerializePubKey(testStakingData.StakerKey))
