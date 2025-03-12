@@ -31,12 +31,14 @@ import (
 )
 
 const (
-	defaultOffset = 0
-	defaultLimit  = 50
-	maxLimit      = 100
+	defaultOffset    = 0
+	defaultLimit     = 50
+	maxLimit         = 100
+	EnvRouteAuthUser = "BTCSTAKER_USERNAME"
+	EnvRouteAuthPwd  = "BTCSTAKER_PASSWORD"
 )
 
-type RoutesMap map[string]*rpc.RPCFunc
+type RoutesMap map[string]*RPCFunc
 
 type StakerService struct {
 	started int32
@@ -647,29 +649,30 @@ func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeig
 func (s *StakerService) GetRoutes() RoutesMap {
 	return RoutesMap{
 		// info AP
-		"health": rpc.NewRPCFunc(s.health, ""),
+		"health": NewRPCFunc(s.health, ""),
 		// staking API
-		"stake":                              rpc.NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
-		"btc_delegation_from_btc_staking_tx": rpc.NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
-		"staking_details":                    rpc.NewRPCFunc(s.stakingDetails, "stakingTxHash"),
-		"spend_stake":                        rpc.NewRPCFunc(s.spendStake, "stakingTxHash"),
-		"list_staking_transactions":          rpc.NewRPCFunc(s.listStakingTransactions, "offset,limit"),
-		"unbond_staking":                     rpc.NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"btc_staking_param_by_btc_height":    rpc.NewRPCFunc(s.btcStakingParamsByBtcHeight, ""),
-		"withdrawable_transactions":          rpc.NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
-		"btc_tx_blk_details":                 rpc.NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
+		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,sendToBabylonFirst"),
+		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
+		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
+		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
+		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, ""),
+		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
+		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 		// watch api
-		"watch_staking_tx": rpc.NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
+		"watch_staking_tx": NewRPCFunc(s.watchStaking, "stakingTx,stakingTime,stakingValue,stakerBtcPk,fpBtcPks,slashingTx,slashingTxSig,stakerBabylonAddr,stakerAddress,stakerBtcSig,unbondingTx,slashUnbondingTx,slashUnbondingTxSig,unbondingTime,popType"),
 
 		// Wallet api
-		"list_outputs": rpc.NewRPCFunc(s.listOutputs, ""),
+		"list_outputs": NewRPCFunc(s.listOutputs, ""),
 
 		// Babylon api
-		"babylon_finality_providers": rpc.NewRPCFunc(s.providers, "offset,limit"),
+		"babylon_finality_providers": NewRPCFunc(s.providers, "offset,limit"),
 	}
 }
 
-func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
+// RunUntilShutdown runs the service until the context is canceled
+func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd string) error {
 	if atomic.AddInt32(&s.started, 1) != 1 {
 		return nil
 	}
@@ -718,7 +721,9 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	for i, listenAddr := range s.config.RPCListeners {
 		listenAddressStr := listenAddr.Network() + "://" + listenAddr.String()
 		mux := http.NewServeMux()
-		rpc.RegisterRPCFuncs(mux, routes, rpcLogger)
+
+		authMiddleware := BasicAuthMiddleware(expUser, expPwd)
+		RegisterRPCFuncs(mux, routes, rpcLogger, authMiddleware)
 
 		listener, err := rpc.Listen(
 			listenAddressStr,
@@ -766,4 +771,20 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context) error {
 	s.logger.Info("Received shutdown signal. Stopping...")
 
 	return nil
+}
+
+// BasicAuthMiddleware handles the authentication of username and password
+// of this router
+func BasicAuthMiddleware(expUsername, expPwd string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			user, pass, ok := r.BasicAuth()
+			if !ok || !strings.EqualFold(user, expUsername) || !strings.EqualFold(pass, expPwd) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next(w, r)
+		}
+	}
 }

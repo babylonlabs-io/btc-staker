@@ -39,7 +39,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
-- [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
+* [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
+* [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
 
 ## v0.15.4
@@ -50,9 +51,9 @@ babylon node instead of global parameters input file in `stake-from-phase1`.
 
 ### Improvements
 
-- [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
+* [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
 keyring backend to "file" type
-- [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
+* [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
 configuration to enabled it (disabled by default).
 
 ## v0.15.2
@@ -64,21 +65,22 @@ taproot addresses bip322 signing
 
 ### Bug fixes
 
-- [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
+* [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
 `btcd` v0.24.2 in `go.mod`
 
 ## v0.15.0
 
 ### Improvements
-- [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
+
+* [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
 to create phase-1/phase-2 PoP payload
-- [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
+* [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
 to create payload for phase-1/phase-2 PoP deletion
-- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+* [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
 to sign Cosmos ADR-36 messages
-- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+* [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
 to validate PoP JSON file
-- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+* [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
 to v1.0.0-rc.4
 
 ## v0.14.0
@@ -149,7 +151,7 @@ routine to check for activation after startup
 
 ### Bug fix
 
-- [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
+* [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
 signatures when building unbonding transaction witness
 
 ## v0.7.0

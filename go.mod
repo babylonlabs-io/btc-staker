@@ -23,6 +23,7 @@ require (
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/jessevdk/go-flags v1.5.0
+	github.com/joho/godotenv v1.5.1
 	github.com/jsternberg/zap-logfmt v1.3.0
 	github.com/lightningnetwork/lnd v0.18.4-beta
 	github.com/lightningnetwork/lnd/kvdb v1.4.10
