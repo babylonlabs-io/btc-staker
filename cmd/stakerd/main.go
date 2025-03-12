@@ -11,7 +11,6 @@ import (
 	"syscall"
 
 	"github.com/babylonlabs-io/btc-staker/metrics"
-	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 
@@ -72,8 +71,7 @@ func main() {
 
 	stakerMetrics := metrics.NewStakerMetrics()
 
-	// TODO: consider moving this to stakerservice
-	staker, err := staker.NewStakerAppFromConfig(
+	service, err := service.NewStakerServiceFromConfig(
 		cfg,
 		cfgLogger,
 		zapLogger,
@@ -82,16 +80,9 @@ func main() {
 	)
 
 	if err != nil {
-		cfgLogger.Errorf("failed to create staker app: %v", err)
+		cfgLogger.Errorf("failed to create staker service: %v", err)
 		os.Exit(1)
 	}
-
-	service := service.NewStakerService(
-		cfg,
-		staker,
-		cfgLogger,
-		dbBackend,
-	)
 
 	if cfg.MetricsConfig.Enabled {
 		addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
