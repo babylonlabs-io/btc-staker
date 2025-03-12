@@ -13,6 +13,7 @@ import (
 
 // TestRegisterRPCFuncs verifies that routes are protected by Basic Auth.
 func TestRegisterRPCFuncs(t *testing.T) {
+	t.Parallel()
 	username := "testuser"
 	password := "testpass"
 	routeHealth := "health"
@@ -29,7 +30,8 @@ func TestRegisterRPCFuncs(t *testing.T) {
 	stakerservice.RegisterRPCFuncs(mux, funcMap, log.NewNopLogger(), stakerservice.BasicAuthMiddleware(username, password))
 
 	t.Run("Valid Authenticated Request", func(t *testing.T) {
-		req := httptest.NewRequest("GET", fmt.Sprintf("/%s", routeHealth), nil)
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/%s", routeHealth), nil)
 		req.SetBasicAuth(username, password)
 
 		rr := httptest.NewRecorder()
@@ -41,7 +43,8 @@ func TestRegisterRPCFuncs(t *testing.T) {
 	})
 
 	t.Run("Invalid Credentials", func(t *testing.T) {
-		req := httptest.NewRequest("GET", fmt.Sprintf("/%s", routeHealth), nil)
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/%s", routeHealth), nil)
 		req.SetBasicAuth("wronguser", "wrongpass")
 
 		rr := httptest.NewRecorder()
@@ -53,7 +56,8 @@ func TestRegisterRPCFuncs(t *testing.T) {
 	})
 
 	t.Run("No Credentials", func(t *testing.T) {
-		req := httptest.NewRequest("GET", fmt.Sprintf("/%s", routeHealth), nil)
+		t.Parallel()
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/%s", routeHealth), nil)
 
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, req)

@@ -72,7 +72,7 @@ func makeHTTPHandler(rpcFunc *RPCFunc, logger log.Logger) func(http.ResponseWrit
 
 	// Exception for websocket endpoints
 	if rpcFunc.ws {
-		return func(w http.ResponseWriter, r *http.Request) {
+		return func(w http.ResponseWriter, _ *http.Request) {
 			res := types.RPCMethodNotFoundError(dummyID)
 			if wErr := server.WriteRPCResponseHTTPError(w, http.StatusNotFound, res); wErr != nil {
 				logger.Error("failed to write response", "err", wErr)
@@ -284,7 +284,7 @@ func _nonJSONStringToArg(rt reflect.Type, arg string) (reflect.Value, bool, erro
 	isHexString := strings.HasPrefix(strings.ToLower(arg), "0x")
 
 	var expectingString, expectingByteSlice, expectingInt bool
-	switch rt.Kind() {
+	switch rt.Kind() { //nolint:exhaustive
 	case reflect.Int,
 		reflect.Uint,
 		reflect.Int8,
@@ -499,7 +499,7 @@ func writeListOfEndpoints(w http.ResponseWriter, r *http.Request, funcMap map[st
 	}
 	buf.WriteString("</body></html>")
 	w.Header().Set("Content-Type", "text/html")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	w.Write(buf.Bytes()) //nolint: errcheck
 }
 
@@ -529,7 +529,7 @@ func jsonParamsToArgs(rpcFunc *RPCFunc, raw []byte) ([]reflect.Value, error) {
 	}
 
 	// Otherwise, bad format, we cannot parse
-	return nil, fmt.Errorf("unknown type for JSON params: %v. Expected map or array", err)
+	return nil, fmt.Errorf("unknown type for JSON params: %w. Expected map or array", err)
 }
 
 func mapParamsToArgs(
