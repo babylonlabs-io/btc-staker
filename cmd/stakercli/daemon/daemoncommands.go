@@ -529,6 +529,8 @@ func withdrawableTransactions(ctx *cli.Context) error {
 	return nil
 }
 
+// NewStakerServiceJSONRPCClient creates a client connection with basic auth
+// The username and password are loaded from environment variables
 func NewStakerServiceJSONRPCClient(remoteAddressWithoutAuth string) (*dc.StakerServiceJSONRPCClient, error) {
 	parsedURL, err := url.Parse(remoteAddressWithoutAuth)
 	if err != nil {
