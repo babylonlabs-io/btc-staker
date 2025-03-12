@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/ory/dockertest/v3"
@@ -421,7 +422,7 @@ func StartManagerStakerApp(
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
+	stakerClient, err := daemon.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
 	fmt.Printf("\n log config %+v", cfg)
@@ -508,7 +509,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
-	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
+	stakerClient, err := daemon.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
 	require.NoError(t, err)
 	tm.StakerClient = stakerClient
 }
