@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/test-go/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 // ImageConfig contains all images and their respective tags
