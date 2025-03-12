@@ -10,6 +10,7 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
@@ -104,7 +105,7 @@ func main() {
 		cfgLogger.Info(msg)
 	}
 
-	expUsername, expPwd, err := getEnvBasicAuth()
+	expUsername, expPwd, err := cmd.GetEnvBasicAuth()
 	if err != nil {
 		cfgLogger.Errorf("failed to create staker app: %v", err)
 		os.Exit(1)
@@ -114,18 +115,4 @@ func main() {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-}
-
-func getEnvBasicAuth() (expUsername, expPwd string, err error) {
-	expUsername = os.Getenv(service.EnvRouteAuthUser)
-	if len(expUsername) == 0 {
-		return "", "", fmt.Errorf("the environment variable %s to authenticate the daemon routes is not set", service.EnvRouteAuthUser)
-	}
-
-	expPwd = os.Getenv(service.EnvRouteAuthPwd)
-	if len(expPwd) == 0 {
-		return "", "", fmt.Errorf("the environment variable %s to authenticate the daemon routes is not set", service.EnvRouteAuthPwd)
-	}
-
-	return expUsername, expPwd, nil
 }

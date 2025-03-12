@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 
+	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
@@ -273,7 +275,7 @@ var withdrawableTransactionsCmd = cli.Command{
 // checkHealth checks if staker daemon is running.
 func checkHealth(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -294,7 +296,7 @@ func checkHealth(ctx *cli.Context) error {
 // listOutputs lists current unspent outputs in connected wallet.
 func listOutputs(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -315,7 +317,7 @@ func listOutputs(ctx *cli.Context) error {
 // babylonFinalityProviders lists current finality providers.
 func babylonFinalityProviders(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -348,7 +350,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 // stake stakes a BTC.
 func stake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -373,7 +375,7 @@ func stake(ctx *cli.Context) error {
 // stakeFromPhase1TxBTC delegates a staking transaction from a phase 1 tx BTC.
 func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -423,7 +425,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 
 func unstake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -445,7 +447,7 @@ func unstake(ctx *cli.Context) error {
 // unbondStaking unbonds a staking transaction.
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -467,7 +469,7 @@ func unbond(ctx *cli.Context) error {
 // stakingDetails gets the details of a staking transaction.
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -489,7 +491,7 @@ func stakingDetails(ctx *cli.Context) error {
 // listStakingTransactions lists all the staking transactions.
 func listStakingTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
 	}
@@ -522,7 +524,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 // withdrawableTransactions lists all the withdrawable staking transactions.
 func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(stakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -548,4 +550,20 @@ func withdrawableTransactions(ctx *cli.Context) error {
 	helpers.PrintRespJSON(transactions)
 
 	return nil
+}
+
+func NewStakerServiceJSONRPCClient(remoteAddressWithoutAuth string) (*dc.StakerServiceJSONRPCClient, error) {
+	parsedURL, err := url.Parse(remoteAddressWithoutAuth)
+	if err != nil {
+		return nil, err
+	}
+
+	user, pwd, err := cmd.GetEnvBasicAuth()
+	if err != nil {
+		return nil, err
+	}
+	parsedURL.User = url.UserPassword(user, pwd)
+	parsedURL.Opaque = ""
+
+	return dc.NewStakerServiceJSONRPCClient(parsedURL.String())
 }
