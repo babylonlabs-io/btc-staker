@@ -73,7 +73,7 @@ func main() {
 
 	stakerMetrics := metrics.NewStakerMetrics()
 
-	service, err := service.NewStakerServiceFromConfig(
+	s, err := service.NewStakerServiceFromConfig(
 		cfg,
 		cfgLogger,
 		zapLogger,
@@ -92,7 +92,12 @@ func main() {
 	}
 
 	if err := godotenv.Load(); err != nil {
-		msg := fmt.Sprintf("Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes", err.Error(), service.EnvRouteAuthUser, service.EnvRouteAuthPwd)
+		msg := fmt.Sprintf(
+			"Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes",
+			err.Error(),
+			service.EnvRouteAuthUser,
+			service.EnvRouteAuthPwd,
+		)
 		cfgLogger.Info(msg)
 	}
 
