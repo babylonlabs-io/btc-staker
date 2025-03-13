@@ -50,6 +50,7 @@ This PR contains a series of PRs on multi-staking support and BTC staking integr
 * [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+* [#157](https://github.com/babylonlabs-io/btc-staker/pull/157) Move stakerapp creation from main to stakerservice
 
 ## v0.15.2
 

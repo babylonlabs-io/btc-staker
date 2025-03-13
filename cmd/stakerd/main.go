@@ -12,7 +12,6 @@ import (
 
 	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/metrics"
-	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	"github.com/joho/godotenv"
@@ -74,8 +73,7 @@ func main() {
 
 	stakerMetrics := metrics.NewStakerMetrics()
 
-	// TODO: consider moving this to stakerservice
-	staker, err := staker.NewStakerAppFromConfig(
+	s, err := service.NewStakerServiceFromConfig(
 		cfg,
 		cfgLogger,
 		zapLogger,
@@ -84,16 +82,9 @@ func main() {
 	)
 
 	if err != nil {
-		cfgLogger.Errorf("failed to create staker app: %v", err)
+		cfgLogger.Errorf("failed to create staker service: %v", err)
 		os.Exit(1)
 	}
-
-	s := service.NewStakerService(
-		cfg,
-		staker,
-		cfgLogger,
-		dbBackend,
-	)
 
 	if cfg.MetricsConfig.Enabled {
 		addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
@@ -101,7 +92,12 @@ func main() {
 	}
 
 	if err := godotenv.Load(); err != nil {
-		msg := fmt.Sprintf("Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes", err.Error(), service.EnvRouteAuthUser, service.EnvRouteAuthPwd)
+		msg := fmt.Sprintf(
+			"Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes",
+			err.Error(),
+			service.EnvRouteAuthUser,
+			service.EnvRouteAuthPwd,
+		)
 		cfgLogger.Info(msg)
 	}
 
