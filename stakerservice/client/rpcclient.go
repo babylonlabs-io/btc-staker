@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
-	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
@@ -97,16 +96,16 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	versionedParams *parser.ParsedVersionedGlobalParams,
+	covPks []*btcec.PublicKey,
+	covenantQuorum uint32,
 ) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
 	result := new(service.ResultBtcDelegationFromBtcStakingTx)
 
 	params := make(map[string]interface{})
 	params["stakerAddress"] = stakerAddress
 	params["btcStkTxHash"] = btcStkTxHash
-	params["tag"] = versionedParams.Tag
-	params["covenantPksHex"] = parseCovenantsPubKeyToHex(versionedParams.CovenantPks...)
-	params["covenantQuorum"] = versionedParams.CovenantQuorum
+	params["covenantPksHex"] = parseCovenantsPubKeyToHex(covPks...)
+	params["covenantQuorum"] = covenantQuorum
 
 	_, err := c.client.Call(ctx, "btc_delegation_from_btc_staking_tx", params, result)
 	if err != nil {
@@ -228,6 +227,20 @@ func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash s
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to call unbond_staking: %w", err)
+	}
+	return result, nil
+}
+
+// BtcStakingParamByBtcHeight returns the btc staking parameter for the BTC block height from the babylon chain
+func (c *StakerServiceJSONRPCClient) BtcStakingParamByBtcHeight(ctx context.Context, btcHeight uint32) (*service.BtcStakingParamsByBtcHeightResponse, error) {
+	result := new(service.BtcStakingParamsByBtcHeightResponse)
+
+	params := make(map[string]interface{})
+	params["btcHeight"] = btcHeight
+
+	_, err := c.client.Call(ctx, "btc_staking_param_by_btc_height", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call btc_staking_param_by_btc_height: %w", err)
 	}
 	return result, nil
 }

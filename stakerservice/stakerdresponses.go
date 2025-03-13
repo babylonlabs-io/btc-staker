@@ -1,6 +1,9 @@
 package stakerservice
 
-import "github.com/btcsuite/btcd/btcjson"
+import (
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcjson"
+)
 
 type ResultHealth struct{}
 
@@ -62,4 +65,13 @@ type WithdrawableTransactionsResponse struct {
 type BtcTxAndBlockResponse struct {
 	Tx  *btcjson.TxRawResult                 `json:"tx"`
 	Blk *btcjson.GetBlockHeaderVerboseResult `json:"blk"`
+}
+
+type BtcStakingParamsByBtcHeightResponse struct {
+	StakingParams BtcStakingParams `json:"staking_params"`
+}
+
+type BtcStakingParams struct {
+	CovenantPks    []*btcec.PublicKey
+	CovenantQuorum uint32
 }

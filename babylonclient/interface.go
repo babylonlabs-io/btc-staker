@@ -27,11 +27,11 @@ type BTCCheckpointParams struct {
 
 // StakingParams defines the parameters for staking
 type StakingParams struct {
-	// K-deep
-	ConfirmationTimeBlocks uint32
-	// W-deep
-	FinalizationTimeoutBlocks uint32
+	BTCCheckpointParams
+	BtcStakingParams
+}
 
+type BtcStakingParams struct {
 	// Minimum amount of satoshis required for slashing transaction
 	MinSlashingTxFeeSat btcutil.Amount
 
@@ -90,6 +90,23 @@ type BabylonClient interface {
 	GetUndelegationInfo(resp *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error)
 	GetLatestBlockHeight() (uint64, error)
 	QueryBtcLightClientTipHeight() (uint32, error)
+}
+
+func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResponse) BtcStakingParams {
+	return BtcStakingParams{
+		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
+		CovenantPks:               stakingTrackerParams.CovenantPks,
+		MinSlashingTxFeeSat:       stakingTrackerParams.MinSlashingFee,
+		SlashingRate:              stakingTrackerParams.SlashingRate,
+		CovenantQuruomThreshold:   stakingTrackerParams.CovenantQuruomThreshold,
+		UnbondingTime:             stakingTrackerParams.UnbondingTime,
+		UnbondingFee:              stakingTrackerParams.UnbondingFee,
+		MinStakingTime:            stakingTrackerParams.MinStakingTime,
+		MaxStakingTime:            stakingTrackerParams.MaxStakingTime,
+		MinStakingValue:           stakingTrackerParams.MinStakingValue,
+		MaxStakingValue:           stakingTrackerParams.MaxStakingValue,
+		AllowListExpirationHeight: stakingTrackerParams.AllowListExpirationHeight,
+	}
 }
 
 type MockBabylonClient struct {
@@ -224,12 +241,16 @@ func GetMockClient() *MockBabylonClient {
 
 	return &MockBabylonClient{
 		ClientParams: &StakingParams{
-			ConfirmationTimeBlocks:    2,
-			FinalizationTimeoutBlocks: 5,
-			MinSlashingTxFeeSat:       btcutil.Amount(1000),
-			CovenantPks:               []*btcec.PublicKey{covenantPk.PubKey()},
-			SlashingPkScript:          slashingPkScript,
-			SlashingRate:              sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
+			BTCCheckpointParams: BTCCheckpointParams{
+				ConfirmationTimeBlocks:    2,
+				FinalizationTimeoutBlocks: 5,
+			},
+			BtcStakingParams: BtcStakingParams{
+				MinSlashingTxFeeSat: btcutil.Amount(1000),
+				CovenantPks:         []*btcec.PublicKey{covenantPk.PubKey()},
+				SlashingPkScript:    slashingPkScript,
+				SlashingRate:        sdkmath.LegacyNewDecWithPrec(1, 1), // 1 * 10^{-1} = 0.1
+			},
 		},
 		babylonKey:             priv,
 		SentMessages:           make(chan *btcstypes.MsgCreateBTCDelegation),

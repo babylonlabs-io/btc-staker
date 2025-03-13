@@ -47,7 +47,7 @@ func NewDynamicBtcFeeEstimator(
 			Pass:                 cfg.Bitcoind.RPCPass,
 			DisableConnectOnNew:  true,
 			DisableAutoReconnect: false,
-			DisableTLS:           true,
+			DisableTLS:           cfg.Bitcoind.DisableTLS,
 			HTTPPostMode:         true,
 		}
 

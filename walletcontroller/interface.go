@@ -92,7 +92,6 @@ func StkTxV0ParsedWithBlock(
 	wc WalletController,
 	btcNetwork *chaincfg.Params,
 	stkTxHash *chainhash.Hash,
-	tag []byte,
 	covenantPks []*secp256k1.PublicKey,
 	covenantQuorum uint32,
 ) (*staking.ParsedV0StakingTx, *notifier.TxConfirmation, TxStatus, error) {
@@ -102,7 +101,7 @@ func StkTxV0ParsedWithBlock(
 	}
 
 	wireStkTx := stkTx.MsgTx()
-	parsedStakingTx, err := staking.ParseV0StakingTx(wireStkTx, tag, covenantPks, covenantQuorum, btcNetwork)
+	parsedStakingTx, err := ParseV0StakingTxWithoutTag(wireStkTx, covenantPks, covenantQuorum, btcNetwork)
 	if err != nil {
 		return nil, nil, TxNotFound, err
 	}

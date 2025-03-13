@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/ory/dockertest/v3"
@@ -70,6 +71,9 @@ var (
 
 	bitcoindUser = "user"
 	bitcoindPass = "pass"
+
+	daemonRouteUser = "admin"
+	daemonRoutePwd  = "securepwd"
 )
 
 // keyToAddr maps the passed private to corresponding p2pkh address.
@@ -305,6 +309,9 @@ func StartManager(
 	ctx context.Context,
 	numMatureOutputsInWallet uint32,
 ) *TestManager {
+	os.Setenv(service.EnvRouteAuthUser, daemonRouteUser)
+	os.Setenv(service.EnvRouteAuthPwd, daemonRoutePwd)
+
 	manager, err := containers.NewManager(t)
 	require.NoError(t, err)
 
@@ -407,7 +414,7 @@ func StartManagerStakerApp(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := stakerService.RunUntilShutdown(ctx)
+		err := stakerService.RunUntilShutdown(ctx, daemonRouteUser, daemonRoutePwd)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
@@ -415,7 +422,7 @@ func StartManagerStakerApp(
 	// Wait for the server to start
 	time.Sleep(3 * time.Second)
 
-	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + addressString)
+	stakerClient, err := daemon.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
 	fmt.Printf("\n log config %+v", cfg)
@@ -491,7 +498,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := service.RunUntilShutdown(ctx)
+		err := service.RunUntilShutdown(ctx, daemonRouteUser, daemonRoutePwd)
 		if err != nil {
 			t.Fatalf("Error running server: %v", err)
 		}
@@ -502,7 +509,7 @@ func (tm *TestManager) RestartAppWithAction(t *testing.T, ctx context.Context, c
 	tm.wg = &wg
 	tm.Db = dbbackend
 	tm.Sa = stakerApp
-	stakerClient, err := dc.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
+	stakerClient, err := daemon.NewStakerServiceJSONRPCClient("tcp://" + tm.serviceAddress)
 	require.NoError(t, err)
 	tm.StakerClient = stakerClient
 }
