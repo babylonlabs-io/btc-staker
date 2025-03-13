@@ -495,6 +495,15 @@ ServerPort = 2112
 
 To see the complete list of configuration options, check the `stakerd.conf` file.
 
+#### BTC Staker Environment Configuration
+
+The **Staker Daemon** and `stakercli` communicate securely using **Basic Authentication** with a username and password.
+
+These credentials are loaded from the environment. One convenient option is to create a `.env` file in the same directory as the binaries with the following variables:
+
+- `BTCSTAKER_USERNAME` — Sets the Basic Auth username.
+- `BTCSTAKER_PASSWORD` — Sets the Basic Auth password.
+
 ## 4. Starting staker daemon
 
 You can start the staker daemon using the following command:

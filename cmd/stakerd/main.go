@@ -10,10 +10,12 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
+	"github.com/joho/godotenv"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -86,7 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	service := service.NewStakerService(
+	s := service.NewStakerService(
 		cfg,
 		staker,
 		cfgLogger,
@@ -98,7 +100,18 @@ func main() {
 		metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
 	}
 
-	if err = service.RunUntilShutdown(ctx); err != nil {
+	if err := godotenv.Load(); err != nil {
+		msg := fmt.Sprintf("Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes", err.Error(), service.EnvRouteAuthUser, service.EnvRouteAuthPwd)
+		cfgLogger.Info(msg)
+	}
+
+	expUsername, expPwd, err := cmd.GetEnvBasicAuth()
+	if err != nil {
+		cfgLogger.Errorf("failed to create staker app: %v", err)
+		os.Exit(1)
+	}
+
+	if err = s.RunUntilShutdown(ctx, expUsername, expPwd); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

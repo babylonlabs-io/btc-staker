@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 
+	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
 	"github.com/urfave/cli"
@@ -266,7 +268,7 @@ var withdrawableTransactionsCmd = cli.Command{
 
 func checkHealth(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -286,7 +288,7 @@ func checkHealth(ctx *cli.Context) error {
 
 func listOutputs(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -306,7 +308,7 @@ func listOutputs(ctx *cli.Context) error {
 
 func babylonFinalityProviders(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -338,7 +340,7 @@ func babylonFinalityProviders(ctx *cli.Context) error {
 
 func stake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -363,7 +365,7 @@ func stake(ctx *cli.Context) error {
 
 func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -400,7 +402,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 
 func unstake(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -421,7 +423,7 @@ func unstake(ctx *cli.Context) error {
 
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -442,7 +444,7 @@ func unbond(ctx *cli.Context) error {
 
 func stakingDetails(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -463,7 +465,7 @@ func stakingDetails(ctx *cli.Context) error {
 
 func listStakingTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -495,7 +497,7 @@ func listStakingTransactions(ctx *cli.Context) error {
 
 func withdrawableTransactions(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
-	client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
 	if err != nil {
 		return err
 	}
@@ -523,4 +525,21 @@ func withdrawableTransactions(ctx *cli.Context) error {
 	helpers.PrintRespJSON(transactions)
 
 	return nil
+}
+
+// NewStakerServiceJSONRPCClient creates a client connection with basic auth
+// The username and password are loaded from environment variables
+func NewStakerServiceJSONRPCClient(remoteAddressWithoutAuth string) (*dc.StakerServiceJSONRPCClient, error) {
+	parsedURL, err := url.Parse(remoteAddressWithoutAuth)
+	if err != nil {
+		return nil, err
+	}
+
+	user, pwd, err := cmd.GetEnvBasicAuth()
+	if err != nil {
+		return nil, err
+	}
+	parsedURL.User = url.UserPassword(user, pwd)
+
+	return dc.NewStakerServiceJSONRPCClient(parsedURL.String())
 }

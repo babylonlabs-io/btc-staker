@@ -8,6 +8,7 @@ import (
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	cmdpop "github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
 	cmdtx "github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
+	"github.com/joho/godotenv"
 	"github.com/urfave/cli"
 )
 
@@ -25,6 +26,8 @@ const (
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	app := cli.NewApp()
 	app.Name = "stakercli"
 	app.Usage = "Bitcoin staking controller"
