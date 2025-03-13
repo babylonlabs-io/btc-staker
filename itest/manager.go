@@ -338,6 +338,9 @@ func StartManagerStakerApp(
 	covenantQuorum int,
 	coventantPrivKeys []*btcec.PrivateKey,
 ) *TestManagerStakerApp {
+	os.Setenv(service.EnvRouteAuthUser, daemonRouteUser)
+	os.Setenv(service.EnvRouteAuthPwd, daemonRoutePwd)
+
 	coventantPubKeys := make([]*btcec.PublicKey, len(coventantPrivKeys))
 	for i, cvPrivKey := range coventantPrivKeys {
 		coventantPubKeys[i] = cvPrivKey.PubKey()
