@@ -519,7 +519,6 @@ func (app *App) mustSetTxSpentOnBtc(hash *chainhash.Hash) {
 func (app *App) SendPhase1Transaction(
 	stakerAddr btcutil.Address,
 	stkTxHash *chainhash.Hash,
-	tag []byte,
 	covenantPks []*secp256k1.PublicKey,
 	covenantQuorum uint32,
 ) (babylonBTCDelegationTxHash string, err error) {
@@ -530,7 +529,7 @@ func (app *App) SendPhase1Transaction(
 	default:
 	}
 
-	parsedStakingTx, notifierTx, status, err := walletcontroller.StkTxV0ParsedWithBlock(app.wc, app.network, stkTxHash, tag, covenantPks, covenantQuorum)
+	parsedStakingTx, notifierTx, status, err := walletcontroller.StkTxV0ParsedWithBlock(app.wc, app.network, stkTxHash, covenantPks, covenantQuorum)
 	if err != nil {
 		app.logger.WithError(err).Info("err getting tx details")
 		return "", err

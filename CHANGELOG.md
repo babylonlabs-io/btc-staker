@@ -39,6 +39,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+- [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
+babylon node instead of global parameters input file in `stake-from-phase1`.
 
 ## v0.15.4
 
