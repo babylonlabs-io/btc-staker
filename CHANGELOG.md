@@ -37,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
+- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
+to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
 - [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
 - [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
