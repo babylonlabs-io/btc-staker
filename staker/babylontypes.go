@@ -72,7 +72,7 @@ func (app *App) buildDelegation(
 	)
 	if err != nil {
 		// This is truly unexpected, most probably programming error we have
-		// valid and btc confirmed staking transacion, but for some reason we cannot
+		// valid and btc confirmed staking transaction, but for some reason we cannot
 		// build delegation data using our own set of libraries
 		app.logger.WithFields(logrus.Fields{
 			"btcTxHash":     req.btcTxHash,
@@ -281,7 +281,7 @@ func (app *App) finalityProviderExists(fpPk *btcec.PublicKey) error {
 	return nil
 }
 
-func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
+func isTransactionFullySigned(tx *wire.MsgTx) (bool, error) {
 	if len(tx.TxIn) == 0 {
 		return false, fmt.Errorf("transaction has no inputs")
 	}
@@ -426,7 +426,7 @@ func (app *App) activateVerifiedDelegation(
 			// - staking transaction is not on btc chain
 
 			// check if staking transaction is fully signed
-			isSigned, err := isTransacionFullySigned(stakingTransaction)
+			isSigned, err := isTransactionFullySigned(stakingTransaction)
 
 			if err != nil {
 				app.reportCriticialError(
