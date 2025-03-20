@@ -25,7 +25,6 @@ import (
 	"github.com/ory/dockertest/v3"
 
 	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
-	"github.com/cometbft/cometbft/crypto/tmhash"
 
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
@@ -1014,13 +1013,13 @@ func (tm *TestManager) sendWatchedStakingTx(
 	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
 	require.NoError(t, err)
 
-	babylonAddrHash := tmhash.Sum(tStkData.StakerBabylonAddr.Bytes())
+	msgToSign := []byte(tStkData.StakerBabylonAddr.String())
 
-	sig, err := tm.Sa.Wallet().SignBip322Signature(babylonAddrHash, tm.MinerAddr)
+	sig, err := tm.Sa.Wallet().SignBip322Signature(msgToSign, tm.MinerAddr)
 	require.NoError(t, err)
 
 	pop, err := babylonclient.NewBabylonBip322Pop(
-		babylonAddrHash,
+		msgToSign,
 		sig,
 		tm.MinerAddr,
 	)

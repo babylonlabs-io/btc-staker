@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.15.5
+
 ### Improvements
 
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
@@ -42,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
 * [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
+* [#163](https://github.com/babylonlabs-io/btc-staker/pull/163) bump babylon to rc.8
 
 ## v0.15.4
 
