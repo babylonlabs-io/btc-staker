@@ -31,7 +31,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/cometbft/cometbft/crypto/tmhash"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -2349,15 +2348,15 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		return nil, err
 	}
 
-	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
+	msgToSign := []byte(app.babylonClient.GetKeyAddress().String())
 	// pop only works for native segwit address and taproot bip86 addresses
-	sig, err := app.wc.SignBip322Signature(babylonAddrHash, stakerAddress)
+	sig, err := app.wc.SignBip322Signature(msgToSign, stakerAddress)
 	if err != nil {
 		return nil, err
 	}
 
 	return cl.NewBabylonBip322Pop(
-		babylonAddrHash,
+		msgToSign,
 		sig,
 		stakerAddress,
 	)
