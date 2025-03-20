@@ -711,7 +711,7 @@ func (tm *TestManager) createAndRegisterFinalityProviders(t *testing.T, stkData 
 		require.Error(t, err)
 		require.True(t, errors.Is(err, babylonclient.ErrFinalityProviderDoesNotExist))
 
-		pop, err := btcstypes.NewPoPBTC(stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
+		pop, err := datagen.NewPoPBTC(stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
 		require.NoError(t, err)
 
 		btcFpKey := bbntypes.NewBIP340PubKeyFromBTCPK(stkData.FinalityProviderBtcKeys[i])
