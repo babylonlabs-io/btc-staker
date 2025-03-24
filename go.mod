@@ -31,6 +31,7 @@ require (
 	github.com/prometheus/client_golang v1.20.5
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
+	github.com/test-go/testify v1.1.4
 	github.com/urfave/cli v1.22.14
 	go.uber.org/zap v1.26.0
 	golang.org/x/mod v0.19.0
