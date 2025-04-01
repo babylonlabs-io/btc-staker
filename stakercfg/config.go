@@ -51,7 +51,7 @@ var (
 )
 
 type ChainConfig struct {
-	Network         string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"simnet" choice:"signet"`
+	Network         string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"simnet" choice:"signet" choice:"mainnet"`
 	SigNetChallenge string `long:"signetchallenge" description:"Connect to a custom signet network defined by this challenge instead of using the global default signet test network -- Can be specified multiple times"`
 }
 
@@ -392,6 +392,8 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		cfg.ActiveNetParams = chaincfg.RegressionNetParams
 	case "simnet":
 		cfg.ActiveNetParams = chaincfg.SimNetParams
+	case "mainnet":
+		cfg.ActiveNetParams = chaincfg.MainNetParams
 	case "signet":
 		cfg.ActiveNetParams = chaincfg.SigNetParams
 

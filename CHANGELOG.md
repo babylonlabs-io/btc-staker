@@ -35,6 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Improvements
+
+* [#166](https://github.com/babylonlabs-io/btc-staker/pull/166) Fix config for
+mainnet
+
 ## v0.15.5
 
 ### Improvements
@@ -45,6 +50,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
 * [#163](https://github.com/babylonlabs-io/btc-staker/pull/163) bump babylon to rc.8
+- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
+to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
 
 ## v0.15.4
 
