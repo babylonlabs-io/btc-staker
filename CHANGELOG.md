@@ -37,21 +37,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
-- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
-to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
-- [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
-- [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
-babylon node instead of global parameters input file in `stake-from-phase1`.
-- [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
-keyring backend to "file" type
-- [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
-configuration to enabled it (disabled by default).
 * [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
 This PR contains a series of PRs on multi-staking support and BTC staking integration.
 * [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking endpoint and the post-approval flow, and reduction of state in the database.
-* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
+* [#166](https://github.com/babylonlabs-io/btc-staker/pull/166) Fix config for
+mainnet
+
+## v0.15.5
+
+### Improvements
+
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+* [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
+* [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
+babylon node instead of global parameters input file in `stake-from-phase1`.
+* [#163](https://github.com/babylonlabs-io/btc-staker/pull/163) bump babylon to rc.8
+- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
+to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
+
+## v0.15.4
+
+* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
+
+## v0.15.3
+
+### Improvements
+
+* [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
+keyring backend to "file" type
+* [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
+configuration to enabled it (disabled by default).
 
 ## v0.15.2
 
