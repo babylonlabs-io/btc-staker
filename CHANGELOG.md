@@ -37,7 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
-* [#169](https://github.com/babylonlabs-io/btc-staker/pull/169) bump babylon to v1.0.0-rc.10
+* [#169](https://github.com/babylonlabs-io/btc-staker/pull/169) bump babylon to v1.0.0
 
 ## v0.15.6
 
