@@ -42,6 +42,10 @@ This PR contains a series of PRs on multi-staking support and BTC staking integr
 * [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking
 endpoint and the post-approval flow, and reduction of state in the database.
 
+### Bug fixes
+
+* [#172](https://github.com/babylonlabs-io/btc-staker/pull/172) chore: spend stake check confirmation
+
 ## v0.15.7
 
 ### Improvements
