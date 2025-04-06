@@ -1,6 +1,7 @@
 package walletcontroller
 
 import (
+	"fmt"
 	staking "github.com/babylonlabs-io/babylon/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -22,6 +23,19 @@ const (
 	TxInMemPool
 	TxInChain
 )
+
+func (ts TxStatus) String() string {
+	switch ts {
+	case TxNotFound:
+		return "TxNotFound"
+	case TxInMemPool:
+		return "TxInMemPool"
+	case TxInChain:
+		return "TxInChain"
+	default:
+		return fmt.Sprintf("UnknownTxStatus(%d)", int(ts))
+	}
+}
 
 type SpendPathDescription struct {
 	ControlBlock *txscript.ControlBlock
