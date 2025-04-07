@@ -1620,20 +1620,20 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 	// on the Babylon chain, we can now be certain that it has been confirmed in Bitcoin.
 	// Therefore, we only need to check whether the unbonding transaction has been confirmed.
 	unbondingTxHash := udi.UnbondingTransaction.TxHash()
-	confirmation, txStatus, err := app.Wallet().TxDetails(
+	ubdConfirmation, txStatus, err := app.Wallet().TxDetails(
 		&unbondingTxHash,
 		udi.UnbondingTransaction.TxOut[0].PkScript,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting confirmation info from btc: %w", err)
+		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting confirmation info for unbonding tx: %s from btc: %w", unbondingTxHash.String(), err)
 	}
 
-	if confirmation == nil {
-		return nil, nil, fmt.Errorf("cannot spend staking output. Tx status: %s", txStatus.String())
+	if ubdConfirmation == nil {
+		app.logger.Infof("cannot spend staking output. Unbonding Tx hash: %s. Tx status: %s", unbondingTxHash.String(), txStatus.String())
 	}
 
 	var spendStakeTxInfo *spendStakeTxInfo
-	if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
+	if ubdConfirmation != nil && ubdConfirmation.BlockHash != nil && ubdConfirmation.BlockHeight > 0 {
 		unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmed(
 			pubKey,
 			fpBtcPubkeys,
