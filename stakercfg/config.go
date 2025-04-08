@@ -40,8 +40,8 @@ const (
 
 	// JSON-RPC server config
 	defaultMaxOpenConnections  = 0 // unlimited
-	defaultReadTimeout         = 15 * time.Second
-	defaultWriteTimeout        = 25 * time.Second
+	defaultReadTimeout         = 2 * time.Minute
+	defaultWriteTimeout        = 2 * time.Minute
 	defaultMaxBodyBytes        = int64(1000000) // 1MB
 	defaultMaxHeaderBytes      = 1 << 20        // same as the net/http default
 	defaultMaxRequestBatchSize = 10
