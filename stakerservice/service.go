@@ -711,8 +711,6 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd st
 	}()
 
 	routes := s.GetRoutes()
-	// TODO: Add staker service dedicated config to define those values
-	config := rpc.DefaultConfig()
 	// This way logger will log to stdout and file
 	// TODO: investigate if we can use logrus directly to pass it to rpcserver
 	rpcLogger := log.NewTMLogger(s.logger.Writer())
@@ -727,7 +725,7 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd st
 
 		listener, err := rpc.Listen(
 			listenAddressStr,
-			config.MaxOpenConnections,
+			s.config.JSONRPCServerConfig.MaxOpenConnections,
 		)
 
 		if err != nil {
@@ -752,7 +750,7 @@ func (s *StakerService) RunUntilShutdown(ctx context.Context, expUser, expPwd st
 				listener,
 				mux,
 				rpcLogger,
-				config,
+				s.config.JSONRPCServerConfig.Config(),
 			)
 			if err != nil {
 				s.logger.WithError(err).Error("problem at JSON RPC HTTP server")
