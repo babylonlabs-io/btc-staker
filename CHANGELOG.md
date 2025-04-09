@@ -35,9 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.15.8
+
 ### Improvements
 
-* [#175](https://github.com/babylonlabs-io/btc-staker/pull/175) Add JSON-RPC server config parameters. 
+* [#175](https://github.com/babylonlabs-io/btc-staker/pull/175) Add JSON-RPC server config parameters.
 
 ## v0.15.7
 
