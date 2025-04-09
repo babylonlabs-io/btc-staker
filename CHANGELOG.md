@@ -41,11 +41,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 This PR contains a series of PRs on multi-staking support and BTC staking integration.
 * [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking
 endpoint and the post-approval flow, and reduction of state in the database.
-* [#175](https://github.com/babylonlabs-io/btc-staker/pull/175) Add JSON-RPC server config parameters. 
 
 ### Bug fixes
 
 * [#172](https://github.com/babylonlabs-io/btc-staker/pull/172) chore: spend stake check confirmation
+
+## v0.15.8
+
+### Improvements
+
+* [#175](https://github.com/babylonlabs-io/btc-staker/pull/175) Add JSON-RPC server config parameters.
 
 ## v0.15.7
 
