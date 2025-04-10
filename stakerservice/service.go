@@ -450,7 +450,7 @@ func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeig
 
 	return &BtcStakingParamsByBtcHeightResponse{
 		StakingParams: BtcStakingParams{
-			CovenantPks:    stakingParams.CovenantPks,
+			CovenantPkHex:  ParseCovenantsPubKeyToHex(stakingParams.CovenantPks...),
 			CovenantQuorum: stakingParams.CovenantQuruomThreshold,
 		},
 	}, nil
@@ -468,7 +468,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
 		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
-		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, ""),
+		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, "btcHeight"),
 		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
 
@@ -593,4 +593,19 @@ func BasicAuthMiddleware(expUsername, expPwd string) func(http.HandlerFunc) http
 			next(w, r)
 		}
 	}
+}
+
+// ParseCovenantsPubKeyToHex parses public keys into serialized compressed
+func ParseCovenantsPubKeyToHex(pks ...*btcec.PublicKey) []string {
+	pksHex := make([]string, len(pks))
+	for i, pk := range pks {
+		pksHex[i] = ParseCovenantPubKeyToHex(pk)
+	}
+	return pksHex
+}
+
+// parseCovenantPubKeyFromHex parses public key into serialized compressed
+// with 33 bytes and in hex string
+func ParseCovenantPubKeyToHex(pk *btcec.PublicKey) string {
+	return hex.EncodeToString(pk.SerializeCompressed())
 }
