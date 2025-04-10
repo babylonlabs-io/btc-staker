@@ -2,12 +2,10 @@ package client
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
-	"github.com/ltcsuite/ltcd/btcec"
 )
 
 type StakerServiceJSONRPCClient struct {
@@ -124,20 +122,6 @@ func (c *StakerServiceJSONRPCClient) BtcTxDetails(
 		return nil, err
 	}
 	return result, nil
-}
-
-func parseCovenantsPubKeyToHex(pks ...*btcec.PublicKey) []string {
-	pksHex := make([]string, len(pks))
-	for i, pk := range pks {
-		pksHex[i] = parseCovenantPubKeyToHex(pk)
-	}
-	return pksHex
-}
-
-// parseCovenantPubKeyFromHex parses public key into serialized compressed
-// with 33 bytes and in hex string
-func parseCovenantPubKeyToHex(pk *btcec.PublicKey) string {
-	return hex.EncodeToString(pk.SerializeCompressed())
 }
 
 // ListStakingTransactions returns a list of staking transactions
