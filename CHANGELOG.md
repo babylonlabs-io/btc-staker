@@ -44,6 +44,8 @@ endpoint and the post-approval flow, and reduction of state in the database.
 
 ### Bug fixes
 
+* [#179](https://github.com/babylonlabs-io/btc-staker/pull/179) fix: add missing parameter to
+`btc_staking_param_by_btc_height`.
 * [#172](https://github.com/babylonlabs-io/btc-staker/pull/172) chore: spend stake check confirmation
 
 ## v0.15.8
