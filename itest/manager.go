@@ -394,9 +394,9 @@ func StartManagerStakerApp(
 	dbbackend, err := stakercfg.GetDBBackend(cfg.DBConfig)
 	require.NoError(t, err)
 
-	m := metrics.NewStakerMetrics()
+	metrics := metrics.NewStakerMetrics()
 	cfg.WalletConfig.WalletName = ""
-	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zapLogger, dbbackend, m)
+	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zapLogger, dbbackend, metrics)
 	require.NoError(t, err)
 	// we require separate client to send BTC headers to babylon node (interface does not need this method?)
 	bl, err := babylonclient.NewBabylonController(cfg.BabylonConfig, &cfg.ActiveNetParams, logger, zapLogger)
