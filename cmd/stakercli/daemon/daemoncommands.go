@@ -393,7 +393,7 @@ func stakeFromPhase1TxBTC(ctx *cli.Context) error {
 	btcStakingParams := respParamsByHeight.StakingParams
 
 	stakerAddress := ctx.String(stakerAddressFlag)
-	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, btcStakingParams.CovenantPks, btcStakingParams.CovenantQuorum)
+	_, err = client.BtcDelegationFromBtcStakingTx(sctx, stakerAddress, stakingTransactionHash, btcStakingParams.CovenantPkHex, btcStakingParams.CovenantQuorum)
 	if err != nil {
 		return fmt.Errorf("failed to delegate from btc staking tx: %w", err)
 	}

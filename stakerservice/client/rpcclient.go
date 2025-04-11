@@ -2,11 +2,9 @@ package client
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
-	"github.com/btcsuite/btcd/btcec/v2"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 
@@ -92,7 +90,7 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,
 	stakerAddress string,
 	btcStkTxHash string,
-	covPks []*btcec.PublicKey,
+	covPksHex []string,
 	covenantQuorum uint32,
 ) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
 	result := new(service.ResultBtcDelegationFromBtcStakingTx)
@@ -100,7 +98,7 @@ func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	params := make(map[string]interface{})
 	params["stakerAddress"] = stakerAddress
 	params["btcStkTxHash"] = btcStkTxHash
-	params["covenantPksHex"] = parseCovenantsPubKeyToHex(covPks...)
+	params["covenantPksHex"] = covPksHex
 	params["covenantQuorum"] = covenantQuorum
 
 	_, err := c.client.Call(ctx, "btc_delegation_from_btc_staking_tx", params, result)
@@ -126,20 +124,7 @@ func (c *StakerServiceJSONRPCClient) BtcTxDetails(
 	return result, nil
 }
 
-func parseCovenantsPubKeyToHex(pks ...*btcec.PublicKey) []string {
-	pksHex := make([]string, len(pks))
-	for i, pk := range pks {
-		pksHex[i] = parseCovenantPubKeyToHex(pk)
-	}
-	return pksHex
-}
-
-// parseCovenantPubKeyFromHex parses public key into serialized compressed
-// with 33 bytes and in hex string
-func parseCovenantPubKeyToHex(pk *btcec.PublicKey) string {
-	return hex.EncodeToString(pk.SerializeCompressed())
-}
-
+// ListStakingTransactions returns a list of staking transactions
 func (c *StakerServiceJSONRPCClient) ListStakingTransactions(ctx context.Context, offset *int, limit *int) (*service.ListStakingTransactionsResponse, error) {
 	result := new(service.ListStakingTransactionsResponse)
 

@@ -13,6 +13,8 @@ import (
 	bbn "github.com/babylonlabs-io/babylon/types"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/btcsuite/btcd/btcec/v2"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -22,6 +24,11 @@ import (
 const (
 	bitcoindContainerName = "bitcoind"
 	babylondContainerName = "babylond"
+
+	// waitUntilRepeatPauseTime is the time to wait between each check of the node status.
+	waitUntilRepeatPauseTime = 2 * time.Second
+	// waitUntilrepeatMax is the maximum number of times to repeat the wait until condition.
+	waitUntilrepeatMax = 60
 )
 
 var errRegex = regexp.MustCompile(`(E|e)rror`)
@@ -281,6 +288,51 @@ func (m *Manager) BabylondTxBankMultiSend(t *testing.T, walletName string, coins
 	)
 
 	return m.ExecCmd(t, babylondContainerName, flags)
+}
+
+func (m *Manager) WaitForNextBabylonBlock(t *testing.T) {
+	m.WaitForNextBlocks(t, 1)
+}
+
+func (m *Manager) LatestBlockNumber(t *testing.T) uint64 {
+	flags := []string{
+		"babylond",
+		"status",
+		"--home=/home/node0/babylond",
+	}
+
+	outBuf, _, err := m.ExecCmd(t, babylondContainerName, flags)
+	require.NoError(t, err)
+
+	status := &coretypes.ResultStatus{}
+	err = cmtjson.Unmarshal(outBuf.Bytes(), status)
+	require.NoError(t, err)
+
+	return uint64(status.SyncInfo.LatestBlockHeight)
+}
+
+func (m *Manager) WaitForNextBlocks(t *testing.T, numberOfBlocks uint64) {
+	latest := m.LatestBlockNumber(t)
+	blockToWait := latest + numberOfBlocks
+	m.WaitForCondition(func() bool {
+		newLatest := m.LatestBlockNumber(t)
+		return newLatest > blockToWait
+	}, fmt.Sprintf("Timed out waiting for block %d. Current height is: %d", latest, blockToWait))
+}
+
+func (m *Manager) WaitForCondition(doneCondition func() bool, errorMsg string) {
+	m.WaitForConditionWithPause(doneCondition, errorMsg, waitUntilRepeatPauseTime)
+}
+
+func (m *Manager) WaitForConditionWithPause(doneCondition func() bool, errorMsg string, pause time.Duration) {
+	for i := 0; i < waitUntilrepeatMax; i++ {
+		if !doneCondition() {
+			time.Sleep(pause)
+			continue
+		}
+		return
+	}
+	fmt.Printf("node %s timed out waiting for condition. Msg: %s", babylondContainerName, errorMsg)
 }
 
 // ClearResources removes all outstanding Docker resources created by the Manager.
