@@ -3,6 +3,8 @@ package metrics
 import (
 	"errors"
 	"net/http"
+
+	//nolint:revive
 	_ "net/http/pprof"
 	"regexp"
 
@@ -13,18 +15,27 @@ import (
 )
 
 func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
-	go start(logger, addr, reg)
+	svr := Server(logger, addr, reg)
+
+	go func() {
+		err := svr.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Errorf("prometheus server got err: %v", err)
+		}
+	}()
 }
 
-func start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
+func Server(logger *logrus.Logger, addr string, reg *prometheus.Registry) *http.Server {
 	// Add Go module build info.
 	reg.MustRegister(collectors.NewBuildInfoCollector())
 	reg.MustRegister(collectors.NewGoCollector(
 		collectors.WithGoCollectorRuntimeMetrics(collectors.GoRuntimeMetricsRule{Matcher: regexp.MustCompile("/.*")})),
 	)
 
+	mux := http.NewServeMux()
+
 	// Expose the registered metrics via HTTP.
-	http.Handle("/metrics", promhttp.HandlerFor(
+	mux.Handle("/metrics", promhttp.HandlerFor(
 		reg,
 		promhttp.HandlerOpts{
 			// Opt into OpenMetrics to support exemplars.
@@ -34,9 +45,5 @@ func start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 
 	logger.Infof("Successfully started Prometheus metrics server at %s", addr)
 
-	err := http.ListenAndServe(addr, nil)
-
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Errorf("prometheus server got err: %v", err)
-	}
+	return &http.Server{Addr: addr, Handler: mux}
 }

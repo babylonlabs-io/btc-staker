@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/urfave/cli"
 
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
+	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
 	"github.com/babylonlabs-io/btc-staker/utils"
 )
 
@@ -31,7 +33,6 @@ const (
 	networkNameFlag              = "network"
 	stakerPublicKeyFlag          = "staker-pk"
 	finalityProviderKeyFlag      = "finality-provider-pk"
-	txInclusionHeightFlag        = "tx-inclusion-height"
 	tagFlag                      = "tag"
 	covenantMembersPksFlag       = "covenant-committee-pks"
 	covenantQuorumFlag           = "covenant-quorum"
@@ -95,11 +96,10 @@ type CheckPhase1StakingTxResponse struct {
 	ValidityInfo []*ValidityInfo `json:"validity_info"`
 }
 
-func validateTxAgainstParams(
+func ValidateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
 	net *chaincfg.Params) *CheckPhase1StakingTxResponse {
-
 	var info []*ValidityInfo
 
 	for i := len(globalParams.Versions) - 1; i >= 0; i-- {
@@ -190,7 +190,7 @@ func checkPhase1StakingTransactionParams(ctx *cli.Context) error {
 		return err
 	}
 
-	resp := validateTxAgainstParams(stakingTx, globalParams, currentNetwork)
+	resp := ValidateTxAgainstParams(stakingTx, globalParams, currentNetwork)
 
 	helpers.PrintRespJSON(resp)
 
@@ -330,7 +330,7 @@ var checkPhase1StakingTransactionCmd = cli.Command{
 	Name:      "check-phase1-staking-transaction",
 	ShortName: "cpst",
 	Usage:     "Checks whether provided staking transactions is valid staking transaction (tx must be funded/have inputs)",
-	Description: "Checks staking transaction agains custom set of parameters. Use for custom transactions" +
+	Description: "Checks staking transaction against custom set of parameters. Use for custom transactions" +
 		"that may not obey the global parameters. For most cases use `check-phase1-staking-transaction-params`",
 	Flags: []cli.Flag{
 		cli.StringFlag{
@@ -497,7 +497,7 @@ var createPhase1StakingTransactionWithParamsCmd = cli.Command{
 			Required: true,
 		},
 		cli.Uint64Flag{
-			Name:     txInclusionHeightFlag,
+			Name:     helpers.TxInclusionHeightFlag,
 			Usage:    "Expected BTC height at which transaction will be included. This value is important to choose correct global parameters for transaction",
 			Required: true,
 		},
@@ -527,7 +527,6 @@ func createPhase1StakingTransactionWithParams(ctx *cli.Context) error {
 
 	if err != nil {
 		return fmt.Errorf("error parsing file %s: %w", inputFilePath, err)
-
 	}
 
 	currentNetwork, err := utils.GetBtcNetworkParams(ctx.String(networkNameFlag))
@@ -560,7 +559,7 @@ func createPhase1StakingTransactionWithParams(ctx *cli.Context) error {
 		return err
 	}
 
-	expectedHeight := ctx.Uint64(txInclusionHeightFlag)
+	expectedHeight := ctx.Uint64(helpers.TxInclusionHeightFlag)
 
 	resp, err := MakeCreatePhase1StakingTxResponse(
 		stakerPk,
@@ -641,14 +640,18 @@ var createPhase1UnbondingTransactionCmd = cli.Command{
 			Required: true,
 		},
 		cli.Uint64Flag{
-			Name:     txInclusionHeightFlag,
-			Usage:    "Inclusion height of the staking transactions. Necessary to chose correct global parameters for transaction",
-			Required: true,
+			Name:  helpers.TxInclusionHeightFlag,
+			Usage: "Inclusion height of the staking transactions. Necessary to chose correct global parameters for transaction",
 		},
 		cli.StringFlag{
 			Name:     networkNameFlag,
 			Usage:    "Bitcoin network on which staking should take place one of (mainnet, testnet3, regtest, simnet, signet)",
 			Required: true,
+		},
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "Full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
 		},
 	},
 	Action: createPhase1UnbondingTransaction,
@@ -681,7 +684,6 @@ func createPhase1UnbondingTransaction(ctx *cli.Context) error {
 	net := ctx.String(networkNameFlag)
 
 	currentParams, err := utils.GetBtcNetworkParams(net)
-
 	if err != nil {
 		return err
 	}
@@ -689,15 +691,16 @@ func createPhase1UnbondingTransaction(ctx *cli.Context) error {
 	stakingTxHex := ctx.String(stakingTransactionFlag)
 
 	stakingTx, _, err := bbn.NewBTCTxFromHex(stakingTxHex)
-
 	if err != nil {
 		return err
 	}
 
-	stakingTxInclusionHeight := ctx.Uint64(txInclusionHeightFlag)
+	stakingTxInclusionHeight, err := stakingTxInclusionBlkHeight(ctx)
+	if err != nil {
+		return err
+	}
 
 	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
-
 	if paramsForHeight == nil {
 		return fmt.Errorf("no global params found for height %d", stakingTxInclusionHeight)
 	}
@@ -849,9 +852,8 @@ var createPhase1WithdrawalTransactionCmd = cli.Command{
 			Required: true,
 		},
 		cli.Uint64Flag{
-			Name:     txInclusionHeightFlag,
-			Usage:    "Inclusion height of the staking transaction. Necessary to chose correct global parameters for transaction",
-			Required: true,
+			Name:  helpers.TxInclusionHeightFlag,
+			Usage: "Inclusion height of the staking transaction. Necessary to chose correct global parameters for transaction",
 		},
 		cli.StringFlag{
 			Name:     withdrawalAddressFlag,
@@ -872,8 +874,13 @@ var createPhase1WithdrawalTransactionCmd = cli.Command{
 			Name:  unbondingTransactionFlag,
 			Usage: "hex encoded unbonding transaction. This should only be provided, if withdrawal is being done from unbonding output",
 		},
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
 	},
-	Action: createPhase1WitdrawalTransaction,
+	Action: createPhase1WithdrawalTransaction,
 }
 
 type CreateWithdrawalTxResponse struct {
@@ -891,7 +898,6 @@ func createWithdrawalInfo(
 	parsedStakingTransaction *btcstaking.ParsedV0StakingTx,
 	paramsForHeight *parser.ParsedVersionedGlobalParams,
 	net *chaincfg.Params) (*withdrawalInfo, error) {
-
 	if len(unbondingTxHex) > 0 {
 		// withdrawal from unbonding output
 		unbondingTx, _, err := bbn.NewBTCTxFromHex(unbondingTxHex)
@@ -957,44 +963,43 @@ func createWithdrawalInfo(
 			withdrawalFundingUtxo: unbondingTx.TxOut[0],
 			withdrawalSpendInfo:   timeLockPathInfo,
 		}, nil
-	} else {
-		stakingInfo, err := btcstaking.BuildStakingInfo(
-			parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
-			[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
-			paramsForHeight.CovenantPks,
-			paramsForHeight.CovenantQuorum,
-			parsedStakingTransaction.OpReturnData.StakingTime,
-			btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
-			net,
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("error building staking info: %w", err)
-		}
-
-		timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
-
-		if err != nil {
-			return nil, fmt.Errorf("error building timelock path spend info: %w", err)
-		}
-
-		withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
-
-		if withdrawalOutputValue <= 0 {
-			return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
-		}
-
-		return &withdrawalInfo{
-			withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
-			withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
-			withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
-			withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
-			withdrawalSpendInfo:   timelockPathInfo,
-		}, nil
 	}
+	stakingInfo, err := btcstaking.BuildStakingInfo(
+		parsedStakingTransaction.OpReturnData.StakerPublicKey.PubKey,
+		[]*btcec.PublicKey{parsedStakingTransaction.OpReturnData.FinalityProviderPublicKey.PubKey},
+		paramsForHeight.CovenantPks,
+		paramsForHeight.CovenantQuorum,
+		parsedStakingTransaction.OpReturnData.StakingTime,
+		btcutil.Amount(parsedStakingTransaction.StakingOutput.Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error building staking info: %w", err)
+	}
+
+	timelockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("error building timelock path spend info: %w", err)
+	}
+
+	withdrawalOutputValue := parsedStakingTransaction.StakingOutput.Value - int64(withdrawalFee)
+
+	if withdrawalOutputValue <= 0 {
+		return nil, fmt.Errorf("too low staking output value to create withdrawal transaction. Staking amount: %d, Withdrawal fee: %d", parsedStakingTransaction.StakingOutput.Value, withdrawalFee)
+	}
+
+	return &withdrawalInfo{
+		withdrawalOutputvalue: btcutil.Amount(withdrawalOutputValue),
+		withdrawalSequence:    uint32(parsedStakingTransaction.OpReturnData.StakingTime),
+		withdrawalInput:       wire.NewOutPoint(stakingTxHash, uint32(parsedStakingTransaction.StakingOutputIdx)),
+		withdrawalFundingUtxo: parsedStakingTransaction.StakingOutput,
+		withdrawalSpendInfo:   timelockPathInfo,
+	}, nil
 }
 
-func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
+func createPhase1WithdrawalTransaction(ctx *cli.Context) error {
 	inputFilePath := ctx.Args().First()
 	if len(inputFilePath) == 0 {
 		return errors.New("json file input is empty")
@@ -1040,7 +1045,10 @@ func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
 		return err
 	}
 
-	stakingTxInclusionHeight := ctx.Uint64(txInclusionHeightFlag)
+	stakingTxInclusionHeight, err := stakingTxInclusionBlkHeight(ctx)
+	if err != nil {
+		return err
+	}
 
 	paramsForHeight := globalParams.GetVersionedGlobalParamsByHeight(stakingTxInclusionHeight)
 
@@ -1138,4 +1146,25 @@ func createPhase1WitdrawalTransaction(ctx *cli.Context) error {
 
 	helpers.PrintRespJSON(resp)
 	return nil
+}
+
+func stakingTxInclusionBlkHeight(ctx *cli.Context) (uint64, error) {
+	stakingTxInclusionHeight := ctx.Uint64(helpers.TxInclusionHeightFlag)
+	if stakingTxInclusionHeight == 0 {
+		daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+		client, err := dc.NewStakerServiceJSONRPCClient(daemonAddress)
+		if err != nil {
+			return 0, fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+		}
+
+		stakingTxHex := ctx.String(stakingTransactionFlag)
+		resp, err := client.BtcTxDetails(context.Background(), stakingTxHex)
+		if err != nil {
+			return 0, fmt.Errorf("error to get btc tx and block data from staking tx %s: %w", stakingTxHex, err)
+		}
+
+		return uint64(resp.Blk.Height), nil
+	}
+
+	return stakingTxInclusionHeight, nil
 }

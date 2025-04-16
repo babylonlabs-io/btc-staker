@@ -1,6 +1,14 @@
 package stakerservice
 
+import (
+	"github.com/btcsuite/btcd/btcjson"
+)
+
 type ResultHealth struct{}
+
+type ResultBtcDelegationFromBtcStakingTx struct {
+	BabylonBTCDelegationTxHash string `json:"babylon_btc_delegation_tx_hash"`
+}
 
 type ResultStake struct {
 	TxHash string `json:"tx_hash"`
@@ -10,7 +18,6 @@ type StakingDetails struct {
 	StakingTxHash  string `json:"staking_tx_hash"`
 	StakerAddress  string `json:"staker_address"`
 	StakingState   string `json:"staking_state"`
-	Watched        bool   `json:"watched"`
 	TransactionIdx string `json:"transaction_idx"`
 }
 
@@ -52,4 +59,18 @@ type WithdrawableTransactionsResponse struct {
 	Transactions                     []StakingDetails `json:"transactions"`
 	LastWithdrawableTransactionIndex string           `json:"last_transaction_index"`
 	TotalTransactionCount            string           `json:"total_transaction_count"`
+}
+
+type BtcTxAndBlockResponse struct {
+	Tx  *btcjson.TxRawResult                 `json:"tx"`
+	Blk *btcjson.GetBlockHeaderVerboseResult `json:"blk"`
+}
+
+type BtcStakingParamsByBtcHeightResponse struct {
+	StakingParams BtcStakingParams `json:"staking_params"`
+}
+
+type BtcStakingParams struct {
+	CovenantPkHex  []string
+	CovenantQuorum uint32
 }

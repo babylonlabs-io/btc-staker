@@ -2,46 +2,51 @@ package client
 
 import (
 	"context"
+	"fmt"
 
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 
-type StakerServiceJsonRpcClient struct {
+type StakerServiceJSONRPCClient struct {
 	client *jsonrpcclient.Client
 }
 
+// NewStakerServiceJSONRPCClient creates a new instance of StakerServiceJSONRPCClient
 // TODO Add some kind of timeout config
-func NewStakerServiceJsonRpcClient(remoteAddress string) (*StakerServiceJsonRpcClient, error) {
+func NewStakerServiceJSONRPCClient(remoteAddress string) (*StakerServiceJSONRPCClient, error) {
 	client, err := jsonrpcclient.New(remoteAddress)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create rpc client: %w", err)
 	}
 
-	return &StakerServiceJsonRpcClient{
+	return &StakerServiceJSONRPCClient{
 		client: client,
 	}, nil
 }
 
-func (c *StakerServiceJsonRpcClient) Health(ctx context.Context) (*service.ResultHealth, error) {
+// Health returns a health check response
+func (c *StakerServiceJSONRPCClient) Health(ctx context.Context) (*service.ResultHealth, error) {
 	result := new(service.ResultHealth)
 	_, err := c.client.Call(ctx, "health", map[string]interface{}{}, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call health: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) ListOutputs(ctx context.Context) (*service.OutputsResponse, error) {
+// ListOutputs returns a list of outputs
+func (c *StakerServiceJSONRPCClient) ListOutputs(ctx context.Context) (*service.OutputsResponse, error) {
 	result := new(service.OutputsResponse)
 	_, err := c.client.Call(ctx, "list_outputs", map[string]interface{}{}, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call list_outputs: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) BabylonFinalityProviders(ctx context.Context, offset *int, limit *int) (*service.FinalityProvidersResponse, error) {
+// BabylonFinalityProviders returns a list of finality providers
+func (c *StakerServiceJSONRPCClient) BabylonFinalityProviders(ctx context.Context, offset *int, limit *int) (*service.FinalityProvidersResponse, error) {
 	result := new(service.FinalityProvidersResponse)
 
 	params := make(map[string]interface{})
@@ -56,18 +61,18 @@ func (c *StakerServiceJsonRpcClient) BabylonFinalityProviders(ctx context.Contex
 
 	_, err := c.client.Call(ctx, "babylon_finality_providers", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call babylon_finality_providers: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) Stake(
+// Stake initiates a stake transaction
+func (c *StakerServiceJSONRPCClient) Stake(
 	ctx context.Context,
 	stakerAddress string,
 	stakingAmount int64,
 	fpPks []string,
 	stakingTimeBlocks int64,
-	sendToBabylonFirst bool,
 ) (*service.ResultStake, error) {
 	result := new(service.ResultStake)
 
@@ -76,16 +81,56 @@ func (c *StakerServiceJsonRpcClient) Stake(
 	params["stakingAmount"] = stakingAmount
 	params["fpBtcPks"] = fpPks
 	params["stakingTimeBlocks"] = stakingTimeBlocks
-	params["sendToBabylonFirst"] = sendToBabylonFirst
 
 	_, err := c.client.Call(ctx, "stake", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call stake: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) ListStakingTransactions(ctx context.Context, offset *int, limit *int) (*service.ListStakingTransactionsResponse, error) {
+// BtcDelegationFromBtcStakingTx returns a btc delegation from a btc staking transaction
+func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
+	ctx context.Context,
+	stakerAddress string,
+	btcStkTxHash string,
+	covPksHex []string,
+	covenantQuorum uint32,
+) (*service.ResultBtcDelegationFromBtcStakingTx, error) {
+	result := new(service.ResultBtcDelegationFromBtcStakingTx)
+
+	params := make(map[string]interface{})
+	params["stakerAddress"] = stakerAddress
+	params["btcStkTxHash"] = btcStkTxHash
+	params["covenantPksHex"] = covPksHex
+	params["covenantQuorum"] = covenantQuorum
+
+	_, err := c.client.Call(ctx, "btc_delegation_from_btc_staking_tx", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call btc_delegation_from_btc_staking_tx: %w", err)
+	}
+	return result, nil
+}
+
+// BtcTxDetails returns a btc transaction and block details
+func (c *StakerServiceJSONRPCClient) BtcTxDetails(
+	ctx context.Context,
+	txHash string,
+) (*service.BtcTxAndBlockResponse, error) {
+	result := new(service.BtcTxAndBlockResponse)
+
+	params := make(map[string]interface{})
+	params["txHashStr"] = txHash
+
+	_, err := c.client.Call(ctx, "btc_tx_blk_details", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call btc_tx_blk_details: %w", err)
+	}
+	return result, nil
+}
+
+// ListStakingTransactions returns a list of staking transactions
+func (c *StakerServiceJSONRPCClient) ListStakingTransactions(ctx context.Context, offset *int, limit *int) (*service.ListStakingTransactionsResponse, error) {
 	result := new(service.ListStakingTransactionsResponse)
 
 	params := make(map[string]interface{})
@@ -100,12 +145,13 @@ func (c *StakerServiceJsonRpcClient) ListStakingTransactions(ctx context.Context
 
 	_, err := c.client.Call(ctx, "list_staking_transactions", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call list_staking_transactions: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) WithdrawableTransactions(ctx context.Context, offset *int, limit *int) (*service.WithdrawableTransactionsResponse, error) {
+// WithdrawableTransactions returns a list of withdrawable transactions
+func (c *StakerServiceJSONRPCClient) WithdrawableTransactions(ctx context.Context, offset *int, limit *int) (*service.WithdrawableTransactionsResponse, error) {
 	result := new(service.WithdrawableTransactionsResponse)
 
 	params := make(map[string]interface{})
@@ -120,12 +166,13 @@ func (c *StakerServiceJsonRpcClient) WithdrawableTransactions(ctx context.Contex
 
 	_, err := c.client.Call(ctx, "withdrawable_transactions", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call withdrawable_transactions: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) StakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
+// StakingDetails returns a staking details
+func (c *StakerServiceJSONRPCClient) StakingDetails(ctx context.Context, txHash string) (*service.StakingDetails, error) {
 	result := new(service.StakingDetails)
 
 	params := make(map[string]interface{})
@@ -133,12 +180,13 @@ func (c *StakerServiceJsonRpcClient) StakingDetails(ctx context.Context, txHash 
 
 	_, err := c.client.Call(ctx, "staking_details", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call staking_details: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) SpendStakingTransaction(ctx context.Context, txHash string) (*service.SpendTxDetails, error) {
+// SpendStakingTransaction returns a spend staking transaction details
+func (c *StakerServiceJSONRPCClient) SpendStakingTransaction(ctx context.Context, txHash string) (*service.SpendTxDetails, error) {
 	result := new(service.SpendTxDetails)
 
 	params := make(map[string]interface{})
@@ -146,56 +194,13 @@ func (c *StakerServiceJsonRpcClient) SpendStakingTransaction(ctx context.Context
 
 	_, err := c.client.Call(ctx, "spend_stake", params, result)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call spend_stake: %w", err)
 	}
 	return result, nil
 }
 
-func (c *StakerServiceJsonRpcClient) WatchStaking(
-	ctx context.Context,
-	stakingTx string,
-	stakingTime int,
-	stakingValue int,
-	stakerBtcPk string,
-	fpBtcPks []string,
-	slashingTx string,
-	slashingTxSig string,
-	stakerBabylonAddr string,
-	stakerAddress string,
-	stakerBtcSig string,
-	unbondingTx string,
-	slashUnbondingTx string,
-	slashUnbondingTxSig string,
-	unbondingTime int,
-	popType int,
-) (*service.ResultStake, error) {
-
-	result := new(service.ResultStake)
-	params := make(map[string]interface{})
-	params["stakingTx"] = stakingTx
-	params["stakingTime"] = stakingTime
-	params["stakingValue"] = stakingValue
-	params["stakerBtcPk"] = stakerBtcPk
-	params["fpBtcPks"] = fpBtcPks
-	params["slashingTx"] = slashingTx
-	params["slashingTxSig"] = slashingTxSig
-	params["stakerBabylonAddr"] = stakerBabylonAddr
-	params["stakerAddress"] = stakerAddress
-	params["stakerBtcSig"] = stakerBtcSig
-	params["unbondingTx"] = unbondingTx
-	params["slashUnbondingTx"] = slashUnbondingTx
-	params["slashUnbondingTxSig"] = slashUnbondingTxSig
-	params["unbondingTime"] = unbondingTime
-	params["popType"] = popType
-
-	_, err := c.client.Call(ctx, "watch_staking_tx", params, result)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func (c *StakerServiceJsonRpcClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
+// UnbondStaking returns an unbond staking transaction details
+func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
 	result := new(service.UnbondingResponse)
 
 	params := make(map[string]interface{})
@@ -204,7 +209,21 @@ func (c *StakerServiceJsonRpcClient) UnbondStaking(ctx context.Context, txHash s
 	_, err := c.client.Call(ctx, "unbond_staking", params, result)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to call unbond_staking: %w", err)
+	}
+	return result, nil
+}
+
+// BtcStakingParamByBtcHeight returns the btc staking parameter for the BTC block height from the babylon chain
+func (c *StakerServiceJSONRPCClient) BtcStakingParamByBtcHeight(ctx context.Context, btcHeight uint32) (*service.BtcStakingParamsByBtcHeightResponse, error) {
+	result := new(service.BtcStakingParamsByBtcHeightResponse)
+
+	params := make(map[string]interface{})
+	params["btcHeight"] = btcHeight
+
+	_, err := c.client.Call(ctx, "btc_staking_param_by_btc_height", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call btc_staking_param_by_btc_height: %w", err)
 	}
 	return result, nil
 }

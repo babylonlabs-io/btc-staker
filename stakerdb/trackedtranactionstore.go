@@ -8,13 +8,10 @@ import (
 
 	"github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/utils"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/walletdb"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	pm "google.golang.org/protobuf/proto"
 
 	"github.com/lightningnetwork/lnd/kvdb"
@@ -27,10 +24,6 @@ var (
 	// mapping txHash -> uint64
 	transactionIndexName = []byte("transactionIdx")
 
-	// mapping txHash -> proto.WatchedData
-	// It holds additional data for staking transaction in watch only mode
-	watchedTxDataBucketName = []byte("watched")
-
 	// mapping outpoint -> txHash
 	// It holds mapping from outpoint to transaction hash
 	// outpoint: outpoint.txHash || bigendian(outpoint.index)
@@ -40,193 +33,47 @@ var (
 	numTxKey = []byte("ntk")
 )
 
+// StoredTransactionScanFn is a function which is called for each transaction which is being tracked
 type StoredTransactionScanFn func(tx *StoredTransaction) error
 
+// TrackedTransactionStore is a store which stores transactions which are being tracked
 type TrackedTransactionStore struct {
 	db kvdb.Backend
 }
 
-type ProofOfPossession struct {
-	BtcSigType            uint32
-	BtcSigOverBabylonAddr []byte
-}
-
-func NewProofOfPossession(
-	btcSchnorrSigOverBabylonAddr []byte,
-) *ProofOfPossession {
-	return &ProofOfPossession{
-		BtcSigOverBabylonAddr: btcSchnorrSigOverBabylonAddr,
-	}
-}
-
-type PubKeySigPair struct {
-	Signature *schnorr.Signature
-	PubKey    *btcec.PublicKey
-}
-
-func NewCovenantMemberSignature(
-	sig *schnorr.Signature,
-	pubKey *btcec.PublicKey,
-) PubKeySigPair {
-	return PubKeySigPair{
-		sig,
-		pubKey,
-	}
-}
-
-func covenantSigToProto(c *PubKeySigPair) *proto.CovenantSig {
-	return &proto.CovenantSig{
-		CovenantSig:      c.Signature.Serialize(),
-		CovenantSigBtcPk: schnorr.SerializePubKey(c.PubKey),
-	}
-}
-
-func covenantSigsToProto(c []PubKeySigPair) []*proto.CovenantSig {
-	protoC := make([]*proto.CovenantSig, len(c))
-
-	for i, sig := range c {
-		protoC[i] = covenantSigToProto(&sig)
-	}
-
-	return protoC
-}
-
-func covenantSigFromProto(c *proto.CovenantSig) (*PubKeySigPair, error) {
-	sig, err := schnorr.ParseSignature(c.CovenantSig)
-
-	if err != nil {
-		return nil, err
-	}
-
-	pubKey, err := schnorr.ParsePubKey(c.CovenantSigBtcPk)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &PubKeySigPair{
-		Signature: sig,
-		PubKey:    pubKey,
-	}, nil
-}
-
-type BtcConfirmationInfo struct {
-	Height    uint32
-	BlockHash chainhash.Hash
-}
-
+// StoredTransaction is a struct which contains the information about a
 type StoredTransaction struct {
-	StoredTransactionIdx      uint64
-	StakingTx                 *wire.MsgTx
-	StakingOutputIndex        uint32
-	StakingTxConfirmationInfo *BtcConfirmationInfo
-	StakingTime               uint16
-	FinalityProvidersBtcPks   []*btcec.PublicKey
-	Pop                       *ProofOfPossession
-	// Returning address as string, to avoid having to know how to decode address
-	// which requires knowing the network we are on
-	StakerAddress   string
-	State           proto.TransactionState
-	Watched         bool
-	UnbondingTxData *UnbondingStoreData
+	StoredTransactionIdx uint64
+	StakingTx            *wire.MsgTx
+	StakerAddress        string // Returning address as string, to avoid having to know how to decode address which requires knowing the network we are on
 }
 
-// StakingTxConfirmedOnBtc returns true only if staking transaction was sent and confirmed on bitcoin
-func (t *StoredTransaction) StakingTxConfirmedOnBtc() bool {
-	return t.StakingTxConfirmationInfo != nil
-}
-
-// UnbondingTxConfirmedOnBtc returns true only if unbonding transaction was sent and confirmed on bitcoin
-func (t *StoredTransaction) UnbondingTxConfirmedOnBtc() bool {
-	if t.UnbondingTxData == nil {
-		return false
-	}
-
-	return t.UnbondingTxData.UnbondingTxConfirmationInfo != nil
-}
-
-type WatchedTransactionData struct {
-	SlashingTx        *wire.MsgTx
-	SlashingTxSig     *schnorr.Signature
-	StakerBabylonAddr sdk.AccAddress
-	StakerBtcPubKey   *btcec.PublicKey
-	// Unbonding Related data
-	UnbondingTx            *wire.MsgTx
-	SlashingUnbondingTx    *wire.MsgTx
-	SlashingUnbondingTxSig *schnorr.Signature
-	UnbondingTime          uint16
-}
-
-type UnbondingStoreData struct {
-	UnbondingTx                 *wire.MsgTx
-	UnbondingTime               uint16
-	CovenantSignatures          []PubKeySigPair
-	UnbondingTxConfirmationInfo *BtcConfirmationInfo
-}
-
-func newInitialUnbondingTxData(
-	unbondingTx *wire.MsgTx,
-	unbondingTime uint16,
-) (*proto.UnbondingTxData, error) {
-	if unbondingTx == nil {
-		return nil, fmt.Errorf("cannot create unbonding tx data without unbonding tx")
-	}
-
-	serializedTx, err := utils.SerializeBtcTransaction(unbondingTx)
-
-	if err != nil {
-		return nil, fmt.Errorf("cannot create unbonding tx data: %w", err)
-	}
-
-	unbondingData := &proto.UnbondingTxData{
-		UnbondingTransaction:           serializedTx,
-		UnbondingTime:                  uint32(unbondingTime),
-		CovenantSignatures:             make([]*proto.CovenantSig, 0),
-		UnbondingTxBtcConfirmationInfo: nil,
-	}
-
-	return unbondingData, nil
-}
-
-type WithdrawableTransactionsFilter struct {
-	currentBestBlockHeight uint32
-}
+// StoredTransactionQuery is a struct which contains the parameters for a query
 type StoredTransactionQuery struct {
-	IndexOffset uint64
-
+	IndexOffset        uint64
 	NumMaxTransactions uint64
-
-	Reversed bool
-
-	withdrawableTransactionsFilter *WithdrawableTransactionsFilter
+	Reversed           bool
 }
 
-func DefaultStoredTransactionQuery() StoredTransactionQuery {
-	return StoredTransactionQuery{
-		IndexOffset:                    0,
-		NumMaxTransactions:             50,
-		Reversed:                       false,
-		withdrawableTransactionsFilter: nil,
-	}
-}
-
-func (q *StoredTransactionQuery) WithdrawableTransactionsFilter(currentBestBlock uint32) StoredTransactionQuery {
-	q.withdrawableTransactionsFilter = &WithdrawableTransactionsFilter{
-		currentBestBlockHeight: currentBestBlock,
-	}
-
-	return *q
-}
-
+// StoredTransactionQueryResult is a struct which contains a slice of
+// StoredTransaction and total number of transactions
 type StoredTransactionQueryResult struct {
 	Transactions []StoredTransaction
 	Total        uint64
 }
 
+// DefaultStoredTransactionQuery returns a default query which returns 50 transactions
+func DefaultStoredTransactionQuery() StoredTransactionQuery {
+	return StoredTransactionQuery{
+		IndexOffset:        0,
+		NumMaxTransactions: 50,
+		Reversed:           false,
+	}
+}
+
 // NewTrackedTransactionStore returns a new store backed by db
 func NewTrackedTransactionStore(db kvdb.Backend) (*TrackedTransactionStore,
 	error) {
-
 	store := &TrackedTransactionStore{db}
 	if err := store.initBuckets(); err != nil {
 		return nil, err
@@ -235,210 +82,50 @@ func NewTrackedTransactionStore(db kvdb.Backend) (*TrackedTransactionStore,
 	return store, nil
 }
 
+// initBuckets creates the buckets needed by the store
 func (c *TrackedTransactionStore) initBuckets() error {
 	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
 		_, err := tx.CreateTopLevelBucket(transactionBucketName)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create transactions bucket: %w", err)
 		}
 
 		_, err = tx.CreateTopLevelBucket(transactionIndexName)
 		if err != nil {
-			return err
-		}
-
-		_, err = tx.CreateTopLevelBucket(watchedTxDataBucketName)
-		if err != nil {
-			return err
+			return fmt.Errorf("failed to create transaction index bucket: %w", err)
 		}
 
 		_, err = tx.CreateTopLevelBucket(inputsDataBucketName)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create inputs data bucket: %w", err)
 		}
 
 		return nil
 	})
 }
 
-func protoBtcConfirmationInfoToBtcConfirmationInfo(ci *proto.BTCConfirmationInfo) (*BtcConfirmationInfo, error) {
-	if ci == nil {
-		return nil, nil
-	}
-
-	hash, err := chainhash.NewHash(ci.BlockHash)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &BtcConfirmationInfo{
-		Height:    ci.BlockHeight,
-		BlockHash: *hash,
-	}, nil
-
-}
-
-func protoUnbondingDataToUnbondingStoreData(ud *proto.UnbondingTxData) (*UnbondingStoreData, error) {
-	// Unbodning txdata should always contains unbonding tx
-	var unbondingTx wire.MsgTx
-	err := unbondingTx.Deserialize(bytes.NewReader(ud.UnbondingTransaction))
-
-	if err != nil {
-		return nil, err
-	}
-
-	if ud.UnbondingTime > math.MaxUint16 {
-		return nil, fmt.Errorf("unbonding time is too large. Max value is %d", math.MaxUint16)
-	}
-
-	var sigs []PubKeySigPair
-
-	for _, sig := range ud.CovenantSignatures {
-		covenantSig, err := covenantSigFromProto(sig)
-
-		if err != nil {
-			return nil, err
-		}
-
-		sigs = append(sigs, *covenantSig)
-	}
-
-	unbondingTxConfirmationInfo, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ud.UnbondingTxBtcConfirmationInfo)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &UnbondingStoreData{
-		UnbondingTx:                 &unbondingTx,
-		UnbondingTime:               uint16(ud.UnbondingTime),
-		CovenantSignatures:          sigs,
-		UnbondingTxConfirmationInfo: unbondingTxConfirmationInfo,
-	}, nil
-}
-
+// protoTxToStoredTransaction converts a TrackedTransaction to a StoredTransaction
 func protoTxToStoredTransaction(ttx *proto.TrackedTransaction) (*StoredTransaction, error) {
 	var stakingTx wire.MsgTx
-	err := stakingTx.Deserialize(bytes.NewReader(ttx.StakingTransaction))
-
-	if err != nil {
-		return nil, err
-	}
-
-	var utd *UnbondingStoreData = nil
-
-	if ttx.UnbondingTxData != nil {
-		unbondingData, err := protoUnbondingDataToUnbondingStoreData(ttx.UnbondingTxData)
-
-		if err != nil {
-			return nil, err
-		}
-
-		utd = unbondingData
-	}
-
-	stakingTxConfgInfo, err := protoBtcConfirmationInfoToBtcConfirmationInfo(ttx.StakingTxBtcConfirmationInfo)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if ttx.StakingTime > math.MaxUint16 {
-		return nil, fmt.Errorf("staking time is too large. Max value is %d", math.MaxUint16)
-	}
-
-	var fpPubkeys []*btcec.PublicKey = make([]*btcec.PublicKey, len(ttx.FinalityProvidersBtcPks))
-
-	for i, pk := range ttx.FinalityProvidersBtcPks {
-		fpPubkeys[i], err = schnorr.ParsePubKey(pk)
-
-		if err != nil {
-			return nil, err
-		}
+	if err := stakingTx.Deserialize(bytes.NewReader(ttx.StakingTransaction)); err != nil {
+		return nil, fmt.Errorf("failed to deserialize staking transaction: %w", err)
 	}
 
 	return &StoredTransaction{
-		StoredTransactionIdx:      ttx.TrackedTransactionIdx,
-		StakingTx:                 &stakingTx,
-		StakingOutputIndex:        ttx.StakingOutputIdx,
-		StakingTxConfirmationInfo: stakingTxConfgInfo,
-		StakingTime:               uint16(ttx.StakingTime),
-		FinalityProvidersBtcPks:   fpPubkeys,
-		Pop: &ProofOfPossession{
-			BtcSigType:            ttx.BtcSigType,
-			BtcSigOverBabylonAddr: ttx.BtcSigOverBbnStakerAddr,
-		},
-		StakerAddress:   ttx.StakerAddress,
-		State:           ttx.State,
-		Watched:         ttx.Watched,
-		UnbondingTxData: utd,
+		StoredTransactionIdx: ttx.TrackedTransactionIdx,
+		StakingTx:            &stakingTx,
+		StakerAddress:        ttx.StakerAddress,
 	}, nil
 }
 
-func protoWatchedDataToWatchedTransactionData(wd *proto.WatchedTxData) (*WatchedTransactionData, error) {
-	var slashingTx wire.MsgTx
-	err := slashingTx.Deserialize(bytes.NewReader(wd.SlashingTransaction))
-	if err != nil {
-		return nil, err
-	}
-
-	schnorSig, err := schnorr.ParseSignature(wd.SlashingTransactionSig)
-	if err != nil {
-		return nil, err
-	}
-
-	stakerBtcKey, err := schnorr.ParsePubKey(wd.StakerBtcPk)
-	if err != nil {
-		return nil, err
-	}
-
-	var unbondingTx wire.MsgTx
-	err = unbondingTx.Deserialize(bytes.NewReader(wd.UnbondingTransaction))
-	if err != nil {
-		return nil, err
-	}
-
-	var slashingUnbondingTx wire.MsgTx
-	err = slashingUnbondingTx.Deserialize(bytes.NewReader(wd.SlashingUnbondingTransaction))
-	if err != nil {
-		return nil, err
-	}
-
-	slashUnbondingTxSig, err := schnorr.ParseSignature(wd.SlashingUnbondingTransactionSig)
-	if err != nil {
-		return nil, err
-	}
-
-	if wd.UnbondingTime > math.MaxUint16 {
-		return nil, fmt.Errorf("unbonding time is too large. Max value is %d", math.MaxUint16)
-	}
-	unbondingTime := uint16(wd.UnbondingTime)
-
-	stakerBabylonAddr, err := sdk.AccAddressFromBech32(wd.StakerBabylonAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	return &WatchedTransactionData{
-		SlashingTx:             &slashingTx,
-		SlashingTxSig:          schnorSig,
-		StakerBabylonAddr:      stakerBabylonAddr,
-		StakerBtcPubKey:        stakerBtcKey,
-		UnbondingTx:            &unbondingTx,
-		SlashingUnbondingTx:    &slashingUnbondingTx,
-		SlashingUnbondingTxSig: slashUnbondingTxSig,
-		UnbondingTime:          unbondingTime,
-	}, nil
-}
-
+// uint64KeyToBytes converts a uint64 to a byte slice
 func uint64KeyToBytes(key uint64) []byte {
 	var keyBytes = make([]byte, 8)
 	binary.BigEndian.PutUint64(keyBytes, key)
 	return keyBytes
 }
 
+// nextTxKey returns the next key to use for a transaction
 func nextTxKey(txIdxBucket walletdb.ReadBucket) uint64 {
 	numTxBytes := txIdxBucket.Get(numTxKey)
 	var currKey uint64
@@ -451,6 +138,7 @@ func nextTxKey(txIdxBucket walletdb.ReadBucket) uint64 {
 	return currKey
 }
 
+// getNumTx returns number of transactions stored in the database
 func getNumTx(txIdxBucket walletdb.ReadBucket) uint64 {
 	// we are starting indexing transactions from 1, and nextTxKey always return next key
 	// which should be used when indexing transaction, so to get number of transactions
@@ -474,79 +162,53 @@ func getTxByHash(
 	if maybeTx == nil {
 		// if we have index, but do not have transaction, it means something weird happened
 		// and we have corrupted db
-		return nil, nil, ErrCorruptedTransactionsDb
+		return nil, nil, ErrCorruptedTransactionsDB
 	}
 
 	return maybeTx, txKey, nil
 }
 
+// saveTrackedTransaction saves a tracked transaction to the database
 func saveTrackedTransaction(
 	rwTx kvdb.RwTx,
 	txIdxBucket walletdb.ReadWriteBucket,
 	txBucket walletdb.ReadWriteBucket,
 	txHashBytes []byte,
 	tx *proto.TrackedTransaction,
-	watchedTxData *proto.WatchedTxData,
 	id *inputData,
 ) error {
 	if tx == nil {
-		return fmt.Errorf("cannot save nil tracked transaciton")
+		return fmt.Errorf("cannot save nil tracked transactions")
 	}
 	nextTxKey := nextTxKey(txIdxBucket)
 
 	tx.TrackedTransactionIdx = nextTxKey
 
 	marshalled, err := pm.Marshal(tx)
-
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal tracked transaction: %w", err)
 	}
 
 	nextTxKeyBytes := uint64KeyToBytes(nextTxKey)
 
-	err = txBucket.Put(nextTxKeyBytes, marshalled)
-
-	if err != nil {
-		return err
+	if err := txBucket.Put(nextTxKeyBytes, marshalled); err != nil {
+		return fmt.Errorf("failed to save transaction: %w", err)
 	}
 
-	err = txIdxBucket.Put(txHashBytes, nextTxKeyBytes)
-
-	if err != nil {
-		return err
-	}
-
-	if watchedTxData != nil {
-		watchedTxBucket := rwTx.ReadWriteBucket(watchedTxDataBucketName)
-		if watchedTxBucket == nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		marshalled, err := pm.Marshal(watchedTxData)
-
-		if err != nil {
-			return err
-		}
-
-		err = watchedTxBucket.Put(txHashBytes, marshalled)
-
-		if err != nil {
-			return err
-		}
+	if err := txIdxBucket.Put(txHashBytes, nextTxKeyBytes); err != nil {
+		return fmt.Errorf("failed to save transaction index: %w", err)
 	}
 
 	if id != nil {
 		inputDataBucket := rwTx.ReadWriteBucket(inputsDataBucketName)
 		if inputDataBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		for _, input := range id.inputs {
 			// save all the inputs to the transaction
-			err = inputDataBucket.Put(input, txHashBytes)
-
-			if err != nil {
-				return err
+			if err := inputDataBucket.Put(input, txHashBytes); err != nil {
+				return fmt.Errorf("failed to save input data: %w", err)
 			}
 		}
 	}
@@ -555,17 +217,17 @@ func saveTrackedTransaction(
 	return txIdxBucket.Put(numTxKey, uint64KeyToBytes(nextTxKey+1))
 }
 
+// addTransactionInternal adds a transaction to the database
 func (c *TrackedTransactionStore) addTransactionInternal(
 	txHashBytes []byte,
 	tt *proto.TrackedTransaction,
-	wd *proto.WatchedTxData,
 	id *inputData,
 ) error {
 	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
 		transactionsBucketIdxBucket := tx.ReadWriteBucket(transactionIndexName)
 
 		if transactionsBucketIdxBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		// check index first to avoid duplicates
@@ -576,65 +238,115 @@ func (c *TrackedTransactionStore) addTransactionInternal(
 
 		transactionsBucket := tx.ReadWriteBucket(transactionBucketName)
 		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
-		return saveTrackedTransaction(tx, transactionsBucketIdxBucket, transactionsBucket, txHashBytes, tt, wd, id)
+		return saveTrackedTransaction(tx, transactionsBucketIdxBucket, transactionsBucket, txHashBytes, tt, id)
 	})
 }
 
+// deleteTrackedTransaction deletes a transaction from the database
+func deleteTrackedTransaction(
+	rwTx kvdb.RwTx,
+	txIdxBucket walletdb.ReadWriteBucket,
+	txBucket walletdb.ReadWriteBucket,
+	txHashBytes []byte,
+) error {
+	// Get current number of transactions
+	numTxBytes := txIdxBucket.Get(numTxKey)
+	if numTxBytes == nil {
+		return ErrCorruptedTransactionsDB
+	}
+	currentNumTx := binary.BigEndian.Uint64(numTxBytes)
+
+	// Delete transaction data
+	indexBytes := txIdxBucket.Get(txHashBytes)
+	if indexBytes == nil {
+		return fmt.Errorf("transaction not found for hash")
+	}
+
+	if err := txBucket.Delete(indexBytes); err != nil {
+		return fmt.Errorf("failed to delete transaction data: %w", err)
+	}
+
+	if err := txIdxBucket.Delete(txHashBytes); err != nil {
+		return fmt.Errorf("failed to delete transaction index: %w", err)
+	}
+
+	// Delete input data
+	inputDataBucket := rwTx.ReadWriteBucket(inputsDataBucketName)
+	if inputDataBucket == nil {
+		return ErrCorruptedTransactionsDB
+	}
+
+	cursor := inputDataBucket.ReadCursor()
+	for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
+		if bytes.Equal(v, txHashBytes) {
+			if err := inputDataBucket.Delete(k); err != nil {
+				return fmt.Errorf("failed to delete input data: %w", err)
+			}
+		}
+	}
+
+	// Update number of transactions
+	if currentNumTx > 0 {
+		if err := txIdxBucket.Put(numTxKey, uint64KeyToBytes(currentNumTx-1)); err != nil {
+			return fmt.Errorf("failed to update transaction count: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// deleteTransasctionInternal deletes a transaction from the database
+func (c *TrackedTransactionStore) deleteTransasctionInternal(txHash []byte) error {
+	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
+		transactionsBucketIdxBucket := tx.ReadWriteBucket(transactionIndexName)
+		if transactionsBucketIdxBucket == nil {
+			return ErrCorruptedTransactionsDB
+		}
+
+		// check if transaction exists
+		if transactionsBucketIdxBucket.Get(txHash) == nil {
+			return fmt.Errorf("transaction not found")
+		}
+
+		transactionsBucket := tx.ReadWriteBucket(transactionBucketName)
+		if transactionsBucket == nil {
+			return ErrCorruptedTransactionsDB
+		}
+
+		return deleteTrackedTransaction(tx, transactionsBucketIdxBucket, transactionsBucket, txHash)
+	})
+}
+
+// CreateTrackedTransaction creates a new tracked transaction
 func CreateTrackedTransaction(
 	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
 	stakerAddress btcutil.Address,
 ) (*StoredTransaction, error) {
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
 	if err != nil {
-		return nil, err
-	}
-
-	if len(fpPubKeys) == 0 {
-		return nil, fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return nil, fmt.Errorf("cannot add transaction without proof of possession")
+		return nil, fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
 	msg := proto.TrackedTransaction{
 		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
-		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
-		Watched:                      false,
-		UnbondingTxData:              nil,
+		TrackedTransactionIdx: 0,
+		StakingTransaction:    serializedTx,
+		StakerAddress:         stakerAddress.EncodeAddress(),
 	}
 
 	return protoTxToStoredTransaction(&msg)
 }
 
+// inputData is the input data of a transaction
 type inputData struct {
 	inputs [][]byte
 	txHash []byte
 }
 
+// outpointBytes converts an outpoint to a byte slice
 func outpointBytes(op *wire.OutPoint) ([]byte, error) {
 	var buf bytes.Buffer
 	_, err := buf.Write(op.Hash.CloneBytes())
@@ -651,6 +363,7 @@ func outpointBytes(op *wire.OutPoint) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// getInputData returns the input data of a transaction
 func getInputData(tx *wire.MsgTx) (*inputData, error) {
 	var inputs [][]byte
 
@@ -669,504 +382,88 @@ func getInputData(tx *wire.MsgTx) (*inputData, error) {
 	}, nil
 }
 
+// AddTransactionSentToBabylon adds a transaction sent to Babylon
 func (c *TrackedTransactionStore) AddTransactionSentToBabylon(
 	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
 	stakerAddress btcutil.Address,
-	unbondingTx *wire.MsgTx,
-	unbondingTime uint16,
 ) error {
 	txHash := btcTx.TxHash()
 	txHashBytes := txHash[:]
 	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
 	if err != nil {
 		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
 	}
 
-	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return fmt.Errorf("cannot add transaction without proof of possession")
-	}
-
-	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-
-	if err != nil {
-		return fmt.Errorf("failed to create unbonding transaction data: %w", err)
-	}
-
 	msg := proto.TrackedTransaction{
 		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
-		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BABYLON,
-		Watched:                      false,
-		UnbondingTxData:              update,
+		TrackedTransactionIdx: 0,
+		StakingTransaction:    serializedTx,
+		StakerAddress:         stakerAddress.EncodeAddress(),
 	}
 
 	inputData, err := getInputData(btcTx)
-
 	if err != nil {
 		return fmt.Errorf("failed to get input data: %w", err)
 	}
 
 	return c.addTransactionInternal(
-		txHashBytes[:], &msg, nil, inputData,
+		txHashBytes, &msg, inputData,
 	)
 }
 
-func (c *TrackedTransactionStore) AddTransactionSentToBTC(
-	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
-	stakerAddress btcutil.Address,
-) error {
-	txHash := btcTx.TxHash()
+// DeleteTransactionSentToBabylon deletes a tracked transaction by its hash
+func (c *TrackedTransactionStore) DeleteTransactionSentToBabylon(txHash *chainhash.Hash) error {
+	if txHash == nil {
+		return fmt.Errorf("transaction hash cannot be nil")
+	}
+
 	txHashBytes := txHash[:]
-	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
-	if err != nil {
-		return fmt.Errorf("failed to serialize Bitcoin transaction: %w", err)
-	}
-
-	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	fpPubKeysBytes := make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	if pop == nil {
-		return fmt.Errorf("cannot add transaction without proof of possession")
-	}
-
-	msg := proto.TrackedTransaction{
-		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
-		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
-		Watched:                      false,
-		UnbondingTxData:              nil,
-	}
-
-	return c.addTransactionInternal(
-		txHashBytes[:], &msg, nil, nil,
-	)
+	return c.deleteTransasctionInternal(txHashBytes)
 }
 
-func (c *TrackedTransactionStore) AddWatchedTransaction(
-	btcTx *wire.MsgTx,
-	stakingOutputIndex uint32,
-	stakingTime uint16,
-	fpPubKeys []*btcec.PublicKey,
-	pop *ProofOfPossession,
-	stakerAddress btcutil.Address,
-	slashingTx *wire.MsgTx,
-	slashingTxSig *schnorr.Signature,
-	stakerBabylonAddr sdk.AccAddress,
-	stakerBtcPk *btcec.PublicKey,
-	unbondingTx *wire.MsgTx,
-	slashUnbondingTx *wire.MsgTx,
-	slashUnbondingTxSig *schnorr.Signature,
-	unbondingTime uint16,
-) error {
-	txHash := btcTx.TxHash()
-	txHashBytes := txHash[:]
-	serializedTx, err := utils.SerializeBtcTransaction(btcTx)
-
-	if err != nil {
-		return err
-	}
-
-	if len(fpPubKeys) == 0 {
-		return fmt.Errorf("cannot add transaction without finality providers public keys")
-	}
-
-	var fpPubKeysBytes [][]byte = make([][]byte, len(fpPubKeys))
-
-	for i, pk := range fpPubKeys {
-		fpPubKeysBytes[i] = schnorr.SerializePubKey(pk)
-	}
-
-	msg := proto.TrackedTransaction{
-		// Setting it to 0, proper number will be filled by `addTransactionInternal`
-		TrackedTransactionIdx:        0,
-		StakingTransaction:           serializedTx,
-		StakingOutputIdx:             stakingOutputIndex,
-		StakerAddress:                stakerAddress.EncodeAddress(),
-		StakingTime:                  uint32(stakingTime),
-		FinalityProvidersBtcPks:      fpPubKeysBytes,
-		StakingTxBtcConfirmationInfo: nil,
-		BtcSigType:                   pop.BtcSigType,
-		BtcSigOverBbnStakerAddr:      pop.BtcSigOverBabylonAddr,
-		State:                        proto.TransactionState_SENT_TO_BTC,
-		Watched:                      true,
-		UnbondingTxData:              nil,
-	}
-
-	serializedSlashingtx, err := utils.SerializeBtcTransaction(slashingTx)
-	if err != nil {
-		return err
-	}
-
-	serializedSig := slashingTxSig.Serialize()
-
-	serializedUnbondingTx, err := utils.SerializeBtcTransaction(unbondingTx)
-	if err != nil {
-		return err
-	}
-
-	serializedSlashUnbondingTx, err := utils.SerializeBtcTransaction(slashUnbondingTx)
-
-	if err != nil {
-		return err
-	}
-
-	serializedSlashUnbondingTxSig := slashUnbondingTxSig.Serialize()
-
-	watchedData := proto.WatchedTxData{
-		SlashingTransaction:             serializedSlashingtx,
-		SlashingTransactionSig:          serializedSig,
-		StakerBabylonAddr:               stakerBabylonAddr.String(),
-		StakerBtcPk:                     schnorr.SerializePubKey(stakerBtcPk),
-		UnbondingTransaction:            serializedUnbondingTx,
-		SlashingUnbondingTransaction:    serializedSlashUnbondingTx,
-		SlashingUnbondingTransactionSig: serializedSlashUnbondingTxSig,
-		UnbondingTime:                   uint32(unbondingTime),
-	}
-
-	return c.addTransactionInternal(
-		txHashBytes, &msg, &watchedData, nil,
-	)
-}
-
-func (c *TrackedTransactionStore) setTxState(
-	txHash *chainhash.Hash,
-	stateTransitionFn func(*proto.TrackedTransaction) error,
-) error {
-	txHashBytes := txHash.CloneBytes()
-
-	return kvdb.Batch(c.db, func(tx kvdb.RwTx) error {
-		transactionIdxBucket := tx.ReadWriteBucket(transactionIndexName)
-
-		if transactionIdxBucket == nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		transactionsBucket := tx.ReadWriteBucket(transactionBucketName)
-		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		maybeTx, txKey, err := getTxByHash(txHashBytes, transactionIdxBucket, transactionsBucket)
-
-		if err != nil {
-			return err
-		}
-
-		var storedTx proto.TrackedTransaction
-		err = pm.Unmarshal(maybeTx, &storedTx)
-		if err != nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		if err := stateTransitionFn(&storedTx); err != nil {
-			return err
-		}
-
-		marshalled, err := pm.Marshal(&storedTx)
-
-		if err != nil {
-			return err
-		}
-
-		err = transactionsBucket.Put(txKey, marshalled)
-
-		if err != nil {
-			return err
-		}
-
-		// delegation has been activaten remove used inputs if any exists
-		// TODO(konrad): This is not pretty architecture wise and a bit broken in scenario
-		// that delegation is never activated
-		if storedTx.State == proto.TransactionState_DELEGATION_ACTIVE {
-			inputDataBucket := tx.ReadWriteBucket(inputsDataBucketName)
-			if inputDataBucket == nil {
-				return ErrCorruptedTransactionsDb
-			}
-
-			var stakingTx wire.MsgTx
-			err := stakingTx.Deserialize(bytes.NewReader(storedTx.StakingTransaction))
-
-			if err != nil {
-				return err
-			}
-
-			for _, input := range stakingTx.TxIn {
-				input, err := outpointBytes(&input.PreviousOutPoint)
-
-				if err != nil {
-					return err
-				}
-
-				// if key does not exist, this operation is no-op
-				err = inputDataBucket.Delete(input)
-
-				if err != nil {
-					return err
-				}
-			}
-
-		}
-
-		return nil
-	})
-}
-
-func (c *TrackedTransactionStore) SetTxSentToBtc(txHash *chainhash.Hash) error {
-	setTxSentToBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_SENT_TO_BTC
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSentToBtc)
-}
-
-func (c *TrackedTransactionStore) SetTxConfirmed(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setTxConfirmed := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_CONFIRMED_ON_BTC
-		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxConfirmed)
-}
-
-func (c *TrackedTransactionStore) SetTxSentToBabylon(
-	txHash *chainhash.Hash,
-	unbondingTx *wire.MsgTx,
-	unbondingTime uint16,
-) error {
-	update, err := newInitialUnbondingTxData(unbondingTx, unbondingTime)
-
-	if err != nil {
-		return err
-	}
-
-	setTxSentToBabylon := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData != nil {
-			return fmt.Errorf("cannot set unbonding started, because unbonding tx data already exists: %w", ErrInvalidUnbondingDataUpdate)
-		}
-
-		tx.State = proto.TransactionState_SENT_TO_BABYLON
-		tx.UnbondingTxData = update
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSentToBabylon)
-}
-
-func (c *TrackedTransactionStore) SetTxSpentOnBtc(txHash *chainhash.Hash) error {
-	setTxSpentOnBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_SPENT_ON_BTC
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSpentOnBtc)
-}
-
-func (c *TrackedTransactionStore) SetDelegationActiveOnBabylon(txHash *chainhash.Hash) error {
-	setTxSpentOnBtc := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_DELEGATION_ACTIVE
-		return nil
-	}
-
-	return c.setTxState(txHash, setTxSpentOnBtc)
-}
-
-func (c *TrackedTransactionStore) SetDelegationActiveOnBabylonAndConfirmedOnBtc(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setDelegationActiveOnBabylon := func(tx *proto.TrackedTransaction) error {
-		tx.State = proto.TransactionState_DELEGATION_ACTIVE
-		tx.StakingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setDelegationActiveOnBabylon)
-}
-
-func (c *TrackedTransactionStore) SetTxUnbondingSignaturesReceived(
-	txHash *chainhash.Hash,
-	covenantSignatures []PubKeySigPair,
-) error {
-	setUnbondingSignaturesReceived := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData == nil {
-			return fmt.Errorf("cannot set unbonding signatures received, because unbonding tx data does not exist: %w", ErrUnbondingDataNotFound)
-		}
-
-		if len(tx.UnbondingTxData.CovenantSignatures) > 0 {
-			return fmt.Errorf("cannot set unbonding signatures received, because unbonding signatures already exist: %w", ErrInvalidUnbondingDataUpdate)
-		}
-		tx.State = proto.TransactionState_VERIFIED
-		tx.UnbondingTxData.CovenantSignatures = covenantSigsToProto(covenantSignatures)
-		return nil
-	}
-
-	return c.setTxState(txHash, setUnbondingSignaturesReceived)
-}
-
-func (c *TrackedTransactionStore) SetTxUnbondingConfirmedOnBtc(
-	txHash *chainhash.Hash,
-	blockHash *chainhash.Hash,
-	blockHeight uint32,
-) error {
-	setUnbondingConfirmedOnBtc := func(tx *proto.TrackedTransaction) error {
-		if tx.UnbondingTxData == nil {
-			return fmt.Errorf("cannot set unbonding confirmed on btc, because unbonding tx data does not exist: %w", ErrUnbondingDataNotFound)
-		}
-
-		tx.State = proto.TransactionState_UNBONDING_CONFIRMED_ON_BTC
-		tx.UnbondingTxData.UnbondingTxBtcConfirmationInfo = &proto.BTCConfirmationInfo{
-			BlockHash:   blockHash.CloneBytes(),
-			BlockHeight: blockHeight,
-		}
-		return nil
-	}
-
-	return c.setTxState(txHash, setUnbondingConfirmedOnBtc)
-}
-
+// GetTransaction retrieves a transaction by its hash
 func (c *TrackedTransactionStore) GetTransaction(txHash *chainhash.Hash) (*StoredTransaction, error) {
 	var storedTx *StoredTransaction
 	txHashBytes := txHash.CloneBytes()
 
-	err := c.db.View(func(tx kvdb.RTx) error {
+	if err := c.db.View(func(tx kvdb.RTx) error {
 		transactionIdxBucket := tx.ReadBucket(transactionIndexName)
 
 		if transactionIdxBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		transactionsBucket := tx.ReadBucket(transactionBucketName)
 		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		maybeTx, _, err := getTxByHash(txHashBytes, transactionIdxBucket, transactionsBucket)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get transaction by hash: %w", err)
 		}
 
 		var storedTxProto proto.TrackedTransaction
 		err = pm.Unmarshal(maybeTx, &storedTxProto)
 		if err != nil {
-			return ErrCorruptedTransactionsDb
+			return fmt.Errorf("failed to unmarshal transaction: %w", err)
 		}
 
-		txFromDb, err := protoTxToStoredTransaction(&storedTxProto)
-
+		txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to convert transaction to stored transaction: %w", err)
 		}
 
-		storedTx = txFromDb
+		storedTx = txFromDB
 		return nil
-	}, func() {})
-
-	if err != nil {
-		return nil, err
+	}, func() {}); err != nil {
+		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
 
 	return storedTx, nil
 }
 
-func (c *TrackedTransactionStore) GetWatchedTransactionData(txHash *chainhash.Hash) (*WatchedTransactionData, error) {
-	var watchedData *WatchedTransactionData
-	txHashBytes := txHash.CloneBytes()
-
-	err := c.db.View(func(tx kvdb.RTx) error {
-		watchedTxDataBucket := tx.ReadBucket(watchedTxDataBucketName)
-
-		if watchedTxDataBucket == nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		maybeWatchedData := watchedTxDataBucket.Get(txHashBytes)
-
-		if maybeWatchedData == nil {
-			return ErrWatchedDataNotFound
-		}
-
-		var watchedDataProto proto.WatchedTxData
-		err := pm.Unmarshal(maybeWatchedData, &watchedDataProto)
-
-		if err != nil {
-			return ErrCorruptedTransactionsDb
-		}
-
-		watchedDataFromDb, err := protoWatchedDataToWatchedTransactionData(&watchedDataProto)
-
-		if err != nil {
-			return err
-		}
-
-		watchedData = watchedDataFromDb
-
-		return nil
-	}, func() {})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return watchedData, nil
-}
-
+// GetAllStoredTransactions returns all stored transactions
 func (c *TrackedTransactionStore) GetAllStoredTransactions() ([]StoredTransaction, error) {
 	q := DefaultStoredTransactionQuery()
 	// MaxUint64 indicates we will scan over all transactions
@@ -1174,36 +471,28 @@ func (c *TrackedTransactionStore) GetAllStoredTransactions() ([]StoredTransactio
 
 	resp, err := c.QueryStoredTransactions(q)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query stored transactions: %w", err)
 	}
 
 	return resp.Transactions, nil
 }
 
-func isTimeLockExpired(confirmationBlockHeight uint32, lockTime uint16, currentBestBlockHeight uint32) bool {
-	// transaction maybe included/executed only in next possible block
-	nexBlockHeight := int64(currentBestBlockHeight) + 1
-	pastLock := nexBlockHeight - int64(confirmationBlockHeight) - int64(lockTime)
-	return pastLock >= 0
-}
-
+// QueryStoredTransactions queries stored transactions
 func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQuery) (StoredTransactionQueryResult, error) {
 	var resp StoredTransactionQueryResult
 
-	err := c.db.View(func(tx kvdb.RTx) error {
+	if err := c.db.View(func(tx kvdb.RTx) error {
 		transactionsBucket := tx.ReadBucket(transactionBucketName)
 		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		transactionIdxBucket := tx.ReadBucket(transactionIndexName)
-
 		if transactionIdxBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		numTransactions := getNumTx(transactionIdxBucket)
-
 		if numTransactions == 0 {
 			return nil
 		}
@@ -1215,62 +504,24 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 			q.NumMaxTransactions,
 		)
 
-		accumulateTransactions := func(key, transaction []byte) (bool, error) {
+		accumulateTransactions := func(_, transaction []byte) (bool, error) {
 			protoTx := proto.TrackedTransaction{}
 
-			err := pm.Unmarshal(transaction, &protoTx)
+			if err := pm.Unmarshal(transaction, &protoTx); err != nil {
+				return false, fmt.Errorf("failed to unmarshal transaction: %w", err)
+			}
+
+			txFromDB, err := protoTxToStoredTransaction(&protoTx)
 			if err != nil {
-				return false, err
+				return false, fmt.Errorf("failed to convert transaction to stored transaction: %w", err)
 			}
 
-			txFromDb, err := protoTxToStoredTransaction(&protoTx)
-
-			if err != nil {
-				return false, err
-			}
-
-			// we have query only for withdrawable transaction i.e transactions which
-			// either in SENT_TO_BABYLON or DELEGATION_ACTIVE or UNBONDING_CONFIRMED_ON_BTC state and which timelock has expired
-			if q.withdrawableTransactionsFilter != nil {
-				var confirmationHeight uint32
-				var scriptTimeLock uint16
-
-				if txFromDb.Watched {
-					// cannot withdraw watched transaction directly through staker program
-					// at least for now.
-					return false, nil
-				}
-
-				if txFromDb.StakingTxConfirmedOnBtc() && !txFromDb.UnbondingTxConfirmedOnBtc() {
-					scriptTimeLock = txFromDb.StakingTime
-					confirmationHeight = txFromDb.StakingTxConfirmationInfo.Height
-				} else if txFromDb.StakingTxConfirmedOnBtc() && txFromDb.UnbondingTxConfirmedOnBtc() {
-					scriptTimeLock = txFromDb.UnbondingTxData.UnbondingTime
-					confirmationHeight = txFromDb.UnbondingTxData.UnbondingTxConfirmationInfo.Height
-				} else {
-					return false, nil
-				}
-
-				timeLockExpired := isTimeLockExpired(
-					confirmationHeight,
-					scriptTimeLock,
-					q.withdrawableTransactionsFilter.currentBestBlockHeight,
-				)
-
-				if timeLockExpired {
-					resp.Transactions = append(resp.Transactions, *txFromDb)
-					return true, nil
-				} else {
-					return false, nil
-				}
-			} else {
-				resp.Transactions = append(resp.Transactions, *txFromDb)
-				return true, nil
-			}
+			resp.Transactions = append(resp.Transactions, *txFromDB)
+			return true, nil
 		}
 
 		if err := paginator.query(accumulateTransactions); err != nil {
-			return err
+			return fmt.Errorf("failed to query stored transactions: %w", err)
 		}
 
 		if q.Reversed {
@@ -1285,61 +536,55 @@ func (c *TrackedTransactionStore) QueryStoredTransactions(q StoredTransactionQue
 		return nil
 	}, func() {
 		resp = StoredTransactionQueryResult{}
-	})
-
-	if err != nil {
-		return resp, err
+	}); err != nil {
+		return resp, fmt.Errorf("failed to query stored transactions: %w", err)
 	}
 
 	return resp, nil
 }
 
+// ScanTrackedTransactions iterates over all stored transactions
 func (c *TrackedTransactionStore) ScanTrackedTransactions(scanFunc StoredTransactionScanFn, reset func()) error {
 	return kvdb.View(c.db, func(tx kvdb.RTx) error {
 		transactionsBucket := tx.ReadBucket(transactionBucketName)
 
 		if transactionsBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
-		return transactionsBucket.ForEach(func(k, v []byte) error {
+		return transactionsBucket.ForEach(func(_, v []byte) error {
 			var storedTxProto proto.TrackedTransaction
-			err := pm.Unmarshal(v, &storedTxProto)
-
-			if err != nil {
-				return ErrCorruptedTransactionsDb
+			if err := pm.Unmarshal(v, &storedTxProto); err != nil {
+				return ErrCorruptedTransactionsDB
 			}
 
-			txFromDb, err := protoTxToStoredTransaction(&storedTxProto)
-
+			txFromDB, err := protoTxToStoredTransaction(&storedTxProto)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to convert proto transaction to stored transaction: %w", err)
 			}
 
-			return scanFunc(txFromDb)
+			return scanFunc(txFromDB)
 		})
 	}, reset)
 }
 
+// OutpointUsed checks if an outpoint is used by a tracked transaction
 func (c *TrackedTransactionStore) OutpointUsed(op *wire.OutPoint) (bool, error) {
-	var used bool = false
+	used := false
 
 	err := c.db.View(func(tx kvdb.RTx) error {
 		inputsBucket := tx.ReadBucket(inputsDataBucketName)
 
 		if inputsBucket == nil {
-			return ErrCorruptedTransactionsDb
+			return ErrCorruptedTransactionsDB
 		}
 
 		opBytes, err := outpointBytes(op)
-
 		if err != nil {
 			return fmt.Errorf("invalid outpoint provided: %w", err)
 		}
 
-		res := inputsBucket.Get(opBytes)
-
-		if res != nil {
+		if inputsBucket.Get(opBytes) != nil {
 			used = true
 		}
 

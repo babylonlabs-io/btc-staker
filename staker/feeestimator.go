@@ -36,7 +36,6 @@ func NewDynamicBtcFeeEstimator(
 	cfg *scfg.BtcNodeBackendConfig,
 	_ *chaincfg.Params,
 	logger *logrus.Logger) (*DynamicBtcFeeEstimator, error) {
-
 	minFeeRate := chainfee.SatPerKVByte(cfg.MinFeeRate * 1000)
 	maxFeeRate := chainfee.SatPerKVByte(cfg.MaxFeeRate * 1000)
 
@@ -48,7 +47,7 @@ func NewDynamicBtcFeeEstimator(
 			Pass:                 cfg.Bitcoind.RPCPass,
 			DisableConnectOnNew:  true,
 			DisableAutoReconnect: false,
-			DisableTLS:           true,
+			DisableTLS:           cfg.Bitcoind.DisableTLS,
 			HTTPPostMode:         true,
 		}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,10 +10,12 @@ import (
 	"runtime/pprof"
 	"syscall"
 
+	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	staker "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
+	"github.com/joho/godotenv"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -25,10 +28,11 @@ func main() {
 	cfg, cfgLogger, zapLogger, err := scfg.LoadConfig()
 
 	if err != nil {
-		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
-			// Print error if not due to help request.
+		var flagsErr *flags.Error
+		if !errors.As(err, &flagsErr) || flagsErr.Type != flags.ErrHelp {
 			err = fmt.Errorf("failed to load config: %w", err)
 			_, _ = fmt.Fprintln(os.Stderr, err)
+			//nolint:gocritic
 			os.Exit(1)
 		}
 
@@ -60,7 +64,7 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	dbBackend, err := scfg.GetDbBackend(cfg.DBConfig)
+	dbBackend, err := scfg.GetDBBackend(cfg.DBConfig)
 
 	if err != nil {
 		err = fmt.Errorf("failed to load db backend: %w", err)
@@ -84,17 +88,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	service := service.NewStakerService(
+	s := service.NewStakerService(
 		cfg,
 		staker,
 		cfgLogger,
 		dbBackend,
 	)
 
-	addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
-	metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
+	if cfg.MetricsConfig.Enabled {
+		addr := fmt.Sprintf("%s:%d", cfg.MetricsConfig.Host, cfg.MetricsConfig.ServerPort)
+		metrics.Start(cfgLogger, addr, stakerMetrics.Registry)
+	}
 
-	if err = service.RunUntilShutdown(ctx); err != nil {
+	if err := godotenv.Load(); err != nil {
+		msg := fmt.Sprintf("Error loading .env file: %s.\nThe environment variables %s and %s are used to authenticate the daemon routes", err.Error(), service.EnvRouteAuthUser, service.EnvRouteAuthPwd)
+		cfgLogger.Info(msg)
+	}
+
+	expUsername, expPwd, err := cmd.GetEnvBasicAuth()
+	if err != nil {
+		cfgLogger.Errorf("failed to create staker app: %v", err)
+		os.Exit(1)
+	}
+
+	if err = s.RunUntilShutdown(ctx, expUsername, expPwd); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

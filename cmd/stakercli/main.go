@@ -6,7 +6,9 @@ import (
 
 	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
+	cmdpop "github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"
 	cmdtx "github.com/babylonlabs-io/btc-staker/cmd/stakercli/transaction"
+	"github.com/joho/godotenv"
 	"github.com/urfave/cli"
 )
 
@@ -16,6 +18,8 @@ func fatal(err error) {
 }
 
 func main() {
+	_ = godotenv.Load()
+
 	app := cli.NewApp()
 	app.Name = "stakercli"
 	app.Usage = "Bitcoin staking controller"
@@ -23,6 +27,7 @@ func main() {
 	app.Commands = append(app.Commands, cmddaemon.DaemonCommands...)
 	app.Commands = append(app.Commands, cmdadmin.AdminCommands...)
 	app.Commands = append(app.Commands, cmdtx.TransactionCommands...)
+	app.Commands = append(app.Commands, cmdpop.PopCommands...)
 
 	if err := app.Run(os.Args); err != nil {
 		fatal(err)

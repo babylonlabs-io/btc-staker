@@ -10,7 +10,7 @@ const (
 	DefaultTxPollingJitter = 0.5
 
 	DefaultEstimateMode           = "CONSERVATIVE"
-	defaultBitcoindRpcHost        = "127.0.0.1:8334"
+	defaultBitcoindRPCHost        = "127.0.0.1:8334"
 	defaultBitcoindRPCUser        = "user"
 	defaultBitcoindRPCPass        = "pass"
 	defaultBitcoindBlockCacheSize = 20 * 1024 * 1024 // 20 MB
@@ -37,11 +37,12 @@ type Bitcoind struct {
 	BlockPollingInterval time.Duration `long:"blockpollinginterval" description:"The interval that will be used to poll bitcoind for new blocks. Only used if rpcpolling is true."`
 	TxPollingInterval    time.Duration `long:"txpollinginterval" description:"The interval that will be used to poll bitcoind for new tx. Only used if rpcpolling is true."`
 	BlockCacheSize       uint64        `long:"block-cache-size" description:"size of the Bitcoin blocks cache"`
+	DisableTLS           bool          `long:"noclienttls" description:"disables tls for the wallet rpc client"`
 }
 
 func DefaultBitcoindConfig() Bitcoind {
 	return Bitcoind{
-		RPCHost:              defaultBitcoindRpcHost,
+		RPCHost:              defaultBitcoindRPCHost,
 		RPCUser:              defaultBitcoindRPCUser,
 		RPCPass:              defaultBitcoindRPCPass,
 		RPCPolling:           true,
@@ -52,5 +53,6 @@ func DefaultBitcoindConfig() Bitcoind {
 		ZMQPubRawBlock:       defaultZMQPubRawBlock,
 		ZMQPubRawTx:          defaultZMQPubRawTx,
 		ZMQReadDeadline:      defaultZMQReadDeadline,
+		DisableTLS:           true,
 	}
 }

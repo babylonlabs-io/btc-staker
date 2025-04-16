@@ -35,8 +35,122 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+### Improvements
+
 - [#85](https://github.com/babylonlabs-io/btc-staker/pull/85) Remove unused flags
-in stakercli
+in stakercli.
+* [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
+This PR contains a series of PRs on multi-staking support and BTC staking integration.
+* [#134](https://github.com/babylonlabs-io/btc-staker/pull/134) Removal of both the watch-staking
+endpoint and the post-approval flow, and reduction of state in the database.
+
+### Bug fixes
+
+* [#179](https://github.com/babylonlabs-io/btc-staker/pull/179) fix: add missing parameter to
+`btc_staking_param_by_btc_height`.
+* [#172](https://github.com/babylonlabs-io/btc-staker/pull/172) chore: spend stake check confirmation
+
+## v0.15.8
+
+### Improvements
+
+* [#175](https://github.com/babylonlabs-io/btc-staker/pull/175) Add JSON-RPC server config parameters.
+
+## v0.15.7
+
+### Improvements
+
+* [#169](https://github.com/babylonlabs-io/btc-staker/pull/169) bump babylon to v1.0.0
+
+## v0.15.6
+
+### Improvements
+
+* [#166](https://github.com/babylonlabs-io/btc-staker/pull/166) Fix config for
+mainnet
+
+## v0.15.5
+
+### Improvements
+
+* [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
+* [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+* [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
+* [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
+babylon node instead of global parameters input file in `stake-from-phase1`.
+* [#163](https://github.com/babylonlabs-io/btc-staker/pull/163) bump babylon to rc.8
+- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
+to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
+
+## v0.15.4
+
+* [#146](https://github.com/babylonlabs-io/btc-staker/pull/146) Sanity check that all transactions are standard
+
+## v0.15.3
+
+### Improvements
+
+* [#142](https://github.com/babylonlabs-io/btc-staker/pull/142) Set config default
+keyring backend to "file" type
+* [#138](https://github.com/babylonlabs-io/btc-staker/pull/138) Adds prometheus metrics
+configuration to enabled it (disabled by default).
+
+## v0.15.2
+
+* [#127](https://github.com/babylonlabs-io/btc-staker/pull/127) Add support for
+taproot addresses bip322 signing
+
+## v0.15.1
+
+### Bug fixes
+
+- [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
+`btcd` v0.24.2 in `go.mod`
+
+## v0.15.0
+
+### Improvements
+- [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
+to create phase-1/phase-2 PoP payload
+- [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
+to create payload for phase-1/phase-2 PoP deletion
+- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+to sign Cosmos ADR-36 messages
+- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+to validate PoP JSON file
+- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+to v1.0.0-rc.4
+
+## v0.14.0
+
+* [#108](https://github.com/babylonlabs-io/btc-staker/pull/108) Bump babylon to v1.0.0-rc.1
+
+## v0.13.0
+
+* [#102](https://github.com/babylonlabs-io/btc-staker/pull/102) Bump babylon v18
+and fix incompatibilities
+
+## v0.12.0
+
+### Improvements
+
+* [#90](https://github.com/babylonlabs-io/btc-staker/pull/90) Add CLI to create
+babylon BTC delegation from phase-1 BTC staking transaction.
+* [#99](https://github.com/babylonlabs-io/btc-staker/pull/99) Bump babylon version
+and adapt staker to the changes
+
+## v0.11.0
+
+### Improvements
+
+* [#93](https://github.com/babylonlabs-io/btc-staker/pull/93) Fix linting config
+* [#95](https://github.com/babylonlabs-io/btc-staker/pull/95) Bump babylon to v0.16
+* [#96](https://github.com/babylonlabs-io/btc-staker/pull/96) Check allow list
+expiration height before creating new delegations
+
+## v0.10.0
+
+* [#87](https://github.com/babylonlabs-io/btc-staker/pull/87) Bump babylon v15
 
 ## v0.9.0
 
