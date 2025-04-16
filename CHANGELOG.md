@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
+- [#183](https://github.com/babylonlabs-io/btc-staker/pull/183) Add github actions release workflow.
 - [#85](https://github.com/babylonlabs-io/btc-staker/pull/85) Remove unused flags
 in stakercli.
 * [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
