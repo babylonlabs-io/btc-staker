@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/babylonlabs-io/btc-staker/metrics"
 	str "github.com/babylonlabs-io/btc-staker/staker"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
@@ -21,6 +22,7 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	rpc "github.com/cometbft/cometbft/rpc/jsonrpc/server"
 	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
+	"go.uber.org/zap"
 
 	"github.com/lightningnetwork/lnd/kvdb"
 	"github.com/sirupsen/logrus"
@@ -43,6 +45,21 @@ type StakerService struct {
 	staker *str.App
 	logger *logrus.Logger
 	db     kvdb.Backend
+}
+
+// NewStakerServiceFromConfig creates a new staker service instance from config
+func NewStakerServiceFromConfig(
+	c *scfg.Config,
+	l *logrus.Logger,
+	z *zap.Logger,
+	db kvdb.Backend,
+	m *metrics.StakerMetrics,
+) (*StakerService, error) {
+	s, err := str.NewStakerAppFromConfig(c, l, z, db, m)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create staker app: %w", err)
+	}
+	return NewStakerService(c, s, l, db), nil
 }
 
 // NewStakerService creates a new staker service instance

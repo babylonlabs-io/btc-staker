@@ -78,8 +78,10 @@ mainnet
 
 ### Improvements
 
+* [#157](https://github.com/babylonlabs-io/btc-staker/pull/157) Move stakerapp creation from main to stakerservice
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+
 * [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
 * [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
