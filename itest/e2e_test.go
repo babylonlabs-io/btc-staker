@@ -493,6 +493,8 @@ func TestStakeFromPhase1(t *testing.T) {
 	}
 	defer tm.Stop(t, cancel)
 
+	tm.manager.WaitForNextBabylonBlock(t)
+
 	// verify that the chain is healthy
 	require.Eventually(t, func() bool {
 		_, err := tm.BabylonClient.Params()
@@ -508,9 +510,15 @@ func TestStakeFromPhase1(t *testing.T) {
 
 	stakerAddrStr := tmBTC.MinerAddr.String()
 	stkTxHash := signedStkTx.TxHash().String()
-	res, err := tmStakerApp.StakerClient.BtcDelegationFromBtcStakingTx(ctx, stakerAddrStr, stkTxHash, lastParamsVersioned.CovenantPks, lastParamsVersioned.CovenantQuorum)
+
+	argsStkFromPhase1 := []string{
+		fmt.Sprintf("--daemon-address=tcp://%s", tm.serviceAddress),
+		fmt.Sprintf("--staker-address=%s", stakerAddrStr),
+		fmt.Sprintf("--staking-transaction-hash=%s", stkTxHash),
+		fmt.Sprintf("--tx-inclusion-height=%d", inclusionHeight),
+	}
+	err = testutil.AppRunStakeFromPhase1(r, t, appCli, argsStkFromPhase1)
 	require.NoError(t, err)
-	require.NotNil(t, res)
 
 	// wait for BTC delegation to become active
 	cl := tm.Sa.BabylonController()

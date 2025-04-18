@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	rpc "github.com/cometbft/cometbft/rpc/jsonrpc/server"
+
 	"github.com/babylonlabs-io/btc-staker/types"
 	"go.uber.org/zap"
 
@@ -35,6 +37,14 @@ const (
 	// we risk into having transactions rejected by the network due to low fee.
 	DefaultMinFeeRate = 2
 	DefaultMaxFeeRate = 200
+
+	// JSON-RPC server config
+	defaultMaxOpenConnections  = 0 // unlimited
+	defaultReadTimeout         = 2 * time.Minute
+	defaultWriteTimeout        = 2 * time.Minute
+	defaultMaxBodyBytes        = int64(1000000) // 1MB
+	defaultMaxHeaderBytes      = 1 << 20        // same as the net/http default
+	defaultMaxRequestBatchSize = 10
 )
 
 var (
@@ -51,7 +61,7 @@ var (
 )
 
 type ChainConfig struct {
-	Network         string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"simnet" choice:"signet"`
+	Network         string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"simnet" choice:"signet" choice:"mainnet"`
 	SigNetChallenge string `long:"signetchallenge" description:"Connect to a custom signet network defined by this challenge instead of using the global default signet test network -- Can be specified multiple times"`
 }
 
@@ -92,7 +102,36 @@ func DefaultWalletRPCConfig() WalletRPCConfig {
 }
 
 type JSONRPCServerConfig struct {
-	RawRPCListeners []string `long:"rpclisten" description:"Add an interface/port/socket to listen for RPC connections"`
+	RawRPCListeners     []string      `long:"rpclisten" description:"Add an interface/port/socket to listen for RPC connections"`
+	MaxOpenConnections  int           `long:"maxopenconnections" description:"Maximum number of concurrent RPC connections allowed"`
+	ReadTimeout         time.Duration `long:"readtimeout" description:"Duration to wait before timing out reading the request"`
+	WriteTimeout        time.Duration `long:"writetimeout" description:"Duration to wait before timing out writing the response"`
+	MaxBodyBytes        int64         `long:"maxbodybytes" description:"Maximum size of request body in bytes"`
+	MaxHeaderBytes      int           `long:"maxheaderbytes" description:"Maximum size of request headers in bytes"`
+	MaxRequestBatchSize int           `long:"maxrequestbatchsize" description:"Maximum number of JSON-RPC requests allowed in a single batch"`
+}
+
+func DefaultJSONRPCServerConfig() JSONRPCServerConfig {
+	return JSONRPCServerConfig{
+		MaxOpenConnections:  defaultMaxOpenConnections,
+		ReadTimeout:         defaultReadTimeout,
+		WriteTimeout:        defaultWriteTimeout,
+		MaxBodyBytes:        defaultMaxBodyBytes,
+		MaxHeaderBytes:      defaultMaxHeaderBytes,
+		MaxRequestBatchSize: defaultMaxRequestBatchSize,
+	}
+}
+
+// Config returns the CometBFT JSON-RPC server config
+func (cf *JSONRPCServerConfig) Config() *rpc.Config {
+	return &rpc.Config{
+		MaxOpenConnections:  cf.MaxOpenConnections,
+		ReadTimeout:         cf.ReadTimeout,
+		WriteTimeout:        cf.WriteTimeout,
+		MaxBodyBytes:        cf.MaxBodyBytes,
+		MaxHeaderBytes:      cf.MaxHeaderBytes,
+		MaxRequestBatchSize: cf.MaxRequestBatchSize,
+	}
 }
 
 type BtcNodeBackendConfig struct {
@@ -182,6 +221,7 @@ func DefaultConfig() Config {
 	dbConfig := DefaultDBConfig()
 	stakerConfig := DefaultStakerConfig()
 	metricsCfg := DefaultMetricsConfig()
+	jsonRPCSvrConf := DefaultJSONRPCServerConfig()
 	return Config{
 		StakerdDir:           DefaultStakerdDir,
 		ConfigFile:           DefaultConfigFile,
@@ -196,6 +236,7 @@ func DefaultConfig() Config {
 		DBConfig:             &dbConfig,
 		StakerConfig:         &stakerConfig,
 		MetricsConfig:        &metricsCfg,
+		JSONRPCServerConfig:  &jsonRPCSvrConf,
 	}
 }
 
@@ -392,6 +433,8 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		cfg.ActiveNetParams = chaincfg.RegressionNetParams
 	case "simnet":
 		cfg.ActiveNetParams = chaincfg.SimNetParams
+	case "mainnet":
+		cfg.ActiveNetParams = chaincfg.MainNetParams
 	case "signet":
 		cfg.ActiveNetParams = chaincfg.SigNetParams
 

@@ -29,7 +29,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/cometbft/cometbft/crypto/tmhash"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -1621,12 +1620,16 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 	// on the Babylon chain, we can now be certain that it has been confirmed in Bitcoin.
 	// Therefore, we only need to check whether the unbonding transaction has been confirmed.
 	unbondingTxHash := udi.UnbondingTransaction.TxHash()
-	confirmation, _, err := app.Wallet().TxDetails(
+	confirmation, txStatus, err := app.Wallet().TxDetails(
 		&unbondingTxHash,
 		udi.UnbondingTransaction.TxOut[0].PkScript,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting confirmation info from btc: %w", err)
+	}
+
+	if confirmation == nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output. Tx status: %s", txStatus.String())
 	}
 
 	var spendStakeTxInfo *spendStakeTxInfo
@@ -1806,15 +1809,15 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
 	}
 
-	babylonAddrHash := tmhash.Sum(app.babylonClient.GetKeyAddress().Bytes())
+	msgToSign := []byte(app.babylonClient.GetKeyAddress().String())
 	// pop only works for native segwit address and taproot bip86 addresses
-	sig, err := app.wc.SignBip322Signature(babylonAddrHash, stakerAddress)
+	sig, err := app.wc.SignBip322Signature(msgToSign, stakerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign bip322 signature: %w", err)
 	}
 
 	return cl.NewBabylonBip322Pop(
-		babylonAddrHash,
+		msgToSign,
 		sig,
 		stakerAddress,
 	)

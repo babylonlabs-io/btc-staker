@@ -1,7 +1,6 @@
 package stakerservice
 
 import (
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcjson"
 )
 
@@ -72,6 +71,6 @@ type BtcStakingParamsByBtcHeightResponse struct {
 }
 
 type BtcStakingParams struct {
-	CovenantPks    []*btcec.PublicKey
+	CovenantPkHex  []string
 	CovenantQuorum uint32
 }
