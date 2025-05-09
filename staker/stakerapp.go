@@ -1602,10 +1602,6 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting delegation info: %w", err)
 	}
 
-	if !di.BtcDelegation.Active {
-		return nil, nil, fmt.Errorf("cannot spend staking output. Staking transaction is in invalid state: %s", di.BtcDelegation.GetStatusDesc())
-	}
-
 	udi, err := app.babylonClient.GetUndelegationInfo(di)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting undelegation info: %w", err)
