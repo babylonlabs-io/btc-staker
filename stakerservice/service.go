@@ -18,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/cometbft/cometbft/libs/log"
 	rpc "github.com/cometbft/cometbft/rpc/jsonrpc/server"
@@ -99,40 +100,12 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	fpBtcPks []string,
 	stakingTimeBlocks int64,
 ) (*ResultStake, error) {
-	if stakingAmount <= 0 {
-		return nil, fmt.Errorf("staking amount must be positive")
-	}
-
-	amount := btcutil.Amount(stakingAmount)
-
-	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
+	amount, stakerAddr, fpPubKeys, stakingTime, err := parseStkParams(stakerAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding staker address: %w", err)
+		return nil, err
 	}
 
-	fpPubKeys := make([]*btcec.PublicKey, 0)
-
-	for _, fpPk := range fpBtcPks {
-		fpPkBytes, err := hex.DecodeString(fpPk)
-		if err != nil {
-			return nil, fmt.Errorf("error decoding finality provider public key: %w", err)
-		}
-
-		fpSchnorrKey, err := schnorr.ParsePubKey(fpPkBytes)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing finality provider public key: %w", err)
-		}
-
-		fpPubKeys = append(fpPubKeys, fpSchnorrKey)
-	}
-
-	if stakingTimeBlocks <= 0 || stakingTimeBlocks > math.MaxUint16 {
-		return nil, fmt.Errorf("staking time must be positive and lower than %d", math.MaxUint16)
-	}
-
-	stakingTimeUint16 := uint16(stakingTimeBlocks)
-
-	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTimeUint16)
+	stakingTxHash, err := s.staker.StakeFunds(stakerAddr, amount, fpPubKeys, stakingTime)
 	if err != nil {
 		return nil, fmt.Errorf("error staking funds: %w", err)
 	}
@@ -140,6 +113,82 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	return &ResultStake{
 		TxHash: stakingTxHash.String(),
 	}, nil
+}
+
+// stakeExpand stakes staker's requested amount of BTC
+func (s *StakerService) stakeExpand(_ *rpctypes.Context,
+	stakerAddress string,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+	prevActiveStkTxHashHex string,
+) (*ResultStake, error) {
+	amount, stakerAddr, fpPubKeys, stakingTime, err := parseStkParams(stakerAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	prevActiveStkTxHash, err := chainhash.NewHashFromStr(prevActiveStkTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("error stake expand parse previous staking tx hash hex: %s - %w", prevActiveStkTxHashHex, err)
+	}
+
+	stakingTxHash, err := s.staker.StakeExpand(stakerAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("error stake expand funds: %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: stakingTxHash.String(),
+	}, nil
+}
+
+func parseStkParams(
+	stakerAddress string,
+	btcCfg *chaincfg.Params,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+) (
+	amount btcutil.Amount,
+	stakerAddr btcutil.Address,
+	fpPubKeys []*btcec.PublicKey,
+	stakingTime uint16,
+	err error,
+) {
+	if stakingAmount <= 0 {
+		return amount, nil, nil, 0, fmt.Errorf("staking amount must be positive")
+	}
+
+	amount = btcutil.Amount(stakingAmount)
+
+	stakerAddr, err = btcutil.DecodeAddress(stakerAddress, btcCfg)
+	if err != nil {
+		return amount, nil, nil, 0, fmt.Errorf("error decoding staker address: %w", err)
+	}
+
+	fpPubKeys = make([]*btcec.PublicKey, 0)
+
+	for _, fpPk := range fpBtcPks {
+		fpPkBytes, err := hex.DecodeString(fpPk)
+		if err != nil {
+			return amount, nil, nil, 0, fmt.Errorf("error decoding finality provider public key: %w", err)
+
+		}
+
+		fpSchnorrKey, err := schnorr.ParsePubKey(fpPkBytes)
+		if err != nil {
+			return amount, nil, nil, 0, fmt.Errorf("error parsing finality provider public key: %w", err)
+		}
+
+		fpPubKeys = append(fpPubKeys, fpSchnorrKey)
+	}
+
+	if stakingTimeBlocks <= 0 || stakingTimeBlocks > math.MaxUint16 {
+		return amount, nil, nil, 0, fmt.Errorf("staking time must be positive and lower than %d", math.MaxUint16)
+	}
+
+	return amount, stakerAddr, fpPubKeys, uint16(stakingTimeBlocks), nil
 }
 
 // btcDelegationFromBtcStakingTx returns a btc delegation from a btc staking transaction
@@ -480,6 +529,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
+		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),

@@ -23,6 +23,7 @@ var DaemonCommands = []cli.Command{
 			listOutputsCmd,
 			babylonFinalityProvidersCmd,
 			stakeCmd,
+			stakeExpansionCmd,
 			unstakeCmd,
 			stakingDetailsCmd,
 			listStakingTransactionsCmd,
@@ -125,6 +126,45 @@ var stakeCmd = cli.Command{
 		},
 	},
 	Action: stake,
+}
+
+var stakeExpansionCmd = cli.Command{
+	Name:      "stake-expand",
+	ShortName: "st",
+	Usage:     "Stakes an amount of BTC to Babylon and uses a previous active BTC staking tx as input",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakerAddressFlag,
+			Usage:    "BTC address of the staker in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingAmountFlag,
+			Usage:    "Staking amount in satoshis",
+			Required: true,
+		},
+		cli.StringSliceFlag{
+			Name:     fpPksFlag,
+			Usage:    "BTC public keys of the finality providers in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingTimeBlocksFlag,
+			Usage:    "Staking time in BTC blocks",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of previous staking transaction in bitcoin hex format which is currently an active BTC delegation",
+			Required: true,
+		},
+	},
+	Action: stakeExpand,
 }
 
 var stakeFromPhase1Cmd = cli.Command{
@@ -351,6 +391,37 @@ func stake(ctx *cli.Context) error {
 	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
 	fpPks := ctx.StringSlice(fpPksFlag)
 	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+
+	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	if err != nil {
+		return fmt.Errorf("failed to stake: %w", err)
+	}
+
+	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+// stakeExpand creates a new btc staking transaction from an previous
+// active BTC staking delegation and another new input.
+func stakeExpand(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakerAddress := ctx.String(stakerAddressFlag)
+	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
+	fpPks := ctx.StringSlice(fpPksFlag)
+	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+
+	prevActiveStkTxHashHex := ctx.String(stakingTransactionHashFlag)
+	if len(prevActiveStkTxHashHex) == 0 {
+		return errors.New("previous active staking tx hash hex for stake expansion is empty")
+	}
 
 	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
 	if err != nil {

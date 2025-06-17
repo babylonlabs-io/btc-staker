@@ -1362,6 +1362,135 @@ func (app *App) StakeFunds(
 	}
 }
 
+// StakeExpand stakes funds to the staker address
+func (app *App) StakeExpand(
+	stakerAddress btcutil.Address,
+	stakingAmount btcutil.Amount,
+	fpPks []*btcec.PublicKey,
+	stakingTimeBlocks uint16,
+	prevActiveStkTxHash *chainhash.Hash,
+) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+
+	default:
+	}
+
+	if len(fpPks) == 0 {
+		return nil, fmt.Errorf("no finality providers public keys provided")
+	}
+
+	if haveDuplicates(fpPks) {
+		return nil, fmt.Errorf("duplicate finality provider public keys provided")
+	}
+
+	for _, fpPk := range fpPks {
+		if err := app.finalityProviderExists(fpPk); err != nil {
+			return nil, fmt.Errorf("error checking if finality provider exists on babylon chain: %w", err)
+		}
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get params: %w", err)
+	}
+
+	// Allow list is enabled, check if we are past the expiration height and we can
+	// create new delegations
+	if params.AllowListExpirationHeight > 0 {
+		latestBlockHeight, err := app.babylonClient.GetLatestBlockHeight()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		// we add +1 to account for comet bft lazy execution
+		if latestBlockHeight <= params.AllowListExpirationHeight+1 {
+			return nil, fmt.Errorf("allow is enabled, cannot create new delegations. Latest block height %d is before allow list expiration height %d",
+				latestBlockHeight, params.AllowListExpirationHeight)
+		}
+	}
+
+	slashingFee := app.getSlashingFee(params.MinSlashingTxFeeSat)
+
+	if stakingAmount <= slashingFee {
+		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
+			stakingAmount, slashingFee)
+	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
+
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
+	}
+
+	pop, err := app.unlockAndCreatePop(stakerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unlock and create pop: %w", err)
+	}
+
+	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staker public key: %w", err)
+	}
+
+	stakingInfo, err := staking.BuildStakingInfo(
+		stakerPubKey,
+		fpPks,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		stakingTimeBlocks,
+		stakingAmount,
+		app.network,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build staking info: %w", err)
+	}
+
+	feeRate := app.feeEstimator.EstimateFeePerKb()
+
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress": stakerAddress,
+		"stakingAmount": stakingInfo.StakingOutput,
+		"fee":           feeRate,
+	}).Info("Created and signed staking transaction")
+
+	req := newOwnedStakingCommand(
+		stakerAddress,
+		stakingInfo.StakingOutput,
+		feeRate,
+		stakingTimeBlocks,
+		stakingAmount,
+		fpPks,
+		params.ConfirmationTimeBlocks,
+		pop,
+	)
+
+	utils.PushOrQuit[*stakingRequestCmd](
+		app.stakingRequestedCmdChan,
+		req,
+		app.quit,
+	)
+
+	select {
+	case reqErr := <-req.errChan:
+		app.logger.WithFields(logrus.Fields{
+			"stakerAddress": stakerAddress,
+			"err":           reqErr,
+		}).Debugf("Sending staking tx failed")
+
+		return nil, reqErr
+	case hash := <-req.successChan:
+		return hash, nil
+	case <-app.quit:
+		return nil, nil
+	}
+}
+
 // StoredTransactions returns a slice of stakerdb.StoredTransaction
 // that are stored in the tx tracker
 func (app *App) StoredTransactions(limit, offset uint64) (*stakerdb.StoredTransactionQueryResult, error) {
