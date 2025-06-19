@@ -130,7 +130,7 @@ var stakeCmd = cli.Command{
 
 var stakeExpansionCmd = cli.Command{
 	Name:      "stake-expand",
-	ShortName: "st",
+	ShortName: "stxp",
 	Usage:     "Stakes an amount of BTC to Babylon and uses a previous active BTC staking tx as input",
 	Flags: []cli.Flag{
 		cli.StringFlag{
