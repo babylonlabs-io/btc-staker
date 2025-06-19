@@ -14,7 +14,11 @@ import (
 // we can make command to implement StakingEvent interface
 var _ StakingEvent = (*stakingRequestCmd)(nil)
 
-// sendDelegationRequestCmd represents a command to send a delegation request
+type stakeExpandRequestCmd struct {
+	stakingRequestCmd
+}
+
+// stakingRequestCmd represents a command to send a delegation request
 type stakingRequestCmd struct {
 	stakerAddress           btcutil.Address
 	stakingOutput           *wire.TxOut
