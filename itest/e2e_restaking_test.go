@@ -164,6 +164,7 @@ func (tm *TestManager) sendStakingTxWithCZFPs(t *testing.T, data *testStakingDat
 }
 
 func TestRestakingToConsumerChains(t *testing.T) {
+	// TODO: fix this test, it requires deploying wasm smart contract to work
 	t.Skip("Skipping restaking to consumer chains test, it's not working. Fix it!")
 
 	// need to have at least 300 block on testnet as only then segwit is activated.
