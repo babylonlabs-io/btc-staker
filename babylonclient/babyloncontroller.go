@@ -13,6 +13,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
 	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
+	"github.com/babylonlabs-io/babylon/v3/app/signingcontext"
 	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 	bbnclient "github.com/babylonlabs-io/babylon/v3/client/client"
 	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
@@ -242,22 +243,18 @@ func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
 }
 
 // ContextSigningInfo is a helper function to get the context signing info
-func (bc *BabylonController) ContextSigningInfo() (*ContextSigningInfo, error) {
-	stakingModuleAddress := appparams.AccBTCStaking
-
+func (bc *BabylonController) StakerPopSignCtx() (string, error) {
 	stakingModuleAddressBytes, err := bech32.ConvertAndEncode(
 		appparams.Bech32PrefixAccAddr,
-		stakingModuleAddress,
+		appparams.AccBTCStaking,
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert and encode staking module address: %w", err)
+		return "", fmt.Errorf("failed to convert and encode staking module address: %w", err)
 	}
 
-	return &ContextSigningInfo{
-		ChainID:       bc.bbnClient.GetConfig().ChainID,
-		ModuleAddress: stakingModuleAddressBytes,
-	}, nil
+	return signingcontext.StakerPopContextV0(bc.bbnClient.GetConfig().ChainID, stakingModuleAddressBytes), nil
+
 }
 
 // ParamsByBtcHeight is a helper function to query the babylon client for the staking parameters by btc height

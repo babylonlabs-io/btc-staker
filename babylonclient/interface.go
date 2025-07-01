@@ -69,11 +69,6 @@ type BtcStakingParams struct {
 	AllowListExpirationHeight uint64
 }
 
-type ContextSigningInfo struct {
-	ChainID       string
-	ModuleAddress string
-}
-
 // SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
 type SingleKeyKeyring interface {
 	Sign(msg []byte) ([]byte, error)
@@ -83,7 +78,7 @@ type SingleKeyKeyring interface {
 
 type BabylonClient interface {
 	SingleKeyKeyring
-	ContextSigningInfo() (*ContextSigningInfo, error)
+	StakerPopSignCtx() (string, error)
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
@@ -219,11 +214,8 @@ func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
 	return 0, nil
 }
 
-func (m *MockBabylonClient) ContextSigningInfo() (*ContextSigningInfo, error) {
-	return &ContextSigningInfo{
-		ChainID:       "babylon",
-		ModuleAddress: "babylon",
-	}, nil
+func (m *MockBabylonClient) StakerPopSignCtx() (string, error) {
+	return "", nil
 }
 
 func GetMockClient() *MockBabylonClient {
