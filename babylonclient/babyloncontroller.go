@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
 	sdkErr "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
+	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
 	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 	bbnclient "github.com/babylonlabs-io/babylon/v3/client/client"
 	bbntypes "github.com/babylonlabs-io/babylon/v3/types"

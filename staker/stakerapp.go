@@ -1806,14 +1806,26 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
 	}
 
-	signingInfo, err := app.babylonClient.ContextSigningInfo()
+	latestBabylonHeight, err := app.babylonClient.GetLatestBlockHeight()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get context signing info: %w", err)
+		return nil, fmt.Errorf("failed to get latest babylon height: %w", err)
 	}
 
-	ctx := signingcontext.StakerPopContextV0(signingInfo.ChainID, signingInfo.ModuleAddress)
+	var msgToSign []byte
 
-	msgToSign := []byte(ctx + app.babylonClient.GetKeyAddress().String())
+	if latestBabylonHeight >= app.config.StakerConfig.ContextUpgradeHeight {
+		signingInfo, err := app.babylonClient.ContextSigningInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get context signing info: %w", err)
+		}
+
+		ctx := signingcontext.StakerPopContextV0(signingInfo.ChainID, signingInfo.ModuleAddress)
+
+		msgToSign = []byte(ctx + app.babylonClient.GetKeyAddress().String())
+	} else {
+		msgToSign = []byte(app.babylonClient.GetKeyAddress().String())
+	}
+
 	// pop only works for native segwit address and taproot bip86 addresses
 	sig, err := app.wc.SignBip322Signature(msgToSign, stakerAddress)
 	if err != nil {
