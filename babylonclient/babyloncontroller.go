@@ -254,7 +254,6 @@ func (bc *BabylonController) StakerPopSignCtx() (string, error) {
 	}
 
 	return signingcontext.StakerPopContextV0(bc.bbnClient.GetConfig().ChainID, stakingModuleAddressBytes), nil
-
 }
 
 // ParamsByBtcHeight is a helper function to query the babylon client for the staking parameters by btc height
