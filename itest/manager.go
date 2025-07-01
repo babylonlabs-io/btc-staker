@@ -24,14 +24,14 @@ import (
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/ory/dockertest/v3"
 
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
-	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	bbntypes "github.com/babylonlabs-io/babylon/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
-	ckpttypes "github.com/babylonlabs-io/babylon/x/checkpointing/types"
+	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	txformat "github.com/babylonlabs-io/babylon/v3/btctxformatter"
+	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	ckpttypes "github.com/babylonlabs-io/babylon/v3/x/checkpointing/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	"github.com/babylonlabs-io/btc-staker/staker"
@@ -714,7 +714,7 @@ func (tm *TestManager) createAndRegisterFinalityProviders(t *testing.T, stkData 
 		require.Error(t, err)
 		require.True(t, errors.Is(err, babylonclient.ErrFinalityProviderDoesNotExist))
 
-		pop, err := datagen.NewPoPBTC(stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
+		pop, err := datagen.NewPoPBTC("", stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
 		require.NoError(t, err)
 
 		btcFpKey := bbntypes.NewBIP340PubKeyFromBTCPK(stkData.FinalityProviderBtcKeys[i])

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/babylonlabs-io/babylon/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
