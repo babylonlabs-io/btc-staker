@@ -2,8 +2,6 @@ module github.com/babylonlabs-io/btc-staker
 
 go 1.23.8
 
-toolchain go1.24.4
-
 require (
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/math v1.5.3
