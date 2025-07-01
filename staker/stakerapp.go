@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/babylonlabs-io/babylon/v3/app/signingcontext"
 	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 
 	"github.com/avast/retry-go/v4"
@@ -1805,7 +1806,14 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
 	}
 
-	msgToSign := []byte(app.babylonClient.GetKeyAddress().String())
+	signingInfo, err := app.babylonClient.ContextSigningInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get context signing info: %w", err)
+	}
+
+	ctx := signingcontext.StakerPopContextV0(signingInfo.ChainID, signingInfo.ModuleAddress)
+
+	msgToSign := []byte(ctx + app.babylonClient.GetKeyAddress().String())
 	// pop only works for native segwit address and taproot bip86 addresses
 	sig, err := app.wc.SignBip322Signature(msgToSign, stakerAddress)
 	if err != nil {

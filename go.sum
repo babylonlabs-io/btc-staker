@@ -729,8 +729,8 @@ github.com/aws/aws-sdk-go v1.44.122/go.mod h1:y4AeaBuwd2Lk+GepC1E9v0qOiTws0MIWAX
 github.com/aws/aws-sdk-go v1.49.6 h1:yNldzF5kzLBRvKlKz1S0bkvc2+04R1kt13KfBWQBfFA=
 github.com/aws/aws-sdk-go v1.49.6/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
 github.com/aws/aws-sdk-go-v2 v0.18.0/go.mod h1:JWVYvqSMppoMJC0x5wdwiImzgXTI9FuZwxzkQq9wy+g=
-github.com/babylonlabs-io/babylon/v3 v3.0.0-20250630141534-b39fa216440b h1:iUy8QRktR+ScghabeKq9YUBb19Yi18W5MBX6GzQdYwg=
-github.com/babylonlabs-io/babylon/v3 v3.0.0-20250630141534-b39fa216440b/go.mod h1:YClMGdanWE7E/9WWFcU7qYGi7XGi89rmvf3NxdjNdZg=
+github.com/babylonlabs-io/babylon/v3 v3.0.0-snapshot.250701 h1:OudNCcq87oykAN/ovoKBGZ2sRYg07JU7lQHazfyjz7A=
+github.com/babylonlabs-io/babylon/v3 v3.0.0-snapshot.250701/go.mod h1:YClMGdanWE7E/9WWFcU7qYGi7XGi89rmvf3NxdjNdZg=
 github.com/babylonlabs-io/networks/parameters v0.2.2 h1:TCu39fZvjX5f6ZZrjhYe54M6wWxglNewuKu56yE+zrc=
 github.com/babylonlabs-io/networks/parameters v0.2.2/go.mod h1:iEJVOzaLsE33vpP7J4u+CRGfkSIfErUAwRmgCFCBpyI=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=

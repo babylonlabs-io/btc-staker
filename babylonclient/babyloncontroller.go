@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
-	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
-
+	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
 	sdkErr "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
+	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 	bbnclient "github.com/babylonlabs-io/babylon/v3/client/client"
 	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 	btclctypes "github.com/babylonlabs-io/babylon/v3/x/btclightclient/types"
 	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
 	bsctypes "github.com/babylonlabs-io/babylon/v3/x/btcstkconsumer/types"
@@ -31,6 +31,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	bq "github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -238,6 +239,25 @@ func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
 	}
 
 	return stakingTrackerParams, nil
+}
+
+// ContextSigningInfo is a helper function to get the context signing info
+func (bc *BabylonController) ContextSigningInfo() (*ContextSigningInfo, error) {
+	stakingModuleAddress := appparams.AccBTCStaking
+
+	stakingModuleAddressBytes, err := bech32.ConvertAndEncode(
+		appparams.Bech32PrefixAccAddr,
+		stakingModuleAddress,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert and encode staking module address: %w", err)
+	}
+
+	return &ContextSigningInfo{
+		ChainID:       bc.bbnClient.GetConfig().ChainID,
+		ModuleAddress: stakingModuleAddressBytes,
+	}, nil
 }
 
 // ParamsByBtcHeight is a helper function to query the babylon client for the staking parameters by btc height
