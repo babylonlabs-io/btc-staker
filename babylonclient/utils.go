@@ -1,8 +1,8 @@
 package babylonclient
 
 import (
-	babylontypes "github.com/babylonlabs-io/babylon/types"
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	babylontypes "github.com/babylonlabs-io/babylon/v3/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/wire"
 )

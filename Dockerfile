@@ -1,4 +1,4 @@
-FROM golang:1.23.1 AS builder
+FROM golang:1.23.8 AS builder
 
 # Install cli tools for building and final image
 RUN apt-get update && apt-get install -y make git bash gcc curl jq
