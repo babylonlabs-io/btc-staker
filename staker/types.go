@@ -7,8 +7,8 @@ import (
 	"sort"
 
 	sdkmath "cosmossdk.io/math"
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
-	"github.com/babylonlabs-io/babylon/types"
+	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	"github.com/babylonlabs-io/babylon/v3/types"
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"

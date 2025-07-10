@@ -17,12 +17,12 @@ import (
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 
-	"github.com/babylonlabs-io/babylon/btcstaking"
-	"github.com/babylonlabs-io/babylon/crypto/bip322"
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	"github.com/babylonlabs-io/babylon/v3/btcstaking"
+	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	bbntypes "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
 	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"

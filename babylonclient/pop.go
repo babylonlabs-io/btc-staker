@@ -3,9 +3,9 @@ package babylonclient
 import (
 	"fmt"
 
-	"github.com/babylonlabs-io/babylon/crypto/bip322"
-	bbn "github.com/babylonlabs-io/babylon/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
+	bbn "github.com/babylonlabs-io/babylon/v3/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -103,6 +103,7 @@ func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error
 }
 
 func (pop *BabylonPop) ValidatePop(
+	signingCtx string,
 	bbnAddr sdk.AccAddress,
 	btcPk *btcec.PublicKey,
 	net *chaincfg.Params,
@@ -119,6 +120,7 @@ func (pop *BabylonPop) ValidatePop(
 
 	btcPkBabylonFormat := bbn.NewBIP340PubKeyFromBTCPK(btcPk)
 	return bPop.Verify(
+		signingCtx,
 		bbnAddr,
 		btcPkBabylonFormat,
 		net,

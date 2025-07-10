@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
+	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/babylonlabs-io/btc-staker/utils"

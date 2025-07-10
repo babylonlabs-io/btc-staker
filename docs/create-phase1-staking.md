@@ -1,7 +1,7 @@
 # Creating and Submitting phase-1 Staking Transactions
 
 The phase-1 staking transaction is a
-[Bitcoin Staking transaction](https://github.com/babylonlabs-io/babylon/blob/v0.9.0-rc.3/docs/staking-script.md)
+[Bitcoin Staking transaction](https://github.com/babylonlabs-io/babylon/v3/blob/v0.9.0-rc.3/docs/staking-script.md)
 that includes an additional `OP_RETURN` field containing the staking parameters
 to enable for easy identification and taproot decoding through observing the
 Bitcoin ledger.
@@ -111,7 +111,7 @@ This command has the following required flags:
 - `--staking-time` The amount of BTC blocks to lock for. Should be in the range [min_staking_time, max_staking_time] in the global parameters.
 - `--tx-inclusion-height` Expected BTC height at which transaction will be included. This value is important to choose correct global parameters for transaction (default: 0)
 - `--network` Specifies the BTC network this transaction will be sent, any of
-`[mainnet, testnet3, regtest, simnet, signet]`.
+  `[mainnet, testnet3, regtest, simnet, signet]`.
 
 Note that the `--tx-inclusion-height` flag must be set according to the expected inclusion height of the transaction.
 Otherwise, the transaction might be constructed by wrong version of global parameters.

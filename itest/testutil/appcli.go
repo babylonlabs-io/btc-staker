@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
 	cmdadmin "github.com/babylonlabs-io/btc-staker/cmd/stakercli/admin"
 	cmddaemon "github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/pop"

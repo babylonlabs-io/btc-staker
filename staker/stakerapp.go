@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
+	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
 
 	"github.com/avast/retry-go/v4"
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	scfg "github.com/babylonlabs-io/btc-staker/stakercfg"

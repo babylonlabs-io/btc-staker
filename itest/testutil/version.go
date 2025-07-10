@@ -2,9 +2,11 @@ package testutil
 
 import (
 	"fmt"
-	"golang.org/x/mod/modfile"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/mod/modfile"
 )
 
 // GetBabylonVersion returns babylond version from go.mod
@@ -23,7 +25,7 @@ func GetBabylonVersion() (string, error) {
 
 	const modName = "github.com/babylonlabs-io/babylon"
 	for _, require := range modFile.Require {
-		if require.Mod.Path == modName {
+		if strings.Contains(require.Mod.Path, modName) {
 			return require.Mod.Version, nil
 		}
 	}

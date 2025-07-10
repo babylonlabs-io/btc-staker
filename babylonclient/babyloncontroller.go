@@ -9,17 +9,17 @@ import (
 	"strings"
 	"time"
 
-	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
+	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 
 	sdkErr "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
-	bbnclient "github.com/babylonlabs-io/babylon/client/client"
-	bbntypes "github.com/babylonlabs-io/babylon/types"
-	btclctypes "github.com/babylonlabs-io/babylon/x/btclightclient/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
-	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
+	bbnclient "github.com/babylonlabs-io/babylon/v3/client/client"
+	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
+	btclctypes "github.com/babylonlabs-io/babylon/v3/x/btclightclient/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	bsctypes "github.com/babylonlabs-io/babylon/v3/x/btcstkconsumer/types"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -379,7 +379,7 @@ type DelegationData struct {
 // StakeExpansionData holds data specific to stake expansion transactions
 type StakeExpansionData struct {
 	PreviousStakingTxHash *chainhash.Hash
-	FundingTx            *wire.MsgTx
+	FundingTx             *wire.MsgTx
 }
 
 // UndelegationData is a helper struct to hold the undelegation data
@@ -513,15 +513,8 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 	}, nil
 }
 
-// TODO: This will be replaced with proper MsgBtcStakeExpand when available in babylon
-type MsgBtcStakeExpand struct {
-	*btcstypes.MsgCreateBTCDelegation
-	PreviousStakingTxHash string `json:"previous_staking_tx_hash"`
-	FundingTx            []byte `json:"funding_tx"`
-}
-
 // delegationDataToMsgBtcStakeExpand is a helper function to convert delegation data to stake expansion message
-func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*MsgBtcStakeExpand, error) {
+func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcStakeExpand, error) {
 	if dg == nil {
 		return nil, fmt.Errorf("nil delegation data")
 	}
@@ -543,10 +536,23 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*MsgBtcStakeExpand, 
 	}
 
 	// Create the stake expansion message with all fields from common delegation
-	return &MsgBtcStakeExpand{
-		MsgCreateBTCDelegation:       commonMsg,
-		PreviousStakingTxHash:        dg.StakeExpansion.PreviousStakingTxHash.String(),
-		FundingTx:                    serializedFundingTx,
+	return &btcstypes.MsgBtcStakeExpand{
+		StakerAddr:                    commonMsg.StakerAddr,
+		Pop:                           commonMsg.Pop,
+		BtcPk:                         commonMsg.BtcPk,
+		FpBtcPkList:                   commonMsg.FpBtcPkList,
+		StakingTime:                   commonMsg.StakingTime,
+		StakingValue:                  commonMsg.StakingValue,
+		StakingTx:                     commonMsg.StakingTx,
+		SlashingTx:                    commonMsg.SlashingTx,
+		DelegatorSlashingSig:          commonMsg.DelegatorSlashingSig,
+		UnbondingTx:                   commonMsg.UnbondingTx,
+		UnbondingTime:                 commonMsg.UnbondingTime,
+		UnbondingValue:                commonMsg.UnbondingValue,
+		UnbondingSlashingTx:           commonMsg.UnbondingSlashingTx,
+		DelegatorUnbondingSlashingSig: commonMsg.DelegatorUnbondingSlashingSig,
+		PreviousStakingTxHash:         dg.StakeExpansion.PreviousStakingTxHash.String(),
+		FundingTx:                     serializedFundingTx,
 	}, nil
 }
 
@@ -576,7 +582,7 @@ func (bc *BabylonController) Delegate(dg *DelegationData) (*bct.RelayerTxRespons
 
 // ExpandDelegation sends a stake expansion delegation message to the Babylon node
 func (bc *BabylonController) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
-	expandMsg, err := delegationDataToMsgBtcStakeExpand(dg)
+	stkExpandMsg, err := delegationDataToMsgBtcStakeExpand(dg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert delegation data to expansion message: %w", err)
 	}
@@ -584,7 +590,7 @@ func (bc *BabylonController) ExpandDelegation(dg *DelegationData) (*bct.RelayerT
 	// For now, we send the embedded MsgCreateBTCDelegation since the full MsgBtcStakeExpand
 	// type needs to be implemented in babylon. This maintains compatibility while adding
 	// the expansion-specific logic in the staker.
-	return bc.reliablySendMsgs([]sdk.Msg{expandMsg.MsgCreateBTCDelegation})
+	return bc.reliablySendMsgs([]sdk.Msg{stkExpandMsg})
 }
 
 // getQueryContext returns context with timeout
@@ -774,9 +780,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 	defer cancel()
 
 	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
-
 	queryClient := btcstypes.NewQueryClient(clientCtx)
-	bscQueryClient := bsctypes.NewQueryClient(clientCtx)
 
 	hexPubKey := hex.EncodeToString(schnorr.SerializePubKey(btcPubKey))
 
@@ -786,7 +790,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 		addr          string
 	)
 	if err := retry.Do(func() error {
-		// check if the finality provider is a Babylon one
+		// check if the finality provider exists
 		resp, err := queryClient.FinalityProvider(
 			ctx,
 			&btcstypes.QueryFinalityProviderRequest{
@@ -800,33 +804,8 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 			return nil
 		}
 
-		// check if the finality provider is a consumer chain one
-		bscResp, bscErr := bscQueryClient.FinalityProviderConsumer(
-			ctx,
-			&bsctypes.QueryFinalityProviderConsumerRequest{
-				FpBtcPkHex: hexPubKey,
-			},
-		)
-		if bscErr == nil {
-			consumerFPResp, consumerFPErr := bscQueryClient.FinalityProvider(
-				ctx,
-				&bsctypes.QueryFinalityProviderRequest{
-					ConsumerId: bscResp.ConsumerId,
-					FpBtcPkHex: hexPubKey,
-				},
-			)
-			if consumerFPErr != nil {
-				return consumerFPErr
-			}
-			slashedHeight = consumerFPResp.FinalityProvider.SlashedBabylonHeight
-			pk = consumerFPResp.FinalityProvider.BtcPk
-			addr = resp.FinalityProvider.Addr
-			return nil
-		}
-
 		// the finality provider cannot be found
-		if strings.Contains(err.Error(), btcstypes.ErrFpNotFound.Error()) &&
-			strings.Contains(bscErr.Error(), btcstypes.ErrFpNotFound.Error()) {
+		if strings.Contains(err.Error(), btcstypes.ErrFpNotFound.Error()) {
 			// if there is no finality provider with such key, we return unrecoverable error, as we not need to retry any more
 			return retry.Unrecoverable(fmt.Errorf("failed to get finality provider with key: %s: %w", hexPubKey, ErrFinalityProviderDoesNotExist))
 		}
@@ -918,7 +897,7 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	commission *sdkmath.LegacyDec,
 	description *sttypes.Description,
 	pop *btcstypes.ProofOfPossessionBTC,
-	consumerID string,
+	bsnID string,
 ) error {
 	registerMsg := &btcstypes.MsgCreateFinalityProvider{
 		Addr: fpAddr.String(),
@@ -930,7 +909,7 @@ func (bc *BabylonController) RegisterFinalityProvider(
 		BtcPk:       btcPubKey,
 		Description: description,
 		Pop:         pop,
-		ConsumerId:  consumerID,
+		BsnId:       bsnID,
 	}
 
 	relayerMsgs := bbnclient.ToProviderMsgs([]sdk.Msg{registerMsg})
