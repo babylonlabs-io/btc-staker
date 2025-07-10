@@ -103,7 +103,6 @@ func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error
 }
 
 func (pop *BabylonPop) ValidatePop(
-	signingCtx string,
 	bbnAddr sdk.AccAddress,
 	btcPk *btcec.PublicKey,
 	net *chaincfg.Params,
@@ -120,7 +119,7 @@ func (pop *BabylonPop) ValidatePop(
 
 	btcPkBabylonFormat := bbn.NewBIP340PubKeyFromBTCPK(btcPk)
 	return bPop.Verify(
-		signingCtx,
+		"",
 		bbnAddr,
 		btcPkBabylonFormat,
 		net,

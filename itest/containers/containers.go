@@ -221,6 +221,9 @@ func (m *Manager) RunBabylondResource(
 				"9090/tcp", // only expose what we need
 				"26657/tcp",
 			},
+			Env: []string{
+				"BABYLON_BLS_PASSWORD=password",
+			},
 			Cmd: cmd,
 		},
 		func(config *docker.HostConfig) {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/mod/modfile"
 )
@@ -23,9 +22,9 @@ func GetBabylonVersion() (string, error) {
 		return "", err
 	}
 
-	const modName = "github.com/babylonlabs-io/babylon"
+	const modName = "github.com/babylonlabs-io/babylon/v3"
 	for _, require := range modFile.Require {
-		if strings.Contains(require.Mod.Path, modName) {
+		if require.Mod.Path == modName {
 			return require.Mod.Version, nil
 		}
 	}

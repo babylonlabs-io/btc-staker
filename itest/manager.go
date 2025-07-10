@@ -19,12 +19,14 @@ import (
 	"testing"
 	"time"
 
+	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
+	"github.com/babylonlabs-io/babylon/v3/app/signingcontext"
+	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	"github.com/ory/dockertest/v3"
-
-	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
 
 	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
 	txformat "github.com/babylonlabs-io/babylon/v3/btctxformatter"
@@ -714,7 +716,13 @@ func (tm *TestManager) createAndRegisterFinalityProviders(t *testing.T, stkData 
 		require.Error(t, err)
 		require.True(t, errors.Is(err, babylonclient.ErrFinalityProviderDoesNotExist))
 
-		pop, err := datagen.NewPoPBTC(stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
+		finalityModuleAddress := appparams.AccBTCStaking
+		chainIdTest := "chain-test"
+		addr, err := bech32.ConvertAndEncode(appparams.Bech32PrefixAccAddr, finalityModuleAddress)
+		require.NoError(t, err)
+		ctx := signingcontext.FpPopContextV0(chainIdTest, addr)
+
+		pop, err := datagen.NewPoPBTC(ctx, stkData.FinalityProviderBabylonAddrs[i], stkData.FinalityProviderBtcPrivKeys[i])
 		require.NoError(t, err)
 
 		btcFpKey := bbntypes.NewBIP340PubKeyFromBTCPK(stkData.FinalityProviderBtcKeys[i])

@@ -78,6 +78,7 @@ type SingleKeyKeyring interface {
 
 type BabylonClient interface {
 	SingleKeyKeyring
+	StakerPopSignCtx() (string, error)
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
@@ -217,6 +218,10 @@ func (m *MockBabylonClient) Undelegate(
 
 func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
 	return 0, nil
+}
+
+func (m *MockBabylonClient) StakerPopSignCtx() (string, error) {
+	return "", nil
 }
 
 func GetMockClient() *MockBabylonClient {
