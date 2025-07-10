@@ -359,6 +359,10 @@ replace (
 	// core v0.12 was tagged wrong
 	cosmossdk.io/core => cosmossdk.io/core v0.11.3
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
+	// LND brings unreleased `67b8efd3ba53` version of btcd which contains bug in
+	// rpc client described here: https://github.com/btcsuite/btcd/commit/42d6eba84bf9dc23b1182a35570bcd8f7f25616f
+	// TODO: remove this once LND releases a new version with fixed btcd
+	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.24.2
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 	github.com/strangelove-ventures/tokenfactory => github.com/babylonlabs-io/tokenfactory v0.50.6-wasmvm2
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7

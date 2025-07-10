@@ -603,9 +603,6 @@ func (bc *BabylonController) ExpandDelegation(dg *DelegationData) (*bct.RelayerT
 		return nil, fmt.Errorf("failed to convert delegation data to expansion message: %w", err)
 	}
 
-	// For now, we send the embedded MsgCreateBTCDelegation since the full MsgBtcStakeExpand
-	// type needs to be implemented in babylon. This maintains compatibility while adding
-	// the expansion-specific logic in the staker.
 	return bc.reliablySendMsgs([]sdk.Msg{stkExpandMsg})
 }
 

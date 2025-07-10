@@ -1,7 +1,7 @@
 # Creating and Submitting phase-1 Staking Transactions
 
 The phase-1 staking transaction is a
-[Bitcoin Staking transaction](https://github.com/babylonlabs-io/babylon/v3/blob/v0.9.0-rc.3/docs/staking-script.md)
+[Bitcoin Staking transaction](https://github.com/babylonlabs-io/babylon/blob/v0.9.0-rc.3/docs/staking-script.md)
 that includes an additional `OP_RETURN` field containing the staking parameters
 to enable for easy identification and taproot decoding through observing the
 Bitcoin ledger.

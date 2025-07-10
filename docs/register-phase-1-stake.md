@@ -4,7 +4,7 @@
 
 To register your Bitcoin stake on the Babylon chain, you must have a confirmed
 Bitcoin staking transaction. Before proceeding, please review the
-[Registration of Existing Stakes to the Babylon Chain](https://github.com/babylonlabs-io/babylon/v3/blob/main/docs/stake-registration.md)
+[Registration of Existing Stakes to the Babylon Chain](https://github.com/babylonlabs-io/babylon/blob/main/docs/stake-registration.md)
 documentation to check your eligibility and understand the registration
 requirements and process.
 
@@ -64,7 +64,7 @@ A few notes about the `global-parameters.json` file:
 > transaction (because it is a new one or very recently submitted), it cannot be
 > registered.
 > To check your eligibility please refer to the
-> [registration eligibility guide](https://github.com/babylonlabs-io/babylon/v3/blob/main/docs/stake-registration.md).
+> [registration eligibility guide](https://github.com/babylonlabs-io/babylon/blob/main/docs/stake-registration.md).
 
 Now that you have the `global-parameters.json` file, you can register your
 Bitcoin stake by running the following command:
