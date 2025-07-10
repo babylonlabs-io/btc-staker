@@ -957,18 +957,18 @@ func (app *App) buildAndSendDelegation(
 	stakingOutputIndex uint32,
 	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
-) (*bct.RelayerTxResponse, *cl.DelegationData, error) {
+) (*bct.RelayerTxResponse, error) {
 	delegation, err := app.buildDelegation(req, stakerAddress, stakingOutputIndex, stakingTime, storedTx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build delegation: %w", err)
+		return nil, fmt.Errorf("failed to build delegation: %w", err)
 	}
 
 	resp, err := app.babylonMsgSender.SendDelegation(delegation, req.requiredInclusionBlockDepth)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to send delegation: %w", err)
+		return nil, fmt.Errorf("failed to send delegation: %w", err)
 	}
 
-	return resp, delegation, nil
+	return resp, nil
 }
 
 // handles a send delegation request
@@ -1000,7 +1000,7 @@ func (app *App) handleSendDelegationRequest(
 
 	req := newSendDelegationRequest(&stakingTxHash, inclusionInfo, requiredDepthOnBtcChain, fpBtcPks, pop)
 	// resp, delegationData, err := app.buildAndSendDelegation(
-	resp, _, err := app.buildAndSendDelegation(
+	resp, err := app.buildAndSendDelegation(
 		req,
 		stakerAddress,
 		stakingOutputIdx,
@@ -1065,7 +1065,7 @@ func (app *App) handleSendStakeExpansionRequest(
 	)
 
 	// Use the same buildAndSendDelegation method - it already supports expansion via req.isExpansion
-	resp, _, err := app.buildAndSendDelegation(
+	resp, err := app.buildAndSendDelegation(
 		req,
 		stakerAddress,
 		stakingOutputIdx,

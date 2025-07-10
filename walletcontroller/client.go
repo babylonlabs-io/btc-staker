@@ -288,7 +288,7 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 	// Find required UTXOs
 	var requiredUtxos []Utxo
 	requiredValue := btcutil.Amount(0)
-	
+
 	for _, reqInput := range requiredInputs {
 		found := false
 		for _, utxo := range utxos {
@@ -318,7 +318,7 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 	var additionalUtxos []Utxo
 	if requiredValue < totalOutput+estimatedFee {
 		needed := totalOutput + estimatedFee - requiredValue
-		
+
 		// Filter out already required UTXOs and apply additional filter
 		var availableUtxos []Utxo
 		for _, utxo := range utxos {
@@ -348,13 +348,13 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 		}
 
 		if requiredValue+additionalValue < totalOutput+estimatedFee {
-			return nil, fmt.Errorf("insufficient funds: need %v, have %v", 
+			return nil, fmt.Errorf("insufficient funds: need %v, have %v",
 				totalOutput+estimatedFee, requiredValue+additionalValue)
 		}
 	}
 
 	// Combine all UTXOs
-	allUtxos := append(requiredUtxos, additionalUtxos...)
+	allUtxos := append(requiredUtxos, additionalUtxos...) //nolint:gocritic
 
 	changeScriptBytes, err := txscript.PayToAddrScript(changeScript)
 	if err != nil {
@@ -383,18 +383,18 @@ func estimateTransactionSize(inputCount, outputCount int, includeWitness bool) i
 	// - Output count: 1-9 bytes (varint)
 	// - Outputs: ~34 bytes each
 	// - Lock time: 4 bytes
-	
+
 	baseSize := 4 + 1 + 1 + 4 // version + input count + output count + lock time
-	
+
 	if includeWitness {
-		baseSize += 2 // witness marker and flag
+		baseSize += 2                // witness marker and flag
 		baseSize += inputCount * 148 // P2WPKH inputs with witness
 	} else {
 		baseSize += inputCount * 114 // P2PKH inputs without witness
 	}
-	
+
 	baseSize += outputCount * 34 // outputs
-	
+
 	return baseSize
 }
 

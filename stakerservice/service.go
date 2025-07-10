@@ -173,7 +173,6 @@ func parseStkParams(
 		fpPkBytes, err := hex.DecodeString(fpPk)
 		if err != nil {
 			return amount, nil, nil, 0, fmt.Errorf("error decoding finality provider public key: %w", err)
-
 		}
 
 		fpSchnorrKey, err := schnorr.ParsePubKey(fpPkBytes)
