@@ -1,0 +1,37 @@
+name: Release Workflow
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        type: string
+      description:
+        description: 'Release description'
+        required: true
+        type: string
+      prerelease:
+        description: 'Whether prerelease is enabled'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  call-reusable-release:
+    uses: babylonlabs-io/.github/.github/workflows/reusable_github_release.yml@v0.13.0
+    with:
+      tag: ${{ inputs.tag }}
+      description: ${{ inputs.description }}
+      prerelease: ${{ inputs.prerelease }}
+      changelog_path: "https://github.com/babylonlabs-io/babylon/blob/main/CHANGELOG.md"
+      build_command: |
+        make build
+      docker_image_table_template: |
+        | Image | Description |
+        |-----------------|----------------|
+        | babylonlabs/btc-staker:${{ inputs.tag }} | BTC staker Image |
+    secrets: inherit
