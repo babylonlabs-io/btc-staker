@@ -14,10 +14,6 @@ import (
 // we can make command to implement StakingEvent interface
 var _ StakingEvent = (*stakingRequestCmd)(nil)
 
-type stakeExpandRequestCmd struct {
-	stakingRequestCmd
-}
-
 // stakingRequestCmd represents a command to send a delegation request
 type stakingRequestCmd struct {
 	stakerAddress           btcutil.Address
@@ -30,6 +26,10 @@ type stakingRequestCmd struct {
 	pop                     *cl.BabylonPop
 	errChan                 chan error
 	successChan             chan *chainhash.Hash
+	// Expansion-specific fields for Babylon integration
+	requiredInputs      []wire.OutPoint
+	prevActiveStkTxHash *chainhash.Hash
+	fundingTx           *wire.MsgTx
 }
 
 // newOwnedStakingCommand builds a new staking command

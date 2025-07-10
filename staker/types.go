@@ -178,6 +178,14 @@ func createDelegationData(
 		Ud:                              undelegationData,
 	}
 
+	// Add expansion data if this is a stake expansion
+	if req.prevActiveStkTxHash != nil {
+		dg.StakeExpansion = &cl.StakeExpansionData{
+			PreviousStakingTxHash: req.prevActiveStkTxHash,
+			FundingTx:             req.fundingTx,
+		}
+	}
+
 	return &dg
 }
 

@@ -423,9 +423,9 @@ func stakeExpand(ctx *cli.Context) error {
 		return errors.New("previous active staking tx hash hex for stake expansion is empty")
 	}
 
-	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	results, err := client.StakeExpand(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, prevActiveStkTxHashHex)
 	if err != nil {
-		return fmt.Errorf("failed to stake: %w", err)
+		return fmt.Errorf("failed to stake expand: %w", err)
 	}
 
 	helpers.PrintRespJSON(results)

@@ -44,6 +44,9 @@ type sendDelegationRequest struct {
 	requiredInclusionBlockDepth uint32
 	fpBtcPubkeys                []*btcec.PublicKey
 	pop                         *cl.BabylonPop
+	// expansion-specific fields
+	prevActiveStkTxHash *chainhash.Hash
+	fundingTx           *wire.MsgTx
 }
 
 // buildDelegation builds a delegation data for a given staker address, staking output index and staking time.
@@ -508,5 +511,24 @@ func newSendDelegationRequest(
 		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
 		fpBtcPubkeys:                fpBtcPubkeys,
 		pop:                         pop,
+	}
+}
+
+// newSendDelegationExpansionRequest builds a sendDelegationRequest for stake expansion
+func newSendDelegationExpansionRequest(
+	btcStakingTxHash *chainhash.Hash,
+	requiredInclusionBlockDepth uint32,
+	fpBtcPubkeys []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
+	prevActiveStkTxHash *chainhash.Hash,
+	fundingTx *wire.MsgTx,
+) *sendDelegationRequest {
+	return &sendDelegationRequest{
+		btcTxHash:                   *btcStakingTxHash,
+		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
+		fpBtcPubkeys:                fpBtcPubkeys,
+		pop:                         pop,
+		prevActiveStkTxHash:         prevActiveStkTxHash,
+		fundingTx:                   fundingTx,
 	}
 }

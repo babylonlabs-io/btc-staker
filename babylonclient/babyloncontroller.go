@@ -373,6 +373,13 @@ type DelegationData struct {
 	StakerBtcPk                     *btcec.PublicKey
 	BabylonPop                      *BabylonPop
 	Ud                              *UndelegationData
+	StakeExpansion                  *StakeExpansionData
+}
+
+// StakeExpansionData holds data specific to stake expansion transactions
+type StakeExpansionData struct {
+	PreviousStakingTxHash *chainhash.Hash
+	FundingTx            *wire.MsgTx
 }
 
 // UndelegationData is a helper struct to hold the undelegation data
@@ -506,6 +513,43 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 	}, nil
 }
 
+// TODO: This will be replaced with proper MsgBtcStakeExpand when available in babylon
+type MsgBtcStakeExpand struct {
+	*btcstypes.MsgCreateBTCDelegation
+	PreviousStakingTxHash string `json:"previous_staking_tx_hash"`
+	FundingTx            []byte `json:"funding_tx"`
+}
+
+// delegationDataToMsgBtcStakeExpand is a helper function to convert delegation data to stake expansion message
+func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*MsgBtcStakeExpand, error) {
+	if dg == nil {
+		return nil, fmt.Errorf("nil delegation data")
+	}
+
+	if dg.StakeExpansion == nil {
+		return nil, fmt.Errorf("nil stake expansion data")
+	}
+
+	// First get the common delegation message
+	commonMsg, err := delegationDataToMsg(dg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create common delegation message: %w", err)
+	}
+
+	// Serialize the funding transaction
+	serializedFundingTx, err := utils.SerializeBtcTransaction(dg.StakeExpansion.FundingTx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize funding transaction: %w", err)
+	}
+
+	// Create the stake expansion message with all fields from common delegation
+	return &MsgBtcStakeExpand{
+		MsgCreateBTCDelegation:       commonMsg,
+		PreviousStakingTxHash:        dg.StakeExpansion.PreviousStakingTxHash.String(),
+		FundingTx:                    serializedFundingTx,
+	}, nil
+}
+
 // ReliablySendMsgs sends a batch of messages to the Babylon node
 func (bc *BabylonController) reliablySendMsgs(
 	msgs []sdk.Msg,
@@ -528,6 +572,19 @@ func (bc *BabylonController) Delegate(dg *DelegationData) (*bct.RelayerTxRespons
 	}
 
 	return bc.reliablySendMsgs([]sdk.Msg{delegateMsg})
+}
+
+// ExpandDelegation sends a stake expansion delegation message to the Babylon node
+func (bc *BabylonController) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
+	expandMsg, err := delegationDataToMsgBtcStakeExpand(dg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert delegation data to expansion message: %w", err)
+	}
+
+	// For now, we send the embedded MsgCreateBTCDelegation since the full MsgBtcStakeExpand
+	// type needs to be implemented in babylon. This maintains compatibility while adding
+	// the expansion-specific logic in the staker.
+	return bc.reliablySendMsgs([]sdk.Msg{expandMsg.MsgCreateBTCDelegation})
 }
 
 // getQueryContext returns context with timeout

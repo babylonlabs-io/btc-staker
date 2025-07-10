@@ -1026,11 +1026,110 @@ func (app *App) handleSendDelegationRequest(
 	return &stakingTxHash, resp.TxHash, nil
 }
 
-// handleStakingCmd handles a staking command
+// handleSendStakeExpansionRequest handles a stake expansion delegation request
+func (app *App) handleSendStakeExpansionRequest(
+	stakerAddress btcutil.Address,
+	stakingTime uint16,
+	requiredDepthOnBtcChain uint32,
+	fpBtcPks []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+	prevActiveStkTxHash *chainhash.Hash,
+	fundingTx *wire.MsgTx,
+) (btcTxHash *chainhash.Hash, btcDelTxHash string, err error) {
+	// check pop is not nil
+	if pop == nil {
+		return nil, btcDelTxHash, fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	// just to pass to buildAndSendDelegation
+	fakeStoredTx, err := stakerdb.CreateTrackedTransaction(
+		stakingTx,
+		stakerAddress,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to create tracked transaction: %w", err)
+	}
+
+	stakingTxHash := stakingTx.TxHash()
+
+	// Create expansion request with expansion-specific data
+	req := newSendDelegationExpansionRequest(
+		&stakingTxHash,
+		requiredDepthOnBtcChain,
+		fpBtcPks,
+		pop,
+		prevActiveStkTxHash,
+		fundingTx,
+	)
+
+	// Use the same buildAndSendDelegation method - it already supports expansion via req.isExpansion
+	resp, _, err := app.buildAndSendDelegation(
+		req,
+		stakerAddress,
+		stakingOutputIdx,
+		stakingTime,
+		fakeStoredTx,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to build and send stake expansion delegation: %w", err)
+	}
+
+	if err := app.txTracker.AddTransactionSentToBabylon(
+		stakingTx,
+		stakerAddress,
+	); err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to add transaction sent to babylon: %w", err)
+	}
+
+	app.wg.Add(1)
+	go app.checkForUnbondingTxSignaturesOnBabylon(&stakingTxHash)
+
+	return &stakingTxHash, resp.TxHash, nil
+}
+
+// handleStakingCmd handles a staking command (both regular and expansion)
 func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error) {
-	// Create unsigned transaction by wallet without signing. Signing will happen
-	// in next steps
-	stakingTx, err := app.wc.CreateTransaction(
+	var stakingTx *wire.MsgTx
+	var err error
+
+	isStakeExpansion := cmd.prevActiveStkTxHash != nil
+	if isStakeExpansion {
+		// Create transaction with specific inputs (used for stake expansion)
+		stakingTx, err = app.wc.CreateTransactionWithInputs(
+			cmd.requiredInputs,
+			[]*wire.TxOut{cmd.stakingOutput},
+			btcutil.Amount(cmd.feeRate),
+			cmd.stakerAddress,
+			nil, // No additional inputs needed
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build transaction with required inputs: %w", err)
+		}
+
+		// Send staking expansion transaction to Babylon node
+		btcTxHash, _, err := app.handleSendStakeExpansionRequest(
+			cmd.stakerAddress,
+			cmd.stakingTime,
+			cmd.requiredDepthOnBtcChain,
+			cmd.fpBtcPks,
+			cmd.pop,
+			stakingTx,
+			0,
+			cmd.prevActiveStkTxHash,
+			cmd.fundingTx,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to send stake expansion delegation request: %w", err)
+		}
+
+		return btcTxHash, nil
+	}
+
+	// Create regular staking transaction
+	stakingTx, err = app.wc.CreateTransaction(
 		[]*wire.TxOut{cmd.stakingOutput},
 		btcutil.Amount(cmd.feeRate),
 		cmd.stakerAddress,
@@ -1362,7 +1461,8 @@ func (app *App) StakeFunds(
 	}
 }
 
-// StakeExpand stakes funds to the staker address
+// StakeExpand expands an existing stake by consuming the previous staking UTXO
+// and creating a new larger staking transaction with additional funding
 func (app *App) StakeExpand(
 	stakerAddress btcutil.Address,
 	stakingAmount btcutil.Amount,
@@ -1453,12 +1553,35 @@ func (app *App) StakeExpand(
 
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
-	app.logger.WithFields(logrus.Fields{
-		"stakerAddress": stakerAddress,
-		"stakingAmount": stakingInfo.StakingOutput,
-		"fee":           feeRate,
-	}).Info("Created and signed staking transaction")
+	// Step 1: Create funding transaction with additional funds
+	// This provides the extra amount needed to expand the stake
+	fundingTx, err := app.wc.CreateTransaction(
+		[]*wire.TxOut{stakingInfo.StakingOutput}, // Create output with full new staking amount
+		btcutil.Amount(feeRate),
+		stakerAddress,
+		app.filterUtxoFnGen(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create funding transaction: %w", err)
+	}
 
+	// Prepare required inputs for staking transaction
+	fundingTxHash := fundingTx.TxHash()
+	requiredInputs := []wire.OutPoint{
+		{Hash: *prevActiveStkTxHash, Index: 0}, // Previous stake
+		{Hash: fundingTxHash, Index: 0},        // Funding
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress":  stakerAddress,
+		"stakingAmount":  stakingAmount,
+		"fee":            feeRate,
+		"prevStakingTx":  prevActiveStkTxHash,
+		"fundingTxHash":  fundingTxHash,
+		"requiredInputs": len(requiredInputs),
+	}).Info("Created funding transaction for stake expansion")
+
+	// Create expansion command using regular staking command with required inputs
 	req := newOwnedStakingCommand(
 		stakerAddress,
 		stakingInfo.StakingOutput,
@@ -1469,6 +1592,11 @@ func (app *App) StakeExpand(
 		params.ConfirmationTimeBlocks,
 		pop,
 	)
+
+	// Set expansion-specific fields
+	req.requiredInputs = requiredInputs
+	req.prevActiveStkTxHash = prevActiveStkTxHash
+	req.fundingTx = fundingTx
 
 	utils.PushOrQuit[*stakingRequestCmd](
 		app.stakingRequestedCmdChan,

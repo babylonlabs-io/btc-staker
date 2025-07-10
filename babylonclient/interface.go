@@ -82,6 +82,7 @@ type BabylonClient interface {
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
+	ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
@@ -168,6 +169,11 @@ func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse
 	m.SentMessages <- msg
 
 	return &bct.RelayerTxResponse{Code: 0}, nil
+}
+
+func (m *MockBabylonClient) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
+	// For the mock, treat expansion same as regular delegation
+	return m.Delegate(dg)
 }
 
 func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*FinalityProvidersClientResponse, error) {

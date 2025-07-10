@@ -142,6 +142,37 @@ func (m *BabylonMsgSender) sendDelegationAsync(stakingTxHash *chainhash.Hash, re
 	}()
 }
 
+func (m *BabylonMsgSender) sendDelExpansionAsync(stakingTxHash *chainhash.Hash, req *sendDelegationRequest) {
+	// do not check the error, as only way for it to return err is if provided context would be cancelled
+	// which can't happen here
+	_ = m.s.Acquire(context.Background(), 1)
+	m.wg.Add(1)
+	go func() {
+		defer m.s.Release(1)
+		defer m.wg.Done()
+		txResp, err := m.cl.ExpandDelegation(req.dg)
+
+		if err != nil {
+			if errors.Is(err, ErrInvalidBabylonExecution) {
+				m.logger.WithFields(logrus.Fields{
+					"btcTxHash":          stakingTxHash,
+					"babylonTxHash":      txResp.TxHash,
+					"babylonBlockHeight": txResp.Height,
+					"babylonErrorCode":   txResp.Code,
+				}).Error("Invalid delegation expansion data sent to babylon")
+			}
+
+			m.logger.WithFields(logrus.Fields{
+				"btcTxHash": stakingTxHash,
+				"err":       err,
+			}).Error("Error while sending delegation expansion data to babylon")
+
+			req.ErrorChan() <- fmt.Errorf("failed to send delegation expansion for tx with hash: %s: %w", stakingTxHash.String(), err)
+		}
+		req.ResultChan() <- txResp
+	}()
+}
+
 func (m *BabylonMsgSender) handleSentToBabylon() {
 	defer m.wg.Done()
 	for {
@@ -164,7 +195,12 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 				continue
 			}
 
-			m.sendDelegationAsync(&stakingTxHash, req)
+			// Route to appropriate async handler based on whether this is a stake expansion
+			if req.dg.StakeExpansion != nil {
+				m.sendDelExpansionAsync(&stakingTxHash, req)
+			} else {
+				m.sendDelegationAsync(&stakingTxHash, req)
+			}
 
 		case <-m.quit:
 			return
