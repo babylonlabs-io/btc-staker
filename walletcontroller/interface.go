@@ -50,15 +50,6 @@ type TaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription
 }
 
-type MultiInputTaprootSigningRequest struct {
-	FundingOutput    *wire.TxOut     // The taproot output being spent
-	TxToSign         *wire.MsgTx     // The complete multi-input transaction
-	InputIndex       int             // Which input index to sign (0-based)
-	SignerAddress    btcutil.Address // Address that controls the taproot input
-	SpendDescription *SpendPathDescription
-	AllPrevOutputs   map[wire.OutPoint]*wire.TxOut // All previous outputs for all inputs (needed for signing)
-}
-
 type TwoInputTaprootSigningRequest struct {
 	TxToSign         *wire.MsgTx           // The two-input transaction to sign
 	StakingOutput    *wire.TxOut           // Input 0: Previous staking output (taproot)
