@@ -130,7 +130,7 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 
 	prevActiveStkTxHash, err := chainhash.NewHashFromStr(prevActiveStkTxHashHex)
 	if err != nil {
-		return nil, fmt.Errorf("error stake expand parse previous staking tx hash hex: %s - %w", prevActiveStkTxHashHex, err)
+		return nil, fmt.Errorf("failed to parse previous staking transaction hash hex %s: %w", prevActiveStkTxHashHex, err)
 	}
 
 	stakingTxHash, err := s.staker.StakeExpand(stakerAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
