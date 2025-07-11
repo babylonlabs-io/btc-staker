@@ -908,7 +908,7 @@ func createWithdrawalInfo(
 
 		unbondingTxHash := unbondingTx.TxHash()
 
-		if err := btcstaking.IsSimpleTransfer(unbondingTx); err != nil {
+		if err := isSimpleTransfer(unbondingTx); err != nil {
 			return nil, fmt.Errorf("unbonding transaction is not valid: %w", err)
 		}
 

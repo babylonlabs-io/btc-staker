@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/urfave/cli"
 )
 
@@ -107,4 +108,43 @@ func parseCovenantQuorumFromCliCtx(ctx *cli.Context) (uint32, error) {
 		return 0, fmt.Errorf("covenant quorum should be less or equal to %d", math.MaxUint32)
 	}
 	return uint32(covenantQuorumUint64), nil
+}
+
+// isTransferTx Transfer transaction is a transaction which:
+// - has exactly one input
+// - has exactly one output
+func isTransferTx(tx *wire.MsgTx) error {
+	if tx == nil {
+		return fmt.Errorf("transfer transaction must have cannot be nil")
+	}
+
+	if len(tx.TxIn) != 1 {
+		return fmt.Errorf("transfer transaction must have exactly one input")
+	}
+
+	if len(tx.TxOut) != 1 {
+		return fmt.Errorf("transfer transaction must have exactly one output")
+	}
+
+	return nil
+}
+
+// isSimpleTransfer Simple transfer transaction is a transaction which:
+// - has exactly one input
+// - has exactly one output
+// - is not replaceable
+// - does not have any locktime
+func isSimpleTransfer(tx *wire.MsgTx) error {
+	if err := isTransferTx(tx); err != nil {
+		return fmt.Errorf("invalid simple transfer tx: %w", err)
+	}
+
+	if tx.TxIn[0].Sequence != wire.MaxTxInSequenceNum {
+		return fmt.Errorf("simple transfer tx must not be replaceable")
+	}
+
+	if tx.LockTime != 0 {
+		return fmt.Errorf("simple transfer tx must not have locktime")
+	}
+	return nil
 }
