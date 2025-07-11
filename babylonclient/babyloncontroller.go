@@ -1033,6 +1033,7 @@ func (bc *BabylonController) CreateCovenantMessage(
 	slashStakingAdaptorSigs [][]byte,
 	unbondindgSig *bbntypes.BIP340Signature,
 	slashUnbondingAdaptorSigs [][]byte,
+	stakeExpTxSig *bbntypes.BIP340Signature,
 ) *btcstypes.MsgAddCovenantSigs {
 	msg := &btcstypes.MsgAddCovenantSigs{
 		Signer:                  bc.getTxSigner(),
@@ -1041,6 +1042,7 @@ func (bc *BabylonController) CreateCovenantMessage(
 		SlashingTxSigs:          slashStakingAdaptorSigs,
 		UnbondingTxSig:          unbondindgSig,
 		SlashingUnbondingTxSigs: slashUnbondingAdaptorSigs,
+		StakeExpansionTxSig:     stakeExpTxSig,
 	}
 
 	return msg
@@ -1076,6 +1078,18 @@ func (bc *BabylonController) RegisterConsumerChain(id, name, description string)
 // QueryPendingBTCDelegations queries for pending BTC delegations
 // Test methods for e2e testing
 func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDelegationResponse, error) {
+	return bc.QueryBTCDelegationsWithStatus(btcstypes.BTCDelegationStatus_PENDING)
+}
+
+// QueryVerifiedBTCDelegations queries for verified BTC delegations
+// Test methods for e2e testing
+func (bc *BabylonController) QueryVerifiedBTCDelegations() ([]*btcstypes.BTCDelegationResponse, error) {
+	return bc.QueryBTCDelegationsWithStatus(btcstypes.BTCDelegationStatus_VERIFIED)
+}
+
+// QueryBTCDelegationsWithStatus queries for BTC delegations in the specified status
+// Test methods for e2e testing
+func (bc *BabylonController) QueryBTCDelegationsWithStatus(status btcstypes.BTCDelegationStatus) ([]*btcstypes.BTCDelegationResponse, error) {
 	ctx, cancel := getQueryContext(bc.cfg.Timeout)
 	defer cancel()
 
@@ -1084,7 +1098,7 @@ func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDeleg
 
 	// query all the unsigned delegations
 	queryRequest := btcstypes.QueryBTCDelegationsRequest{
-		Status: btcstypes.BTCDelegationStatus_PENDING,
+		Status: status,
 	}
 
 	res, err := queryClient.BTCDelegations(ctx, &queryRequest)

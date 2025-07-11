@@ -73,17 +73,6 @@ type WalletController interface {
 		changeScript btcutil.Address,
 		usedUtxoFilter UseUtxoFn,
 	) (*wire.MsgTx, error)
-	// CreateTransactionWithInputs creates a transaction with specific inputs and outputs
-	// requiredInputs: specific UTXOs that must be included as inputs
-	// additionalFilter: optional filter for selecting additional UTXOs if needed
-	// If requiredInputs don't provide enough value, additionalFilter will be used to select more
-	CreateTransactionWithInputs(
-		requiredInputs []wire.OutPoint,
-		outputs []*wire.TxOut,
-		feeRatePerKb btcutil.Amount,
-		changeScript btcutil.Address,
-		additionalFilter UseUtxoFn,
-	) (*wire.MsgTx, error)
 	SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error)
 	// requires wallet to be unlocked
 	// passning nil usedUtxoFilter will use all possible spendable utxos to choose

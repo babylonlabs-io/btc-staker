@@ -1096,19 +1096,20 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 
 	isStakeExpansion := cmd.prevActiveStkTxHash != nil
 	if isStakeExpansion {
-		// Create transaction with specific inputs (used for stake expansion)
-		stakingTx, err = app.wc.CreateTransactionWithInputs(
-			cmd.requiredInputs,
-			[]*wire.TxOut{cmd.stakingOutput},
-			btcutil.Amount(cmd.feeRate),
+		// Build stake expansion transaction with exactly 2 inputs
+		stakingTx, err = app.buildStakeExpansionTransaction(
 			cmd.stakerAddress,
-			nil, // No additional inputs needed
+			cmd.stakingOutput,
+			int64(cmd.feeRate),
+			cmd.prevActiveStkTxHash,
+			cmd.fundingTx,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build transaction with required inputs: %w", err)
+			return nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
 		}
 
-		// Send staking expansion transaction to Babylon node
+		// Send stake expansion delegation to Babylon (step 1 of the flow)
+		// This will create a pending BTC delegation and wait for covenant signatures
 		btcTxHash, _, err := app.handleSendStakeExpansionRequest(
 			cmd.stakerAddress,
 			cmd.stakingTime,
@@ -1125,6 +1126,8 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 			return nil, fmt.Errorf("failed to send stake expansion delegation request: %w", err)
 		}
 
+		// The expansion transaction will be sent to Bitcoin later in the flow
+		// after covenant signatures are received and the delegation is verified
 		return btcTxHash, nil
 	}
 
@@ -1553,35 +1556,56 @@ func (app *App) StakeExpand(
 
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
-	// Step 1: Create funding transaction with additional funds
-	// This provides the extra amount needed to expand the stake
-	fundingTx, err := app.wc.CreateTransaction(
-		[]*wire.TxOut{stakingInfo.StakingOutput}, // Create output with full new staking amount
+	// Step 1: Get the previous staking amount to calculate additional amount needed
+	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
+	}
+	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
+	additionalAmount := stakingAmount - prevStakingAmount
+	if additionalAmount <= 0 {
+		return nil, fmt.Errorf("expansion amount must be greater than previous staking amount")
+	}
+
+	// Step 2: Estimate the fee for the expansion transaction
+	estimatedSize := app.estimateStakeExpansionTxSize()
+	estimatedFee := btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
+
+	// Step 3: Create funding transaction that provides the additional amount PLUS fees
+	fundingScript, err := txscript.PayToAddrScript(stakerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create funding script: %w", err)
+	}
+	fundingAmount := additionalAmount + estimatedFee
+	fundingOutput := wire.NewTxOut(int64(fundingAmount), fundingScript)
+
+	fundingTx, err := app.wc.CreateAndSignTx(
+		[]*wire.TxOut{fundingOutput},
 		btcutil.Amount(feeRate),
 		stakerAddress,
 		app.filterUtxoFnGen(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create funding transaction: %w", err)
+		return nil, fmt.Errorf("failed to create and sign funding transaction: %w", err)
 	}
 
-	// Prepare required inputs for staking transaction
-	fundingTxHash := fundingTx.TxHash()
-	requiredInputs := []wire.OutPoint{
-		{Hash: *prevActiveStkTxHash, Index: 0}, // Previous stake
-		{Hash: fundingTxHash, Index: 0},        // Funding
+	// Step 3: Send the funding transaction to the network
+	fundingTxHash, err := app.wc.SendRawTransaction(fundingTx, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send funding transaction: %w", err)
 	}
 
 	app.logger.WithFields(logrus.Fields{
-		"stakerAddress":  stakerAddress,
-		"stakingAmount":  stakingAmount,
-		"fee":            feeRate,
-		"prevStakingTx":  prevActiveStkTxHash,
-		"fundingTxHash":  fundingTxHash,
-		"requiredInputs": len(requiredInputs),
+		"stakerAddress":     stakerAddress,
+		"stakingAmount":     stakingAmount,
+		"prevStakingAmount": prevStakingAmount,
+		"additionalAmount":  additionalAmount,
+		"fundingAmount":     fundingAmount,
+		"estimatedFee":      estimatedFee,
+		"fundingTxHash":     fundingTxHash,
 	}).Info("Created funding transaction for stake expansion")
 
-	// Create expansion command using regular staking command with required inputs
+	// Create expansion command using regular staking command
 	req := newOwnedStakingCommand(
 		stakerAddress,
 		stakingInfo.StakingOutput,
@@ -1594,7 +1618,6 @@ func (app *App) StakeExpand(
 	)
 
 	// Set expansion-specific fields
-	req.requiredInputs = requiredInputs
 	req.prevActiveStkTxHash = prevActiveStkTxHash
 	req.fundingTx = fundingTx
 
@@ -2129,4 +2152,93 @@ func checkConfirmationDepth(tipBlockHeight, txInclusionBlockHeight, confirmation
 // GetTxTracker returns the tx tracker
 func (app *App) GetTxTracker() *stakerdb.TrackedTransactionStore {
 	return app.txTracker
+}
+
+// buildStakeExpansionTransaction builds a transaction that spends the previous staking output
+// through the unbonding path and the funding output to create a new larger staking output
+func (app *App) buildStakeExpansionTransaction(
+	stakerAddress btcutil.Address,
+	stakingOutput *wire.TxOut,
+	feeRate int64,
+	prevActiveStkTxHash *chainhash.Hash,
+	fundingTx *wire.MsgTx,
+) (*wire.MsgTx, error) {
+	// Create the expansion transaction structure
+	expansionTx := wire.NewMsgTx(wire.TxVersion)
+
+	// Input 1: Previous staking output (to be spent through unbonding path)
+	prevStakingInput := wire.NewTxIn(
+		&wire.OutPoint{
+			Hash:  *prevActiveStkTxHash,
+			Index: 0, // Staking output is always at index 0
+		},
+		nil, // scriptSig will be empty for taproot
+		nil, // witness will be added later during signing
+	)
+	expansionTx.AddTxIn(prevStakingInput)
+
+	// Input 2: Funding transaction output (regular UTXO)
+	fundingTxHash := fundingTx.TxHash()
+	fundingInput := wire.NewTxIn(
+		&wire.OutPoint{
+			Hash:  fundingTxHash,
+			Index: 0, // Funding output is at index 0
+		},
+		nil, // scriptSig will be empty for segwit
+		nil, // witness will be added later during signing
+	)
+	expansionTx.AddTxIn(fundingInput)
+
+	// Output 1: New staking output with expanded amount
+	expansionTx.AddTxOut(stakingOutput)
+
+	// Get amounts from the input transactions
+	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
+	}
+	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
+	fundingAmount := btcutil.Amount(fundingTx.TxOut[0].Value)
+
+	// Calculate total input value
+	totalInputValue := prevStakingAmount + fundingAmount
+
+	// Estimate fee for this transaction
+	estimatedSize := app.estimateStakeExpansionTxSize()
+	estimatedFee := btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
+
+	// Calculate change (if any)
+	stakingAmount := btcutil.Amount(stakingOutput.Value)
+	change := totalInputValue - stakingAmount - estimatedFee
+
+	// Add change output if there's enough for dust threshold
+	if change > btcutil.Amount(546) { // Standard dust threshold
+		changeScript, err := txscript.PayToAddrScript(stakerAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create change script: %w", err)
+		}
+		changeOutput := wire.NewTxOut(int64(change), changeScript)
+		expansionTx.AddTxOut(changeOutput)
+	}
+
+	// Verify we have sufficient funds
+	if totalInputValue < stakingAmount+estimatedFee {
+		return nil, fmt.Errorf("insufficient funds: need %v, have %v", stakingAmount+estimatedFee, totalInputValue)
+	}
+
+	return expansionTx, nil
+}
+
+// estimateStakeExpansionTxSize estimates the size of a stake expansion transaction
+func (app *App) estimateStakeExpansionTxSize() int {
+	// Transaction with:
+	// - 1 taproot input (previous staking output) with witness: ~110 bytes
+	// - 1 P2WPKH input (funding output) with witness: ~68 bytes
+	// - 1 taproot output (new staking output): ~43 bytes
+	// - 1 P2WPKH output (change): ~31 bytes
+	// - Base transaction overhead: ~11 bytes
+	// - Witness overhead: ~2 bytes
+	
+	// Total: 110 + 68 + 43 + 31 + 11 + 2 = 265 bytes
+	return 300 // Add some buffer for safety
 }
