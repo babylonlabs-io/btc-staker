@@ -332,7 +332,6 @@ func (app *App) signStakingTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.
 func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
 	// Input 0: Previous staking output (taproot, needs unbonding path signing)
 	// Input 1: Funding output (regular UTXO, can be signed normally)
-	prevStakingOutpoint := tx.TxIn[0].PreviousOutPoint
 	fundingOutpoint := tx.TxIn[1].PreviousOutPoint
 
 	// Get delegation info for the expansion transaction
@@ -465,7 +464,7 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 	// Use the new two-input signing method that matches the covenant signature approach
 	twoInputReq := &walletcontroller.TwoInputTaprootSigningRequest{
 		TxToSign:      tx,                                                     // Complete two-input transaction
-		StakingOutput: prevStakingTx.MsgTx().TxOut[prevStakingOutpoint.Index], // Input 0: Previous staking output
+		StakingOutput: prevStakingTx.MsgTx().TxOut[prevDel.StakingOutputIdx], // Input 0: Previous staking output
 		FundingOutput: fundingTx.MsgTx().TxOut[fundingOutpoint.Index],         // Input 1: Funding output
 		SignerAddress: stakerAddress,
 		SpendDescription: &walletcontroller.SpendPathDescription{
