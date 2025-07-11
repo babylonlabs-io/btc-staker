@@ -1568,8 +1568,8 @@ func (app *App) StakeExpand(
 	}
 
 	// Step 2: Estimate the fee for the expansion transaction
-	estimatedSize := app.estimateStakeExpansionTxSize()
-	estimatedFee := btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
+	// Use a conservative estimate: 300 bytes for 2-input, 2-output transaction
+	estimatedFee := btcutil.Amount(300) * btcutil.Amount(feeRate) / 1000
 
 	// Step 3: Create funding transaction that provides the additional amount PLUS fees
 	fundingScript, err := txscript.PayToAddrScript(stakerAddress)
@@ -2163,17 +2163,23 @@ func (app *App) buildStakeExpansionTransaction(
 	prevActiveStkTxHash *chainhash.Hash,
 	fundingTx *wire.MsgTx,
 ) (*wire.MsgTx, error) {
-	// Create the expansion transaction structure
+	// Get the previous staking transaction to determine input amounts
+	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
+	}
+
+	// Create the expansion transaction manually since we need to specify exact inputs
 	expansionTx := wire.NewMsgTx(wire.TxVersion)
 
 	// Input 1: Previous staking output (to be spent through unbonding path)
 	prevStakingInput := wire.NewTxIn(
 		&wire.OutPoint{
 			Hash:  *prevActiveStkTxHash,
-			Index: 0, // Staking output is always at index 0
+			Index: 0,
 		},
-		nil, // scriptSig will be empty for taproot
-		nil, // witness will be added later during signing
+		nil,
+		nil,
 	)
 	expansionTx.AddTxIn(prevStakingInput)
 
@@ -2182,37 +2188,32 @@ func (app *App) buildStakeExpansionTransaction(
 	fundingInput := wire.NewTxIn(
 		&wire.OutPoint{
 			Hash:  fundingTxHash,
-			Index: 0, // Funding output is at index 0
+			Index: 0,
 		},
-		nil, // scriptSig will be empty for segwit
-		nil, // witness will be added later during signing
+		nil,
+		nil,
 	)
 	expansionTx.AddTxIn(fundingInput)
 
 	// Output 1: New staking output with expanded amount
 	expansionTx.AddTxOut(stakingOutput)
 
-	// Get amounts from the input transactions
-	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
-	}
+	// Calculate fee and change manually since we can't use automated fee calculation
+	// for transactions with UTXOs not in the wallet
 	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
 	fundingAmount := btcutil.Amount(fundingTx.TxOut[0].Value)
-
-	// Calculate total input value
 	totalInputValue := prevStakingAmount + fundingAmount
-
-	// Estimate fee for this transaction
-	estimatedSize := app.estimateStakeExpansionTxSize()
+	
+	// Estimate fee (conservative estimate for 2-input, 2-output transaction)
+	estimatedSize := 300
 	estimatedFee := btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
-
-	// Calculate change (if any)
+	
+	// Calculate change
 	stakingAmount := btcutil.Amount(stakingOutput.Value)
 	change := totalInputValue - stakingAmount - estimatedFee
-
-	// Add change output if there's enough for dust threshold
-	if change > btcutil.Amount(546) { // Standard dust threshold
+	
+	// Add change output if there's enough above dust threshold
+	if change > btcutil.Amount(546) {
 		changeScript, err := txscript.PayToAddrScript(stakerAddress)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create change script: %w", err)
@@ -2227,18 +2228,4 @@ func (app *App) buildStakeExpansionTransaction(
 	}
 
 	return expansionTx, nil
-}
-
-// estimateStakeExpansionTxSize estimates the size of a stake expansion transaction
-func (app *App) estimateStakeExpansionTxSize() int {
-	// Transaction with:
-	// - 1 taproot input (previous staking output) with witness: ~110 bytes
-	// - 1 P2WPKH input (funding output) with witness: ~68 bytes
-	// - 1 taproot output (new staking output): ~43 bytes
-	// - 1 P2WPKH output (change): ~31 bytes
-	// - Base transaction overhead: ~11 bytes
-	// - Witness overhead: ~2 bytes
-	
-	// Total: 110 + 68 + 43 + 31 + 11 + 2 = 265 bytes
-	return 300 // Add some buffer for safety
 }

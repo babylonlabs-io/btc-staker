@@ -50,6 +50,23 @@ type TaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription
 }
 
+type MultiInputTaprootSigningRequest struct {
+	FundingOutput    *wire.TxOut     // The taproot output being spent
+	TxToSign         *wire.MsgTx     // The complete multi-input transaction
+	InputIndex       int             // Which input index to sign (0-based)
+	SignerAddress    btcutil.Address // Address that controls the taproot input
+	SpendDescription *SpendPathDescription
+	AllPrevOutputs   map[wire.OutPoint]*wire.TxOut // All previous outputs for all inputs (needed for signing)
+}
+
+type TwoInputTaprootSigningRequest struct {
+	TxToSign         *wire.MsgTx           // The two-input transaction to sign
+	StakingOutput    *wire.TxOut           // Input 0: Previous staking output (taproot)
+	FundingOutput    *wire.TxOut           // Input 1: Funding output
+	SignerAddress    btcutil.Address       // Address that controls the staking output
+	SpendDescription *SpendPathDescription // Script path for spending the staking output
+}
+
 // TaprootSigningResult contains result of signing taproot spend through bitcoind
 // wallet. It will contain either Signature or FullInputWitness, never both.
 type TaprootSigningResult struct {
@@ -97,6 +114,9 @@ type WalletController interface {
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
 	SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error)
+	// SignTwoInputTaprootSpendingTransaction signs the first input of a two-input transaction
+	// using the same method as Babylon's SignTxForFirstScriptSpendWithTwoInputsFromTapLeaf
+	SignTwoInputTaprootSpendingTransaction(req *TwoInputTaprootSigningRequest) (*TaprootSigningResult, error)
 	OutputSpent(
 		txHash *chainhash.Hash,
 		outputIdx uint32,
