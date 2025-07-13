@@ -1,0 +1,269 @@
+package staker
+
+import (
+	"fmt"
+
+	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	btcstktypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
+	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
+)
+
+type stakeExpSignInfo struct {
+	StakingOutput *wire.TxOut
+	FundingOutput *wire.TxOut
+	SpendInfo     *staking.SpendInfo
+}
+
+// signStakingTransaction signs a staking transaction, handling both regular staking
+// and stake expansion transactions with different signing requirements
+func (app *App) signStakingTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
+	// Check if this is a stake expansion transaction (exactly 2 inputs)
+	if len(tx.TxIn) == 2 {
+		// This is likely a stake expansion transaction
+		// Input 0: Previous staking output (taproot, needs special signing)
+		// Input 1: Funding output (regular UTXO, can be signed normally)
+
+		// Try to sign as stake expansion transaction
+		return app.signStakeExpansionTransaction(tx, stakingTxHash)
+	}
+
+	// Regular staking transaction - use normal wallet signing
+	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign regular staking transaction: %w", err)
+	}
+
+	if !fullySigned {
+		return nil, nil // Return nil to indicate signing failed
+	}
+
+	return signedTx, nil
+}
+
+// signStakeExpansionTransaction signs a stake expansion transaction with mixed input types
+func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
+	// Get delegation info for the expansion transaction
+	di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get delegation info for expansion transaction: %w", err)
+	}
+
+	// Verify this is a stake expansion transaction
+	if di.BtcDelegation.StkExp == nil {
+		return nil, fmt.Errorf("delegation is not a stake expansion")
+	}
+
+	// Check if we have covenant signatures for stake expansion
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get babylon params: %w", err)
+	}
+
+	// For stake expansion, we need to check both:
+	// 1. PreviousStkCovenantSigs - for spending the previous staking output
+	// 2. Regular covenant unbonding signatures - for the new staking transaction
+	if len(di.BtcDelegation.StkExp.PreviousStkCovenantSigs) < int(params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("not enough previous staking covenant signatures for stake expansion: have %d, need %d",
+			len(di.BtcDelegation.StkExp.PreviousStkCovenantSigs), params.CovenantQuruomThreshold)
+	}
+
+	// Also check if we have regular covenant unbonding signatures for the expansion delegation
+	undelegationInfo, err := app.babylonClient.GetUndelegationInfo(di)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get undelegation info for expansion: %w", err)
+	}
+
+	if len(undelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("not enough covenant unbonding signatures for stake expansion: have %d, need %d",
+			len(undelegationInfo.CovenantUnbondingSignatures), params.CovenantQuruomThreshold)
+	}
+
+	// Build the unbondWitness for the taproot input
+	unbondWitness, err := app.buildUnbondingPathWitness(params, tx, di.BtcDelegation.StkExp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create unbonding path witness: %w", err)
+	}
+
+	// Add the witness to the taproot spent and sign the staking expansion transaction
+	tx.TxIn[0].Witness = unbondWitness
+	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign funding input: %w", err)
+	}
+
+	if !fullySigned {
+		return nil, fmt.Errorf("failed to fully sign funding input")
+	}
+
+	return signedTx, nil
+}
+
+// getStakeExpansionSignInfo retrieves the necessary information for stake expansion signing.
+// This includes both inputs and the previous delegation's unbonding spend path.
+func (app *App) getStakeExpansionSignInfo(params *cl.StakingParams, stakerAddr btcutil.Address, stakingTxHash chainhash.Hash, fundingOutpoint wire.OutPoint, previousStakingTxHashHex string) (*stakeExpSignInfo, error) {
+	// Get the funding transaction (we need it for validation but don't use it directly)
+	fundingTx, err := app.wc.Tx(&fundingOutpoint.Hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get funding transaction: %w", err)
+	}
+
+	// Get the previous staking transaction
+	prevStakingHash, err := chainhash.NewHashFromStr(previousStakingTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse previous staking transaction hash: %w", err)
+	}
+	prevStakingTx, err := app.wc.Tx(prevStakingHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
+	}
+
+	prevDelegationResult, err := app.babylonClient.QueryBTCDelegation(prevStakingHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous delegation: %w", err)
+	}
+
+	if prevDelegationResult.BtcDelegation == nil {
+		return nil, fmt.Errorf("previous delegation not found")
+	}
+
+	prevDel := prevDelegationResult.BtcDelegation
+
+	si, err := app.getUnbondingSpendInfo(params, stakerAddr, prevDel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous staking transaction unbonding spend path: %w", err)
+	}
+	return &stakeExpSignInfo{
+		StakingOutput: prevStakingTx.MsgTx().TxOut[prevDel.StakingOutputIdx],
+		FundingOutput: fundingTx.MsgTx().TxOut[fundingOutpoint.Index],
+		SpendInfo:     si,
+	}, nil
+}
+
+func (app *App) getUnbondingSpendInfo(params *cl.StakingParams, stakerAddr btcutil.Address, del *btcstktypes.BTCDelegationResponse) (*staking.SpendInfo, error) {
+	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staker public key: %w", err)
+	}
+
+	// Get finality provider public keys from the PREVIOUS delegation
+	prevFpBtcPubkeys, err := convertFpBtcPkToBtcPk(del.FpBtcPkList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert previous fp btc pubkeys: %w", err)
+	}
+
+	// Build the unbonding spend info using the PREVIOUS delegation's parameters
+	prevStakingInfo, err := staking.BuildStakingInfo(
+		stakerPubKey,
+		prevFpBtcPubkeys,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		uint16(del.StakingTime),
+		btcutil.Amount(del.TotalSat),
+		app.network,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build previous staking info: %w", err)
+	}
+
+	return prevStakingInfo.UnbondingPathSpendInfo()
+}
+
+// buildUnbondingPathWitness retrieves the witness for the unbonding path of a stake expansion transaction.
+// This is used to sign the taproot input that spends the previous staking output.
+// It handles the covenant signatures and the taproot signature for the staker.
+func (app *App) buildUnbondingPathWitness(params *cl.StakingParams, tx *wire.MsgTx, stkExp *btcstktypes.StakeExpansionResponse) (wire.TxWitness, error) {
+	var (
+		fundingOutpoint  = tx.TxIn[1].PreviousOutPoint
+		stakingTxHash    = tx.TxHash()
+		_, stakerAddress = app.mustGetTransactionAndStakerAddress(&stakingTxHash)
+	)
+
+	si, err := app.getStakeExpansionSignInfo(params, stakerAddress, tx.TxHash(), fundingOutpoint, stkExp.PreviousStakingTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stake expansion signing info: %w", err)
+	}
+
+	// Use the new two-input signing method that matches the covenant signature approach
+	twoInputReq := &walletcontroller.TwoInputTaprootSigningRequest{
+		TxToSign:      tx,               // Complete two-input transaction
+		StakingOutput: si.StakingOutput, // Input 0: Previous staking output
+		FundingOutput: si.FundingOutput, // Input 1: Funding output
+		SignerAddress: stakerAddress,
+		SpendDescription: &walletcontroller.SpendPathDescription{
+			ScriptLeaf:   &si.SpendInfo.RevealedLeaf,
+			ControlBlock: &si.SpendInfo.ControlBlock,
+		},
+	}
+
+	// get the taproot signature for the staker
+	stakerSig, err := app.wc.SignTwoInputTaprootSpendingTransaction(twoInputReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign taproot input: %w", err)
+	}
+
+	if stakerSig.Signature == nil {
+		return nil, fmt.Errorf("failed to get taproot signature")
+	}
+
+	prevStkCovSigs, err := parseCovenantSigs(stkExp.PreviousStkCovenantSigs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse covenant signatures: %w", err)
+	}
+	// Create covenant signatures witness using the stake expansion signatures
+	covenantSignatures, err := createWitnessSignaturesForPubKeys(
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		prevStkCovSigs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create covenant signatures: %w", err)
+	}
+
+	// Build the unbondWitness for the taproot input
+	return si.SpendInfo.CreateUnbondingPathWitness(
+		covenantSignatures,
+		stakerSig.Signature,
+	)
+}
+
+func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
+	if len(tx.TxIn) == 0 {
+		return false, fmt.Errorf("transaction has no inputs")
+	}
+
+	signed := true
+
+	for _, in := range tx.TxIn {
+		if len(in.Witness) == 0 {
+			signed = false
+			break
+		}
+	}
+
+	return signed, nil
+}
+
+func parseCovenantSigs(covenantSigs []*btcstktypes.SignatureInfo) ([]cl.CovenantSignatureInfo, error) {
+	var parsedSigs []cl.CovenantSignatureInfo
+	for _, sig := range covenantSigs {
+		btcSig, err := sig.Sig.ToBTCSig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert covenant signature: %w", err)
+		}
+
+		btcPk, err := sig.Pk.ToBTCPK()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert covenant public key: %w", err)
+		}
+
+		parsedSigs = append(parsedSigs, cl.CovenantSignatureInfo{
+			Signature: btcSig,
+			PubKey:    btcPk,
+		})
+	}
+	return parsedSigs, nil
+}
