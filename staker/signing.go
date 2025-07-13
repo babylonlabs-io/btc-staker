@@ -104,7 +104,7 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 
 // getStakeExpansionSignInfo retrieves the necessary information for stake expansion signing.
 // This includes both inputs and the previous delegation's unbonding spend path.
-func (app *App) getStakeExpansionSignInfo(params *cl.StakingParams, stakerAddr btcutil.Address, stakingTxHash chainhash.Hash, fundingOutpoint wire.OutPoint, previousStakingTxHashHex string) (*stakeExpSignInfo, error) {
+func (app *App) getStakeExpansionSignInfo(params *cl.StakingParams, stakerAddr btcutil.Address, fundingOutpoint wire.OutPoint, previousStakingTxHashHex string) (*stakeExpSignInfo, error) {
 	// Get the funding transaction (we need it for validation but don't use it directly)
 	fundingTx, err := app.wc.Tx(&fundingOutpoint.Hash)
 	if err != nil {
@@ -182,7 +182,7 @@ func (app *App) buildUnbondingPathWitness(params *cl.StakingParams, tx *wire.Msg
 		_, stakerAddress = app.mustGetTransactionAndStakerAddress(&stakingTxHash)
 	)
 
-	si, err := app.getStakeExpansionSignInfo(params, stakerAddress, tx.TxHash(), fundingOutpoint, stkExp.PreviousStakingTxHashHex)
+	si, err := app.getStakeExpansionSignInfo(params, stakerAddress, fundingOutpoint, stkExp.PreviousStakingTxHashHex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stake expansion signing info: %w", err)
 	}
