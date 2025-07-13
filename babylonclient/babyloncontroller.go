@@ -1159,3 +1159,36 @@ func (bc *BabylonController) ActivateDelegation(
 
 	return res, nil
 }
+
+// ReportUnbonding sends unbonding message for a delegation
+// Test methods for e2e testing
+func (bc *BabylonController) ReportUnbonding(
+	stakingTxHash chainhash.Hash,
+	stakeSpendingTx *wire.MsgTx,
+	proof *btcctypes.BTCSpvProof,
+	fundingTxs [][]byte,
+) error {
+	stakeSpendingBytes, err := bbntypes.SerializeBTCTx(stakeSpendingTx)
+	if err != nil {
+		return err
+	}
+
+	msg := &btcstypes.MsgBTCUndelegate{
+		Signer:                        bc.getTxSigner(),
+		StakingTxHash:                 stakingTxHash.String(),
+		StakeSpendingTx:               stakeSpendingBytes,
+		StakeSpendingTxInclusionProof: btcstypes.NewInclusionProofFromSpvProof(proof),
+		FundingTransactions:           fundingTxs,
+	}
+
+	resp, err := bc.reliablySendMsgs([]sdk.Msg{msg})
+	if err != nil && resp != nil {
+		return fmt.Errorf("msg MsgBTCUndelegate failed exeuction with code %d and error %w", resp.Code, err)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to report unbonding: %w", err)
+	}
+
+	return nil
+}

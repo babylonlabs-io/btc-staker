@@ -958,40 +958,67 @@ func TestStakeExpansion(t *testing.T) {
 
 	// Step 6: Mine the expansion transaction
 	expansionBlock := tm.mineBlock(t)
-	require.Equal(t, 2, len(expansionBlock.Transactions))
+	require.Equal(t, 3, len(expansionBlock.Transactions))
 
-	// expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
-	// expansionProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 1)
-	// require.NoError(t, err)
+	expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
+	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 2)
+	require.NoError(t, err)
 
 	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&expansionBlock.Header})
 	require.NoError(t, err)
 
-	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	// Step 7: Wait for the expansion transaction to be k-deep on Bitcoin
+	tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations, true)
+	require.Eventually(t, func() bool {
+		// Get transaction details and verify confirmations
+		res, err := tm.Sa.Wallet().TxVerbose(expansionTxHash)
+		if err != nil {
+			return false
+		}
+		// Check if we have the required number of confirmations
+		return res.Confirmations >= staker.UnbondingTxConfirmations
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
 
-	// // Step 7: Report expansion transaction via MsgBTCUndelegate (as mentioned in requirements)
-	// // TODO this should be done via MsgBTCUndelegate
-	// _, err = tm.BabylonClient.ActivateDelegation(
-	// 	*expansionTxHash,
-	// 	expansionProof,
-	// )
-	// require.NoError(t, err)
+	// Step 8: Report expansion transaction via MsgBTCUndelegate for the original delegation
+	rawStkExpTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(expansionTxHash)
+	require.NoError(t, err)
+	expansionMsgTx := rawStkExpTransaction.MsgTx()
 
-	// // Step 8: Wait for expansion to be active
-	// tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonActiveStatus)
+	// get funding txs for the stake expansion
+	var fundingTxs [][]byte
+	for _, txIn := range expansionMsgTx.TxIn {
+		rawTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(&txIn.PreviousOutPoint.Hash)
+		require.NoError(t, err)
 
-	// // Step 9: Verify the original delegation is no longer active
-	// // and the expansion delegation is active
-	// originalDelegation, err := tm.BabylonClient.QueryBTCDelegation(originalTxHash)
-	// require.NoError(t, err)
-	// require.False(t, originalDelegation.BtcDelegation.Active)
+		serializedTx, err := bbntypes.SerializeBTCTx(rawTransaction.MsgTx())
+		require.NoError(t, err)
 
-	// expansionDelegation, err := tm.BabylonClient.QueryBTCDelegation(expansionTxHash)
-	// require.NoError(t, err)
-	// require.True(t, expansionDelegation.BtcDelegation.Active)
+		fundingTxs = append(fundingTxs, serializedTx)
+	}
 
-	// // Verify the expansion delegation has the expected larger amount
-	// require.True(t, expansionDelegation.BtcDelegation.TotalSat > originalDelegation.BtcDelegation.TotalSat)
+	err = tm.BabylonClient.ReportUnbonding(
+		*originalTxHash,
+		expansionMsgTx,
+		expansionTxInclProof,
+		fundingTxs,
+	)
+	require.NoError(t, err)
+
+	// Step 9: Wait for expansion to be active
+	// Verify the original delegation is no longer active
+	// and the expansion delegation is active
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonActiveStatus)
+
+	originalDelegation, err := tm.BabylonClient.QueryBTCDelegation(originalTxHash)
+	require.NoError(t, err)
+	require.False(t, originalDelegation.BtcDelegation.Active)
+
+	expansionDelegation, err := tm.BabylonClient.QueryBTCDelegation(expansionTxHash)
+	require.NoError(t, err)
+	require.True(t, expansionDelegation.BtcDelegation.Active)
+
+	// Verify the expansion delegation has the expected larger amount
+	require.True(t, expansionDelegation.BtcDelegation.TotalSat > originalDelegation.BtcDelegation.TotalSat)
 }
 
 func TestMultipleWithdrawableStakingTransactions(t *testing.T) {

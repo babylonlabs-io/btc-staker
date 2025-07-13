@@ -400,32 +400,7 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 
 	prevDel := prevDelegationResult.BtcDelegation
 
-	// Step 1: Sign the funding input (regular UTXO) using normal wallet signing
-	// Create a temporary transaction with only the funding input from the expansion tx
-	tempTx := wire.NewMsgTx(tx.Version)
-	tempTx.AddTxIn(&wire.TxIn{
-		PreviousOutPoint: fundingOutpoint,
-		SignatureScript:  nil,
-		Witness:          nil,
-		Sequence:         tx.TxIn[1].Sequence,
-	})
-
-	// Add all outputs to the temporary transaction
-	for _, output := range tx.TxOut {
-		tempTx.AddTxOut(output)
-	}
-
-	// Sign the funding input
-	signedFundingTx, fullySigned, err := app.wc.SignRawTransaction(tempTx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign funding input: %w", err)
-	}
-
-	if !fullySigned {
-		return nil, fmt.Errorf("failed to fully sign funding input")
-	}
-
-	// Step 2: Sign the taproot input (previous staking output) using unbonding path
+	// Step 1: Sign the taproot input (previous staking output) using unbonding path
 	// First, get the staker address and public key from the stored transaction
 	_, stakerAddress := app.mustGetTransactionAndStakerAddress(stakingTxHash)
 
@@ -463,9 +438,9 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 
 	// Use the new two-input signing method that matches the covenant signature approach
 	twoInputReq := &walletcontroller.TwoInputTaprootSigningRequest{
-		TxToSign:      tx,                                                     // Complete two-input transaction
+		TxToSign:      tx,                                                    // Complete two-input transaction
 		StakingOutput: prevStakingTx.MsgTx().TxOut[prevDel.StakingOutputIdx], // Input 0: Previous staking output
-		FundingOutput: fundingTx.MsgTx().TxOut[fundingOutpoint.Index],         // Input 1: Funding output
+		FundingOutput: fundingTx.MsgTx().TxOut[fundingOutpoint.Index],        // Input 1: Funding output
 		SignerAddress: stakerAddress,
 		SpendDescription: &walletcontroller.SpendPathDescription{
 			ScriptLeaf:   &prevStkUnbondingSpendInfo.RevealedLeaf,
@@ -521,13 +496,18 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 		return nil, fmt.Errorf("failed to create unbonding path witness: %w", err)
 	}
 
-	// Step 3: Add both signatures into the final transaction
+	// Step 2: Add the witness to the taproot spent and sign the staking expansion transaction
 	tx.TxIn[0].Witness = unbondWitness
-	// Copy the signed funding input's signature and witness
-	tx.TxIn[1].SignatureScript = signedFundingTx.TxIn[0].SignatureScript
-	tx.TxIn[1].Witness = signedFundingTx.TxIn[0].Witness
+	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign funding input: %w", err)
+	}
 
-	return tx, nil
+	if !fullySigned {
+		return nil, fmt.Errorf("failed to fully sign funding input")
+	}
+
+	return signedTx, nil
 }
 
 // activateVerifiedDelegation must be run in separate goroutine whenever delegation
