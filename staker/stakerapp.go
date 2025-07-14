@@ -1028,29 +1028,24 @@ func (app *App) handleSendDelegationRequest(
 }
 
 // handleSendStakeExpansionRequest handles a stake expansion delegation request
-func (app *App) handleSendStakeExpansionRequest(
-	stakerAddress btcutil.Address,
-	stakingTime uint16,
-	requiredDepthOnBtcChain uint32,
-	fpBtcPks []*secp256k1.PublicKey,
-	pop *cl.BabylonPop,
-	stakingTx *wire.MsgTx,
-	stakingOutputIdx uint32,
-	prevActiveStkTxHash *chainhash.Hash,
-	fundingTx *wire.MsgTx,
-) (btcTxHash *chainhash.Hash, btcDelTxHash string, err error) {
+func (app *App) handleSendStakeExpansionRequest(cmd *stakingRequestCmd) (btcTxHash *chainhash.Hash, err error) {
 	// check pop is not nil
-	if pop == nil {
-		return nil, btcDelTxHash, fmt.Errorf("cannot add transaction without proof of possession")
+	if cmd.pop == nil {
+		return nil, fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	stakingTx, fundingTx, err := app.buildStakingExpansionTx(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
 	}
 
 	// just to pass to buildAndSendDelegation
 	fakeStoredTx, err := stakerdb.CreateTrackedTransaction(
 		stakingTx,
-		stakerAddress,
+		cmd.stakerAddress,
 	)
 	if err != nil {
-		return nil, btcDelTxHash, fmt.Errorf("failed to create tracked transaction: %w", err)
+		return nil, fmt.Errorf("failed to create tracked transaction: %w", err)
 	}
 
 	stakingTxHash := stakingTx.TxHash()
@@ -1058,36 +1053,70 @@ func (app *App) handleSendStakeExpansionRequest(
 	// Create expansion request with expansion-specific data
 	req := newSendDelegationExpansionRequest(
 		&stakingTxHash,
-		requiredDepthOnBtcChain,
-		fpBtcPks,
-		pop,
-		prevActiveStkTxHash,
+		cmd.requiredDepthOnBtcChain,
+		cmd.fpBtcPks,
+		cmd.pop,
+		cmd.stakeExpansion.prevActiveStkTxHash,
 		fundingTx,
 	)
 
 	// Use the same buildAndSendDelegation method - it already supports expansion via req.isExpansion
-	resp, err := app.buildAndSendDelegation(
+	if _, err = app.buildAndSendDelegation(
 		req,
-		stakerAddress,
-		stakingOutputIdx,
-		stakingTime,
+		cmd.stakerAddress,
+		0,
+		cmd.stakingTime,
 		fakeStoredTx,
-	)
-	if err != nil {
-		return nil, btcDelTxHash, fmt.Errorf("failed to build and send stake expansion delegation: %w", err)
+	); err != nil {
+		return nil, fmt.Errorf("failed to build and send stake expansion delegation: %w", err)
 	}
 
 	if err := app.txTracker.AddTransactionSentToBabylon(
 		stakingTx,
-		stakerAddress,
+		cmd.stakerAddress,
 	); err != nil {
-		return nil, btcDelTxHash, fmt.Errorf("failed to add transaction sent to babylon: %w", err)
+		return nil, fmt.Errorf("failed to add transaction sent to babylon: %w", err)
 	}
 
 	app.wg.Add(1)
 	go app.checkForUnbondingTxSignaturesOnBabylon(&stakingTxHash)
 
-	return &stakingTxHash, resp.TxHash, nil
+	return &stakingTxHash, nil
+}
+
+// buildStakingExpansionTx builds a stake expansion transaction with exactly 2 inputs:
+// 1. the previous active staking output
+// 2. the funding output to cover the fee and additional staking output if applicable
+// It returns the staking transaction and the funding transaction used to cover the fee.
+func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd) (*wire.MsgTx, *wire.MsgTx, error) {
+	if cmd.stakeExpansion == nil {
+		return nil, nil, fmt.Errorf("stake expansion in request is nil")
+	}
+	stakingTx, err := app.wc.CreateTransactionWithInputs(
+		[]wire.OutPoint{{
+			Hash:  *cmd.stakeExpansion.prevActiveStkTxHash,
+			Index: cmd.stakeExpansion.prevActiveStkStakingOutputIdx,
+		}},
+		2,
+		[]*wire.TxOut{cmd.stakingOutput},
+		btcutil.Amount(cmd.feeRate),
+		cmd.stakerAddress,
+		app.filterUtxoFnGen(),
+	)
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
+	}
+
+	// Get the funding transaction from the wallet using the
+	// outpoint
+	fundingTxHash := stakingTx.TxIn[1].PreviousOutPoint.Hash
+	fundingTx, err := app.wc.Tx(&fundingTxHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get funding transaction: %w", err)
+	}
+
+	return stakingTx, fundingTx.MsgTx(), nil
 }
 
 // handleStakingCmd handles a staking command (both regular and expansion)
@@ -1097,47 +1126,9 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 
 	isStakeExpansion := cmd.stakeExpansion != nil
 	if isStakeExpansion {
-		// Build stake expansion transaction with exactly 2 inputs:
-		// 1. the previous active staking output
-		// 2. the funding output to cover the fee and additional staking output if applicable
-		stakingTx, err := app.wc.CreateTransactionWithInputs(
-			[]wire.OutPoint{{
-				Hash:  *cmd.stakeExpansion.prevActiveStkTxHash,
-				Index: cmd.stakeExpansion.prevActiveStkStakingOutputIdx,
-			}},
-			2,
-			[]*wire.TxOut{cmd.stakingOutput},
-			btcutil.Amount(cmd.feeRate),
-			cmd.stakerAddress,
-			app.filterUtxoFnGen(),
-		)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
-		}
-
-		// Get the funding transaction from the wallet using the
-		// outpoint
-		fundingTxHash := stakingTx.TxIn[1].PreviousOutPoint.Hash
-		fundingTx, err := app.wc.Tx(&fundingTxHash)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get funding transaction: %w", err)
-		}
-
 		// Send stake expansion delegation to Babylon (step 1 of the flow)
 		// This will create a pending BTC delegation and wait for covenant signatures
-		btcTxHash, _, err := app.handleSendStakeExpansionRequest(
-			cmd.stakerAddress,
-			cmd.stakingTime,
-			cmd.requiredDepthOnBtcChain,
-			cmd.fpBtcPks,
-			cmd.pop,
-			stakingTx,
-			0,
-			cmd.stakeExpansion.prevActiveStkTxHash,
-			fundingTx.MsgTx(),
-		)
-
+		btcTxHash, err := app.handleSendStakeExpansionRequest(cmd)
 		if err != nil {
 			return nil, fmt.Errorf("failed to send stake expansion delegation request: %w", err)
 		}
