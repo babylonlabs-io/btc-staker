@@ -1569,7 +1569,7 @@ func (app *App) StakeExpand(
 
 	// Step 2: Estimate the fee for the expansion transaction
 	// Use a conservative estimate: 300 bytes for 2-input, 2-output transaction
-	estimatedFee := btcutil.Amount(300) * btcutil.Amount(feeRate) / 1000
+	estimatedFee := estimatedFee(int64(feeRate))
 
 	// Step 3: Create funding transaction that provides the additional amount PLUS fees
 	fundingScript, err := txscript.PayToAddrScript(stakerAddress)
@@ -2203,15 +2203,14 @@ func (app *App) buildStakeExpansionTransaction(
 	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
 	fundingAmount := btcutil.Amount(fundingTx.TxOut[0].Value)
 	totalInputValue := prevStakingAmount + fundingAmount
-	
+
 	// Estimate fee (conservative estimate for 2-input, 2-output transaction)
-	estimatedSize := 300
-	estimatedFee := btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
-	
+	estimatedFee := estimatedFee(feeRate)
+
 	// Calculate change
 	stakingAmount := btcutil.Amount(stakingOutput.Value)
 	change := totalInputValue - stakingAmount - estimatedFee
-	
+
 	// Add change output if there's enough above dust threshold
 	if change > btcutil.Amount(546) {
 		changeScript, err := txscript.PayToAddrScript(stakerAddress)
@@ -2228,4 +2227,13 @@ func (app *App) buildStakeExpansionTransaction(
 	}
 
 	return expansionTx, nil
+}
+
+// estimatedFee estimates the fee for the stake expansion transaction
+// using a conservative estimate based on the expected size of the transaction
+func estimatedFee(feeRate int64) btcutil.Amount {
+	// Estimated the fee for the expansion transaction
+	// Use a conservative estimate: 300 bytes for 2-input, 2-output transaction
+	estimatedSize := 300
+	return btcutil.Amount(estimatedSize) * btcutil.Amount(feeRate) / 1000
 }
