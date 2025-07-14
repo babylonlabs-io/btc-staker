@@ -73,7 +73,7 @@ type WalletController interface {
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
 	ImportPrivKey(privKeyWIF *btcutil.WIF) error
 	NetworkName() string
-	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// passing nil usedUtxoFilter will use all possible spendable utxos to choose
 	// inputs
 	CreateTransaction(
 		outputs []*wire.TxOut,
@@ -81,9 +81,19 @@ type WalletController interface {
 		changeScript btcutil.Address,
 		usedUtxoFilter UseUtxoFn,
 	) (*wire.MsgTx, error)
+	// CreateTransactionWithInputs creates a transaction with specified number of inputs
+	// and ensures required inputs are included
+	CreateTransactionWithInputs(
+		requiredInputs []wire.OutPoint,
+		desiredInputCount int,
+		outputs []*wire.TxOut,
+		feeRatePerKb btcutil.Amount,
+		changeAddress btcutil.Address,
+		useUtxoFn UseUtxoFn,
+	) (*wire.MsgTx, error)
 	SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error)
 	// requires wallet to be unlocked
-	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// passing nil usedUtxoFilter will use all possible spendable utxos to choose
 	// inputs
 	CreateAndSignTx(
 		outputs []*wire.TxOut,

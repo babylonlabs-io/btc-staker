@@ -31,9 +31,8 @@ type stakingRequestCmd struct {
 }
 
 type stakeExpansionReqFields struct {
-	prevActiveStkTxHash *chainhash.Hash
-	prevActiveStkValue  btcutil.Amount
-	fundingTx           *wire.MsgTx
+	prevActiveStkTxHash           *chainhash.Hash
+	prevActiveStkStakingOutputIdx uint32
 }
 
 // newOwnedStakingCommand builds a new staking command
@@ -70,6 +69,17 @@ func (req *stakingRequestCmd) EventID() chainhash.Hash {
 // EventDesc returns the description of the event
 func (req *stakingRequestCmd) EventDesc() string {
 	return "STAKING_REQUESTED_CMD"
+}
+
+func (req *stakingRequestCmd) WithStakeExpansion(
+	prevActiveStkTxHash *chainhash.Hash,
+	prevActiveStkStakingOutputIdx uint32,
+) *stakingRequestCmd {
+	req.stakeExpansion = &stakeExpansionReqFields{
+		prevActiveStkTxHash:           prevActiveStkTxHash,
+		prevActiveStkStakingOutputIdx: prevActiveStkStakingOutputIdx,
+	}
+	return req
 }
 
 // migrateStakingCmd represents a command to migrate a staking transaction

@@ -268,6 +268,127 @@ func (w *RPCWalletController) CreateTransaction(
 	return tx, err
 }
 
+// CreateTransactionWithInputs creates a transaction with a specified number of inputs and required inputs
+func (w *RPCWalletController) CreateTransactionWithInputs(
+	requiredInputs []wire.OutPoint,
+	desiredInputCount int,
+	outputs []*wire.TxOut,
+	feeRatePerKb btcutil.Amount,
+	changeAddress btcutil.Address,
+	useUtxoFn UseUtxoFn,
+) (*wire.MsgTx, error) {
+	// Check if we have too many required inputs
+	if len(requiredInputs) > desiredInputCount {
+		return nil, fmt.Errorf("number of required inputs (%d) exceeds desired input count (%d)", len(requiredInputs), desiredInputCount)
+	}
+
+	utxoResults, err := w.ListUnspent()
+	if err != nil {
+		return nil, err
+	}
+
+	utxos, err := resultsToUtxos(utxoResults, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create map for quick lookup of available UTXOs
+	utxoMap := make(map[wire.OutPoint]Utxo)
+	for _, u := range utxos {
+		utxoMap[u.OutPoint] = u
+	}
+
+	// First, collect required inputs and ensure they exist
+	var orderedUtxos []Utxo
+	for _, reqOutPoint := range requiredInputs {
+		if utxo, exists := utxoMap[reqOutPoint]; exists {
+			// Apply useUtxoFn filter if provided
+			if useUtxoFn == nil || useUtxoFn(utxo) {
+				orderedUtxos = append(orderedUtxos, utxo)
+				delete(utxoMap, reqOutPoint) // Remove from available pool
+			} else {
+				return nil, fmt.Errorf("required input %s is filtered out by useUtxoFn", reqOutPoint.String())
+			}
+		} else {
+			// Required input not found in wallet's UTXO set (e.g., taproot staking output)
+			// Create a synthetic UTXO by fetching the transaction and output
+			tx, err := w.Tx(&reqOutPoint.Hash)
+			if err != nil {
+				return nil, fmt.Errorf("required input %s not found in available UTXOs and cannot fetch transaction: %w", reqOutPoint.String(), err)
+			}
+
+			if reqOutPoint.Index >= uint32(len(tx.MsgTx().TxOut)) {
+				return nil, fmt.Errorf("required input %s has invalid output index %d", reqOutPoint.String(), reqOutPoint.Index)
+			}
+
+			txOut := tx.MsgTx().TxOut[reqOutPoint.Index]
+
+			// Create synthetic UTXO for the required input
+			syntheticUtxo := Utxo{
+				Amount:   btcutil.Amount(txOut.Value),
+				OutPoint: reqOutPoint,
+				PkScript: txOut.PkScript,
+				Address:  "", // We don't need the address for synthetic UTXOs
+			}
+
+			// Apply useUtxoFn filter if provided
+			if useUtxoFn == nil || useUtxoFn(syntheticUtxo) {
+				orderedUtxos = append(orderedUtxos, syntheticUtxo)
+			} else {
+				return nil, fmt.Errorf("required input %s is filtered out by useUtxoFn", reqOutPoint.String())
+			}
+		}
+	}
+
+	// Convert remaining UTXOs to slice and apply filter
+	var remainingUtxos []Utxo
+	for _, u := range utxoMap {
+		if useUtxoFn == nil || useUtxoFn(u) {
+			remainingUtxos = append(remainingUtxos, u)
+		}
+	}
+
+	// Sort remaining UTXOs by amount from highest to lowest
+	sort.Sort(sort.Reverse(byAmount(remainingUtxos)))
+
+	// Add additional inputs to reach desired count
+	// Note: orderedUtxos already contains required inputs in specified order
+	// Now we add the highest-value remaining UTXOs to fill up to desiredInputCount
+	remainingInputsNeeded := desiredInputCount - len(orderedUtxos)
+	if remainingInputsNeeded > 0 {
+		if len(remainingUtxos) < remainingInputsNeeded {
+			return nil, fmt.Errorf("not enough UTXOs available: need %d more inputs, only %d available", remainingInputsNeeded, len(remainingUtxos))
+		}
+
+		// Add the required number of additional inputs (sorted by highest amount first)
+		for i := range remainingInputsNeeded {
+			orderedUtxos = append(orderedUtxos, remainingUtxos[i])
+		}
+	}
+
+	changeScript, err := txscript.PayToAddrScript(changeAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := buildTxFromOutputs(orderedUtxos, outputs, feeRatePerKb, changeScript)
+	if err != nil {
+		return nil, err
+	}
+
+	// Final validation that we have the exact desired input count
+	if len(tx.TxIn) != desiredInputCount {
+		return nil, fmt.Errorf("transaction must have exactly %d inputs, got %d", desiredInputCount, len(tx.TxIn))
+	}
+
+	err = utils.CheckTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("transaction is not standard: %w", err)
+	}
+
+	return tx, nil
+}
+
 func (w *RPCWalletController) CreateAndSignTx(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,

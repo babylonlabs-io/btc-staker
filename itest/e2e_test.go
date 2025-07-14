@@ -958,10 +958,10 @@ func TestStakeExpansion(t *testing.T) {
 
 	// Step 6: Mine the expansion transaction
 	expansionBlock := tm.mineBlock(t)
-	require.Equal(t, 3, len(expansionBlock.Transactions))
+	require.Equal(t, 2, len(expansionBlock.Transactions))
 
 	expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
-	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 2)
+	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 1)
 	require.NoError(t, err)
 
 	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&expansionBlock.Header})
