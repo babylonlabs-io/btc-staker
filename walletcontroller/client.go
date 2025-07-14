@@ -271,15 +271,15 @@ func (w *RPCWalletController) CreateTransaction(
 // CreateTransactionWithInputs creates a transaction with a specified number of inputs and required inputs
 func (w *RPCWalletController) CreateTransactionWithInputs(
 	requiredInputs []wire.OutPoint,
-	desiredInputCount int,
+	inputsCount int,
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
 	changeAddress btcutil.Address,
 	useUtxoFn UseUtxoFn,
 ) (*wire.MsgTx, error) {
 	// Check if we have too many required inputs
-	if len(requiredInputs) > desiredInputCount {
-		return nil, fmt.Errorf("number of required inputs (%d) exceeds desired input count (%d)", len(requiredInputs), desiredInputCount)
+	if len(requiredInputs) > inputsCount {
+		return nil, fmt.Errorf("number of required inputs (%d) exceeds desired input count (%d)", len(requiredInputs), inputsCount)
 	}
 
 	utxoResults, err := w.ListUnspent()
@@ -354,7 +354,7 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 	// Add additional inputs to reach desired count
 	// Note: orderedUtxos already contains required inputs in specified order
 	// Now we add the highest-value remaining UTXOs to fill up to desiredInputCount
-	remainingInputsNeeded := desiredInputCount - len(orderedUtxos)
+	remainingInputsNeeded := inputsCount - len(orderedUtxos)
 	if remainingInputsNeeded > 0 {
 		if len(remainingUtxos) < remainingInputsNeeded {
 			return nil, fmt.Errorf("not enough UTXOs available: need %d more inputs, only %d available", remainingInputsNeeded, len(remainingUtxos))
@@ -377,8 +377,8 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 	}
 
 	// Final validation that we have the exact desired input count
-	if len(tx.TxIn) != desiredInputCount {
-		return nil, fmt.Errorf("transaction must have exactly %d inputs, got %d", desiredInputCount, len(tx.TxIn))
+	if len(tx.TxIn) != inputsCount {
+		return nil, fmt.Errorf("transaction must have exactly %d inputs, got %d", inputsCount, len(tx.TxIn))
 	}
 
 	err = utils.CheckTransaction(tx)

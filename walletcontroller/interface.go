@@ -85,7 +85,7 @@ type WalletController interface {
 	// and ensures required inputs are included
 	CreateTransactionWithInputs(
 		requiredInputs []wire.OutPoint,
-		desiredInputCount int,
+		inputsCount int,
 		outputs []*wire.TxOut,
 		feeRatePerKb btcutil.Amount,
 		changeAddress btcutil.Address,
