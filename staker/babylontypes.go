@@ -447,7 +447,7 @@ func (app *App) activateVerifiedDelegation(
 			}
 
 			// staking transaction is not signed, we must sign it before sending to btc chain
-			signedTx, err := app.signStakingTransaction(stakingTransaction, stakingTxHash)
+			signedTx, err := app.signStakingTransaction(stakingTransaction)
 
 			if err != nil {
 				app.logger.WithFields(logrus.Fields{

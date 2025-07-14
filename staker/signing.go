@@ -20,44 +20,43 @@ type stakeExpSignInfo struct {
 
 // signStakingTransaction signs a staking transaction, handling both regular staking
 // and stake expansion transactions with different signing requirements
-func (app *App) signStakingTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
+func (app *App) signStakingTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
 	// Check if this is a stake expansion transaction (exactly 2 inputs)
 	if len(tx.TxIn) == 2 {
 		// This is likely a stake expansion transaction
 		// Input 0: Previous staking output (taproot, needs special signing)
 		// Input 1: Funding output (regular UTXO, can be signed normally)
 
-		// Try to sign as stake expansion transaction
-		return app.signStakeExpansionTransaction(tx, stakingTxHash)
+		// Try to sign as stake expansion transaction first
+		// The signStakeExpansionTransaction function will validate via Babylon query
+		// and return proper error if this is not actually a stake expansion
+		// If it is not, it will fall back to regular staking signing
+		// which is what we want for regular staking transactions with 2 inputs.
+		return app.signStakeExpansionTransaction(tx)
 	}
 
 	// Regular staking transaction - use normal wallet signing
-	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign regular staking transaction: %w", err)
-	}
-
-	if !fullySigned {
-		return nil, nil // Return nil to indicate signing failed
-	}
-
-	return signedTx, nil
+	return app.signRegularStakingTransaction(tx)
 }
 
 // signStakeExpansionTransaction signs a stake expansion transaction with mixed input types
-func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *chainhash.Hash) (*wire.MsgTx, error) {
+func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
 	// Get delegation info for the expansion transaction
-	di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
+	stakingTxHash := tx.TxHash()
+	di, err := app.babylonClient.QueryBTCDelegation(&stakingTxHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get delegation info for expansion transaction: %w", err)
 	}
 
 	// Verify this is a stake expansion transaction
 	if di.BtcDelegation.StkExp == nil {
-		return nil, fmt.Errorf("delegation is not a stake expansion")
+		// if it is not a stake expansion delegation, it might be a regular delegation
+		// with 2 inputs, so we sign it as a regular staking transaction
+		return app.signRegularStakingTransaction(tx)
 	}
 
 	// Check if we have covenant signatures for stake expansion
+	// TODO get the params from the previous delegation
 	params, err := app.babylonClient.Params()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get babylon params: %w", err)
@@ -90,13 +89,9 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, stakingTxHash *cha
 
 	// Add the witness to the taproot spent and sign the staking expansion transaction
 	tx.TxIn[0].Witness = unbondWitness
-	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	signedTx, err := app.signTx(tx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign funding input: %w", err)
-	}
-
-	if !fullySigned {
-		return nil, fmt.Errorf("failed to fully sign funding input")
+		return nil, fmt.Errorf("staking expansion transaction: %w", err)
 	}
 
 	return signedTx, nil
@@ -228,6 +223,30 @@ func (app *App) buildUnbondingPathWitness(params *cl.StakingParams, tx *wire.Msg
 		covenantSignatures,
 		stakerSig.Signature,
 	)
+}
+
+// signRegularStakingTransaction signs a regular staking transaction using wallet signing
+func (app *App) signRegularStakingTransaction(tx *wire.MsgTx) (*wire.MsgTx, error) {
+	signedTx, err := app.signTx(tx)
+	if err != nil {
+		return nil, fmt.Errorf("regular staking transaction: %w", err)
+	}
+
+	return signedTx, nil
+}
+
+// signTx signs a transaction using wallet signing
+func (app *App) signTx(tx *wire.MsgTx) (*wire.MsgTx, error) {
+	signedTx, fullySigned, err := app.wc.SignRawTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	if !fullySigned {
+		return nil, nil // Return nil to indicate signing failed
+	}
+
+	return signedTx, nil
 }
 
 func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
