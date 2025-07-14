@@ -51,7 +51,7 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx) (*wire.MsgTx, erro
 	}
 
 	// Verify this is a stake expansion transaction
-	if di.BtcDelegation.StkExp == nil {
+	if di.BtcDelegation == nil || di.BtcDelegation.StkExp == nil {
 		// if it is not a stake expansion delegation, it might be a regular delegation
 		// with 2 inputs, so we sign it as a regular staking transaction
 		return app.signRegularStakingTransaction(tx)
