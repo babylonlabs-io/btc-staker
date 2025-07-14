@@ -9,6 +9,7 @@ import (
 	"time"
 
 	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
+	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
 
 	"github.com/avast/retry-go/v4"
 	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
@@ -1035,8 +1036,7 @@ func (app *App) handleSendStakeExpansionRequest(
 	pop *cl.BabylonPop,
 	stakingTx *wire.MsgTx,
 	stakingOutputIdx uint32,
-	prevActiveStkTxHash *chainhash.Hash,
-	fundingTx *wire.MsgTx,
+	stkExp *stakeExpansionReqFields,
 ) (btcTxHash *chainhash.Hash, btcDelTxHash string, err error) {
 	// check pop is not nil
 	if pop == nil {
@@ -1060,8 +1060,8 @@ func (app *App) handleSendStakeExpansionRequest(
 		requiredDepthOnBtcChain,
 		fpBtcPks,
 		pop,
-		prevActiveStkTxHash,
-		fundingTx,
+		stkExp.prevActiveStkTxHash,
+		stkExp.fundingTx,
 	)
 
 	// Use the same buildAndSendDelegation method - it already supports expansion via req.isExpansion
@@ -1094,15 +1094,14 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 	var stakingTx *wire.MsgTx
 	var err error
 
-	isStakeExpansion := cmd.prevActiveStkTxHash != nil
+	isStakeExpansion := cmd.stakeExpansion != nil
 	if isStakeExpansion {
 		// Build stake expansion transaction with exactly 2 inputs
 		stakingTx, err = app.buildStakeExpansionTransaction(
 			cmd.stakerAddress,
 			cmd.stakingOutput,
 			int64(cmd.feeRate),
-			cmd.prevActiveStkTxHash,
-			cmd.fundingTx,
+			cmd.stakeExpansion,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
@@ -1118,8 +1117,7 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 			cmd.pop,
 			stakingTx,
 			0,
-			cmd.prevActiveStkTxHash,
-			cmd.fundingTx,
+			cmd.stakeExpansion,
 		)
 
 		if err != nil {
@@ -1557,11 +1555,23 @@ func (app *App) StakeExpand(
 	feeRate := app.feeEstimator.EstimateFeePerKb()
 
 	// Step 1: Get the previous staking amount to calculate additional amount needed
-	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
+	prevDelegationResult, err := app.babylonClient.QueryBTCDelegation(prevActiveStkTxHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
+		return nil, fmt.Errorf("failed to get previous delegation: %w", err)
 	}
-	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
+
+	if prevDelegationResult.BtcDelegation == nil {
+		return nil, fmt.Errorf("previous delegation not found")
+	}
+
+	prevDel := prevDelegationResult.BtcDelegation
+
+	prevStakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(prevDel.StakingTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx from previous delegation: %w", err)
+	}
+
+	prevStakingAmount := btcutil.Amount(prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx].Value)
 	additionalAmount := stakingAmount - prevStakingAmount
 	if additionalAmount <= 0 {
 		return nil, fmt.Errorf("expansion amount must be greater than previous staking amount")
@@ -1618,8 +1628,11 @@ func (app *App) StakeExpand(
 	)
 
 	// Set expansion-specific fields
-	req.prevActiveStkTxHash = prevActiveStkTxHash
-	req.fundingTx = fundingTx
+	req.stakeExpansion = &stakeExpansionReqFields{
+		prevActiveStkTxHash: prevActiveStkTxHash,
+		prevActiveStkValue:  prevStakingAmount,
+		fundingTx:           fundingTx,
+	}
 
 	utils.PushOrQuit[*stakingRequestCmd](
 		app.stakingRequestedCmdChan,
@@ -2160,14 +2173,8 @@ func (app *App) buildStakeExpansionTransaction(
 	stakerAddress btcutil.Address,
 	stakingOutput *wire.TxOut,
 	feeRate int64,
-	prevActiveStkTxHash *chainhash.Hash,
-	fundingTx *wire.MsgTx,
+	stkExp *stakeExpansionReqFields,
 ) (*wire.MsgTx, error) {
-	// Get the previous staking transaction to determine input amounts
-	prevStakingTx, err := app.wc.Tx(prevActiveStkTxHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
-	}
 
 	// Create the expansion transaction manually since we need to specify exact inputs
 	expansionTx := wire.NewMsgTx(wire.TxVersion)
@@ -2175,7 +2182,7 @@ func (app *App) buildStakeExpansionTransaction(
 	// Input 1: Previous staking output (to be spent through unbonding path)
 	prevStakingInput := wire.NewTxIn(
 		&wire.OutPoint{
-			Hash:  *prevActiveStkTxHash,
+			Hash:  *stkExp.prevActiveStkTxHash,
 			Index: 0,
 		},
 		nil,
@@ -2184,7 +2191,7 @@ func (app *App) buildStakeExpansionTransaction(
 	expansionTx.AddTxIn(prevStakingInput)
 
 	// Input 2: Funding transaction output (regular UTXO)
-	fundingTxHash := fundingTx.TxHash()
+	fundingTxHash := stkExp.fundingTx.TxHash()
 	fundingInput := wire.NewTxIn(
 		&wire.OutPoint{
 			Hash:  fundingTxHash,
@@ -2200,9 +2207,8 @@ func (app *App) buildStakeExpansionTransaction(
 
 	// Calculate fee and change manually since we can't use automated fee calculation
 	// for transactions with UTXOs not in the wallet
-	prevStakingAmount := btcutil.Amount(prevStakingTx.MsgTx().TxOut[0].Value)
-	fundingAmount := btcutil.Amount(fundingTx.TxOut[0].Value)
-	totalInputValue := prevStakingAmount + fundingAmount
+	fundingAmount := btcutil.Amount(stkExp.fundingTx.TxOut[0].Value)
+	totalInputValue := stkExp.prevActiveStkValue + fundingAmount
 
 	// Estimate fee (conservative estimate for 2-input, 2-output transaction)
 	estimatedFee := estimatedFee(feeRate)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
 	btcstktypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
@@ -106,10 +107,6 @@ func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOut
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse previous staking transaction hash: %w", err)
 	}
-	prevStakingTx, err := app.wc.Tx(prevStakingHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get previous staking transaction: %w", err)
-	}
 
 	prevDelegationResult, err := app.babylonClient.QueryBTCDelegation(prevStakingHash)
 	if err != nil {
@@ -121,6 +118,11 @@ func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOut
 	}
 
 	prevDel := prevDelegationResult.BtcDelegation
+
+	prevStakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(prevDel.StakingTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx from previous delegation: %w", err)
+	}
 
 	// get the params from the previous delegation
 	prevDelParams, err := app.babylonClient.ParamsByBtcHeight(prevDel.ParamsVersion)
@@ -134,7 +136,7 @@ func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOut
 	}
 
 	return &stakeExpSignInfo{
-		StakingOutput: prevStakingTx.MsgTx().TxOut[prevDel.StakingOutputIdx],
+		StakingOutput: prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx],
 		FundingOutput: fundingTx.MsgTx().TxOut[fundingOutpoint.Index],
 		SpendInfo:     si,
 		Params:        prevDelParams,

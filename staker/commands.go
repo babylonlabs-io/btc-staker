@@ -27,7 +27,12 @@ type stakingRequestCmd struct {
 	errChan                 chan error
 	successChan             chan *chainhash.Hash
 	// Expansion-specific fields for Babylon integration
+	stakeExpansion *stakeExpansionReqFields
+}
+
+type stakeExpansionReqFields struct {
 	prevActiveStkTxHash *chainhash.Hash
+	prevActiveStkValue  btcutil.Amount
 	fundingTx           *wire.MsgTx
 }
 
