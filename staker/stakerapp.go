@@ -1678,7 +1678,7 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 		return nil, fmt.Errorf("failed to get change script: %w", err)
 	}
 	estimatedVirtualSize := txsizes.EstimateVirtualSize(0, 0, 2, 0, []*wire.TxOut{cmd.stakingOutput}, len(changeScript))
-	estimatedExpansionFee := txrules.FeeForSerializeSize(btcutil.Amount(feeRate), estimatedVirtualSize)
+	estimatedExpansionFee := txrules.FeeForSerializeSize(feeRate, estimatedVirtualSize)
 
 	// Add buffer for fees of the next transaction that will consume this UTXO
 	consolidatedAmount := additionalAmount + estimatedExpansionFee
