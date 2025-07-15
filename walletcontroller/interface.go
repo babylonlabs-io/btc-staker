@@ -50,6 +50,14 @@ type TaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription
 }
 
+type TwoInputTaprootSigningRequest struct {
+	TxToSign         *wire.MsgTx           // The two-input transaction to sign
+	StakingOutput    *wire.TxOut           // Input 0: Previous staking output (taproot)
+	FundingOutput    *wire.TxOut           // Input 1: Funding output
+	SignerAddress    btcutil.Address       // Address that controls the staking output
+	SpendDescription *SpendPathDescription // Script path for spending the staking output
+}
+
 // TaprootSigningResult contains result of signing taproot spend through bitcoind
 // wallet. It will contain either Signature or FullInputWitness, never both.
 type TaprootSigningResult struct {
@@ -65,7 +73,7 @@ type WalletController interface {
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
 	ImportPrivKey(privKeyWIF *btcutil.WIF) error
 	NetworkName() string
-	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// passing nil usedUtxoFilter will use all possible spendable utxos to choose
 	// inputs
 	CreateTransaction(
 		outputs []*wire.TxOut,
@@ -73,9 +81,19 @@ type WalletController interface {
 		changeScript btcutil.Address,
 		usedUtxoFilter UseUtxoFn,
 	) (*wire.MsgTx, error)
+	// CreateTransactionWithInputs creates a transaction with specified number of inputs
+	// and ensures required inputs are included
+	CreateTransactionWithInputs(
+		requiredInputs []wire.OutPoint,
+		inputsCount int,
+		outputs []*wire.TxOut,
+		feeRatePerKb btcutil.Amount,
+		changeAddress btcutil.Address,
+		useUtxoFn UseUtxoFn,
+	) (*wire.MsgTx, error)
 	SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error)
 	// requires wallet to be unlocked
-	// passning nil usedUtxoFilter will use all possible spendable utxos to choose
+	// passing nil usedUtxoFilter will use all possible spendable utxos to choose
 	// inputs
 	CreateAndSignTx(
 		outputs []*wire.TxOut,
@@ -97,6 +115,9 @@ type WalletController interface {
 	// SignOneInputTaprootSpendingTransaction signs transactions with one taproot input that
 	// uses script spending path.
 	SignOneInputTaprootSpendingTransaction(req *TaprootSigningRequest) (*TaprootSigningResult, error)
+	// SignTwoInputTaprootSpendingTransaction signs the first input of a two-input transaction
+	// using the same method as Babylon's SignTxForFirstScriptSpendWithTwoInputsFromTapLeaf
+	SignTwoInputTaprootSpendingTransaction(req *TwoInputTaprootSigningRequest) (*TaprootSigningResult, error)
 	OutputSpent(
 		txHash *chainhash.Hash,
 		outputIdx uint32,

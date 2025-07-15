@@ -119,7 +119,19 @@ func (m *BabylonMsgSender) sendDelegationAsync(stakingTxHash *chainhash.Hash, re
 		defer m.s.Release(1)
 		defer m.wg.Done()
 		// TODO pass context to delegate
-		txResp, err := m.cl.Delegate(req.dg)
+		var (
+			txResp  *bct.RelayerTxResponse
+			err     error
+			useCase = "regular delegation"
+		)
+		// Route to appropriate bbn client method based on whether this is a stake expansion
+		// or a regular delegation.
+		if req.dg.StakeExpansion != nil {
+			txResp, err = m.cl.ExpandDelegation(req.dg)
+			useCase = "stake expansion delegation"
+		} else {
+			txResp, err = m.cl.Delegate(req.dg)
+		}
 
 		if err != nil {
 			if errors.Is(err, ErrInvalidBabylonExecution) {
@@ -128,15 +140,15 @@ func (m *BabylonMsgSender) sendDelegationAsync(stakingTxHash *chainhash.Hash, re
 					"babylonTxHash":      txResp.TxHash,
 					"babylonBlockHeight": txResp.Height,
 					"babylonErrorCode":   txResp.Code,
-				}).Error("Invalid delegation data sent to babylon")
+				}).Errorf("Invalid delegation data sent to babylon. Case: %s", useCase)
 			}
 
 			m.logger.WithFields(logrus.Fields{
 				"btcTxHash": stakingTxHash,
 				"err":       err,
-			}).Error("Error while sending delegation data to babylon")
+			}).Errorf("Error while sending delegation data to babylon. Case: %s", useCase)
 
-			req.ErrorChan() <- fmt.Errorf("failed to send delegation for tx with hash: %s: %w", stakingTxHash.String(), err)
+			req.ErrorChan() <- fmt.Errorf("failed to send delegation for tx with hash: %s; Case: %s; Error: %w", stakingTxHash.String(), useCase, err)
 		}
 		req.ResultChan() <- txResp
 	}()

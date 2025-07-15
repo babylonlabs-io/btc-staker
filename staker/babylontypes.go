@@ -44,6 +44,9 @@ type sendDelegationRequest struct {
 	requiredInclusionBlockDepth uint32
 	fpBtcPubkeys                []*btcec.PublicKey
 	pop                         *cl.BabylonPop
+	// expansion-specific fields
+	prevActiveStkTxHash *chainhash.Hash
+	fundingTx           *wire.MsgTx
 }
 
 // buildDelegation builds a delegation data for a given staker address, staking output index and staking time.
@@ -281,23 +284,6 @@ func (app *App) finalityProviderExists(fpPk *btcec.PublicKey) error {
 	return nil
 }
 
-func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
-	if len(tx.TxIn) == 0 {
-		return false, fmt.Errorf("transaction has no inputs")
-	}
-
-	signed := true
-
-	for _, in := range tx.TxIn {
-		if len(in.Witness) == 0 {
-			signed = false
-			break
-		}
-	}
-
-	return signed, nil
-}
-
 // activateVerifiedDelegation must be run in separate goroutine whenever delegation
 // reaches verified state. i.e
 // - delegation is on babylon
@@ -461,7 +447,7 @@ func (app *App) activateVerifiedDelegation(
 			}
 
 			// staking transaction is not signed, we must sign it before sending to btc chain
-			signedTx, fullySigned, err := app.wc.SignRawTransaction(stakingTransaction)
+			signedTx, err := app.signStakingTransaction(stakingTransaction, di)
 
 			if err != nil {
 				app.logger.WithFields(logrus.Fields{
@@ -471,7 +457,7 @@ func (app *App) activateVerifiedDelegation(
 				continue
 			}
 
-			if !fullySigned {
+			if signedTx == nil {
 				app.logger.WithFields(logrus.Fields{
 					"stakingTxHash": stakingTxHash,
 				}).Debug("cannot sign staking transction with configured wallet")
@@ -508,5 +494,24 @@ func newSendDelegationRequest(
 		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
 		fpBtcPubkeys:                fpBtcPubkeys,
 		pop:                         pop,
+	}
+}
+
+// newSendDelegationExpansionRequest builds a sendDelegationRequest for stake expansion
+func newSendDelegationExpansionRequest(
+	btcStakingTxHash *chainhash.Hash,
+	requiredInclusionBlockDepth uint32,
+	fpBtcPubkeys []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
+	prevActiveStkTxHash *chainhash.Hash,
+	fundingTx *wire.MsgTx,
+) *sendDelegationRequest {
+	return &sendDelegationRequest{
+		btcTxHash:                   *btcStakingTxHash,
+		requiredInclusionBlockDepth: requiredInclusionBlockDepth,
+		fpBtcPubkeys:                fpBtcPubkeys,
+		pop:                         pop,
+		prevActiveStkTxHash:         prevActiveStkTxHash,
+		fundingTx:                   fundingTx,
 	}
 }
