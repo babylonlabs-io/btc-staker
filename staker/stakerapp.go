@@ -31,6 +31,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcwallet/wallet/txrules"
+	"github.com/btcsuite/btcwallet/wallet/txsizes"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -1666,12 +1668,17 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 
 	feeRate := btcutil.Amount(app.feeEstimator.EstimateFeePerKb())
 
-	// Estimate the fee for the subsequent stake expansion transaction
-	// A stake expansion transaction typically has 2 inputs (prev staking + funding) and 1 output (new staking)
-	// Input: ~148 bytes each (P2WPKH), Output: ~34 bytes, overhead: ~10 bytes
-	// Total: 2*148 + 1*34 + 10 = 340 bytes
-	estimatedExpansionTxSize := 340
-	estimatedExpansionFee := btcutil.Amount(estimatedExpansionTxSize) * feeRate / 1000
+	// Estimate the fee for the subsequent stake expansion transaction using wallet utilities
+	// We know the expansion transaction will have:
+	// - 2 P2WPKH inputs (previous staking + funding UTXO)
+	// - 1 output (the new staking output)
+	// - 1 change output (to the staker address)
+	changeScript, err := txscript.PayToAddrScript(cmd.stakerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get change script: %w", err)
+	}
+	estimatedVirtualSize := txsizes.EstimateVirtualSize(0, 0, 2, 0, []*wire.TxOut{cmd.stakingOutput}, len(changeScript))
+	estimatedExpansionFee := txrules.FeeForSerializeSize(btcutil.Amount(feeRate), estimatedVirtualSize)
 
 	// Add buffer for fees of the next transaction that will consume this UTXO
 	consolidatedAmount := additionalAmount + estimatedExpansionFee
