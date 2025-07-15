@@ -1114,7 +1114,7 @@ func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd, otherRequiredInp
 		app.filterUtxoFnGen(),
 	)
 
-	// If consolidation is requested, consolidate UTXOs first
+	// If consolidation is requested, consolidate UTXOs for the funding tx
 	// and retry building the transaction
 	if err != nil && strings.Contains(err.Error(), "insufficient funds") &&
 		cmd.stakeExpansion.consolidateUTXOs && len(otherRequiredInputs) == 0 {
