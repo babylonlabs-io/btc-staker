@@ -1164,7 +1164,7 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 	// large staking time
 	stakingTime := uint16(1000)
 	originalStakingAmount := int64(50000)
-	expandedStakingAmount := int64(10000000000) // 
+	expandedStakingAmount := int64(10000000000) // use a high value to ensure consolidation is needed
 
 	// Create test data for original staking
 	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, originalStakingAmount, 1)
