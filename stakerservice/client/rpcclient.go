@@ -97,6 +97,7 @@ func (c *StakerServiceJSONRPCClient) StakeExpand(
 	fpPks []string,
 	stakingTimeBlocks int64,
 	prevActiveStkTxHashHex string,
+	consolidateUTXOs bool,
 ) (*service.ResultStake, error) {
 	result := new(service.ResultStake)
 
@@ -106,6 +107,7 @@ func (c *StakerServiceJSONRPCClient) StakeExpand(
 	params["fpBtcPks"] = fpPks
 	params["stakingTimeBlocks"] = stakingTimeBlocks
 	params["prevActiveStkTxHashHex"] = prevActiveStkTxHashHex
+	params["consolidateUTXOs"] = consolidateUTXOs
 
 	_, err := c.client.Call(ctx, "stake_expand", params, result)
 	if err != nil {

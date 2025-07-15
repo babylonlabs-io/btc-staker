@@ -40,6 +40,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	consolidateUTXOsFlag       = "consolidate-utxos"
 )
 
 var checkDaemonHealthCmd = cli.Command{
@@ -162,6 +163,10 @@ var stakeExpansionCmd = cli.Command{
 			Name:     stakingTransactionHashFlag,
 			Usage:    "Hash of previous staking transaction in bitcoin hex format which is currently an active BTC delegation",
 			Required: true,
+		},
+		cli.BoolFlag{
+			Name:  consolidateUTXOsFlag,
+			Usage: "Consolidate small UTXOs before stake expansion to ensure sufficient funding",
 		},
 	},
 	Action: stakeExpand,
@@ -423,7 +428,9 @@ func stakeExpand(ctx *cli.Context) error {
 		return errors.New("previous active staking tx hash hex for stake expansion is empty")
 	}
 
-	results, err := client.StakeExpand(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, prevActiveStkTxHashHex)
+	consolidateUTXOs := ctx.Bool(consolidateUTXOsFlag)
+
+	results, err := client.StakeExpand(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks, prevActiveStkTxHashHex, consolidateUTXOs)
 	if err != nil {
 		return fmt.Errorf("failed to stake expand: %w", err)
 	}

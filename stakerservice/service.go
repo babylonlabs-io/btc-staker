@@ -122,6 +122,7 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	fpBtcPks []string,
 	stakingTimeBlocks int64,
 	prevActiveStkTxHashHex string,
+	consolidateUTXOs bool,
 ) (*ResultStake, error) {
 	amount, stakerAddr, fpPubKeys, stakingTime, err := parseStkParams(stakerAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
 	if err != nil {
@@ -133,7 +134,7 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 		return nil, fmt.Errorf("failed to parse previous staking transaction hash hex %s: %w", prevActiveStkTxHashHex, err)
 	}
 
-	stakingTxHash, err := s.staker.StakeExpand(stakerAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
+	stakingTxHash, err := s.staker.StakeExpand(stakerAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash, consolidateUTXOs)
 	if err != nil {
 		return nil, fmt.Errorf("error stake expand funds: %w", err)
 	}
@@ -528,7 +529,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
-		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
+		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex,consolidateUTXOs"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),

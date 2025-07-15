@@ -926,6 +926,7 @@ func TestStakeExpansion(t *testing.T) {
 		fpKeys,
 		int64(stakingTime),
 		originalTxHash.String(),
+		false, // consolidateUTXOs = false
 	)
 	require.NoError(t, err)
 
@@ -1143,4 +1144,189 @@ func TestMultipleWithdrawableStakingTransactions(t *testing.T) {
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].StakingTxHash, txHashes[3].String())
 
 	require.Equal(t, withdrawableTransactionsResp.Transactions[2].TransactionIdx, "4")
+}
+
+func TestStakeExpansionWithConsolidation(t *testing.T) {
+	t.Parallel()
+	// need to have at least 300 block on testnet as only then segwit is activated.
+	// Mature output is out which has 100 confirmations, which means 200mature outputs
+	// will generate 300 blocks
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	// large staking time
+	stakingTime := uint16(1000)
+	originalStakingAmount := int64(50000)
+	expandedStakingAmount := int64(10000000000) // 
+
+	// Create test data for original staking
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, originalStakingAmount, 1)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	// Step 1: Create and activate initial BTC delegation
+	originalTxHash := tm.sendStakingTxBTC(t, testStakingData)
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonPendingStatus)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+
+	// Need to activate delegation before expansion
+	tm.insertCovenantSigForDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{originalTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*originalTxHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonActiveStatus)
+
+
+	// Step 2: Try stake expansion without consolidation flag - this should fail
+	fpKeys := make([]string, len(testStakingData.FinalityProviderBtcKeys))
+	for i, fpKey := range testStakingData.FinalityProviderBtcKeys {
+		fpKeys[i] = hex.EncodeToString(schnorr.SerializePubKey(fpKey))
+	}
+
+	// This should fail because the largest single UTXO is not enough for the expansion
+	_, err = tm.StakerClient.StakeExpand(
+		context.Background(),
+		tm.MinerAddr.String(),
+		expandedStakingAmount,
+		fpKeys,
+		int64(stakingTime),
+		originalTxHash.String(),
+		false, // consolidateUTXOs = false
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "insufficient funds") // Expected error message
+
+	// Step 3: Try stake expansion with consolidation flag - this should succeed
+	expansionResp, err := tm.StakerClient.StakeExpand(
+		context.Background(),
+		tm.MinerAddr.String(),
+		expandedStakingAmount,
+		fpKeys,
+		int64(stakingTime),
+		originalTxHash.String(),
+		true, // consolidateUTXOs = true
+	)
+	require.NoError(t, err)
+
+	expansionTxHash, err := chainhash.NewHashFromStr(expansionResp.TxHash)
+	require.NoError(t, err)
+
+	// Step 4: Verify new BTC delegation is pending
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonPendingStatus)
+
+	pendingDel, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pendingDel, 1)
+	require.NotNil(t, pendingDel[0].StkExp)
+
+	// Step 5: Covenant signatures for expansion
+	tm.insertCovenantSigForDelegation(t, pendingDel[0])
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonVerifiedStatus)
+
+	// stake expansion delegation should be in verified state
+	verifiedDel, err := tm.BabylonClient.QueryVerifiedBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, verifiedDel, 1)
+	require.NotNil(t, verifiedDel[0].StkExp)
+
+	// Step 6: Wait for expansion transaction to be submitted to Bitcoin mempool
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{expansionTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	// Step 7: Mine the expansion transaction
+	expansionBlock := tm.mineBlock(t)
+	require.Equal(t, 3, len(expansionBlock.Transactions))
+
+	expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
+	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 2)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&expansionBlock.Header})
+	require.NoError(t, err)
+
+	// Step 8: Wait for the expansion transaction to be k-deep on Bitcoin
+	tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations, true)
+	require.Eventually(t, func() bool {
+		// Get transaction details and verify confirmations
+		res, err := tm.Sa.Wallet().TxVerbose(expansionTxHash)
+		if err != nil {
+			return false
+		}
+		// Check if we have the required number of confirmations
+		return res.Confirmations >= staker.UnbondingTxConfirmations
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	// Step 9: Report expansion transaction via MsgBTCUndelegate for the original delegation
+	rawStkExpTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(expansionTxHash)
+	require.NoError(t, err)
+	expansionMsgTx := rawStkExpTransaction.MsgTx()
+
+	// get funding txs for the stake expansion
+	var fundingTxs [][]byte
+	for _, txIn := range expansionMsgTx.TxIn {
+		rawTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(&txIn.PreviousOutPoint.Hash)
+		require.NoError(t, err)
+
+		serializedTx, err := bbntypes.SerializeBTCTx(rawTransaction.MsgTx())
+		require.NoError(t, err)
+
+		fundingTxs = append(fundingTxs, serializedTx)
+	}
+
+	err = tm.BabylonClient.ReportUnbonding(
+		*originalTxHash,
+		expansionMsgTx,
+		expansionTxInclProof,
+		fundingTxs,
+	)
+	require.NoError(t, err)
+
+	// Step 10: Wait for expansion to be active
+	// Verify the original delegation is no longer active
+	// and the expansion delegation is active
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonActiveStatus)
+
+	originalDelegation, err := tm.BabylonClient.QueryBTCDelegation(originalTxHash)
+	require.NoError(t, err)
+	require.False(t, originalDelegation.BtcDelegation.Active)
+
+	expansionDelegation, err := tm.BabylonClient.QueryBTCDelegation(expansionTxHash)
+	require.NoError(t, err)
+	require.True(t, expansionDelegation.BtcDelegation.Active)
+	require.NotNil(t, expansionDelegation.BtcDelegation.StkExp)
+
+	// The expanded delegation should have the new amount
+	require.Equal(t, uint64(expandedStakingAmount), expansionDelegation.BtcDelegation.TotalSat)
 }
