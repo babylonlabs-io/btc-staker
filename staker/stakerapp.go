@@ -1666,8 +1666,6 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 		"additionalAmount": additionalAmount,
 	}).Info("Consolidating UTXOs for stake expansion funding")
 
-	feeRate := btcutil.Amount(app.feeEstimator.EstimateFeePerKb())
-
 	// Estimate the fee for the subsequent stake expansion transaction using wallet utilities
 	// We know the expansion transaction will have:
 	// - 2 P2WPKH inputs (previous staking + funding UTXO)
@@ -1678,12 +1676,12 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 		return nil, fmt.Errorf("failed to get change script: %w", err)
 	}
 	estimatedVirtualSize := txsizes.EstimateVirtualSize(0, 0, 2, 0, []*wire.TxOut{cmd.stakingOutput}, len(changeScript))
-	estimatedExpansionFee := txrules.FeeForSerializeSize(feeRate, estimatedVirtualSize)
+	estimatedExpansionFee := txrules.FeeForSerializeSize(btcutil.Amount(cmd.feeRate), estimatedVirtualSize)
 
 	// Add buffer for fees of the next transaction that will consume this UTXO
 	consolidatedAmount := additionalAmount + estimatedExpansionFee
 
-	fundingTxHash, err := app.consolidateUTXOs(cmd.stakerAddress, consolidatedAmount, feeRate)
+	fundingTxHash, err := app.consolidateUTXOs(cmd.stakerAddress, consolidatedAmount, btcutil.Amount(cmd.feeRate))
 	if err != nil {
 		return nil, fmt.Errorf("failed to consolidate UTXOs for stake expansion funding: %w", err)
 	}
