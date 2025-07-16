@@ -1628,7 +1628,7 @@ func (app *App) StakeExpand(
 	).WithStakeExpansion(
 		prevActiveStkTxHash,
 		prevDel.StakingOutputIdx,
-		prevStakingAmount,
+		additionalAmount,
 		consolidateUTXOs,
 	)
 
@@ -1657,13 +1657,9 @@ func (app *App) StakeExpand(
 // It consolidates UTXOs to create a funding transaction that covers the additional
 // amount needed for stake expansion, including fees for the next transaction.
 func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) {
-	// Calculate the required additional amount
-	prevStakingAmount := cmd.stakeExpansion.prevStakingAmount
-	additionalAmount := cmd.stakingValue - prevStakingAmount
-
 	app.logger.WithFields(logrus.Fields{
 		"stakerAddress":    cmd.stakerAddress,
-		"additionalAmount": additionalAmount,
+		"additionalAmount": cmd.stakeExpansion.additionalStakingAmt,
 	}).Info("Consolidating UTXOs for stake expansion funding")
 
 	// Estimate the fee for the subsequent stake expansion transaction using wallet utilities
@@ -1679,7 +1675,7 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 	estimatedExpansionFee := txrules.FeeForSerializeSize(btcutil.Amount(cmd.feeRate), estimatedVirtualSize)
 
 	// Add buffer for fees of the next transaction that will consume this UTXO
-	consolidatedAmount := additionalAmount + estimatedExpansionFee
+	consolidatedAmount := cmd.stakeExpansion.additionalStakingAmt + estimatedExpansionFee
 
 	fundingTxHash, err := app.consolidateUTXOs(cmd.stakerAddress, consolidatedAmount, btcutil.Amount(cmd.feeRate))
 	if err != nil {
@@ -1688,7 +1684,7 @@ func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) 
 
 	app.logger.WithFields(logrus.Fields{
 		"fundingTxHash": fundingTxHash,
-		"targetAmount":  additionalAmount,
+		"targetAmount":  cmd.stakeExpansion.additionalStakingAmt,
 	}).Info("Successfully consolidated UTXOs, using as staking expansion funding input")
 
 	return fundingTxHash, nil
