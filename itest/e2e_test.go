@@ -1205,7 +1205,7 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonActiveStatus)
 
-	// Step 2: Try stake expansion without consolidation flag - this should fail
+	// Step 2: Try stake expansion without having a consolidated UTXO - this should fail with insufficient funds error
 	fpKeys := make([]string, len(testStakingData.FinalityProviderBtcKeys))
 	for i, fpKey := range testStakingData.FinalityProviderBtcKeys {
 		fpKeys[i] = hex.EncodeToString(schnorr.SerializePubKey(fpKey))

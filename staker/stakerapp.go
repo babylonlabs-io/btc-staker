@@ -1665,17 +1665,6 @@ func (app *App) ConsolidateUTXOs(stakerAddress btcutil.Address, targetAmount int
 		"consolidationTxHash": txHash,
 	}).Infof("Successfully consolidated UTXOs")
 
-	_, err = app.notifier.RegisterConfirmationsNtfn(
-		txHash,
-		tx.TxOut[0].PkScript,
-		SpendStakeTxConfirmations,
-		app.currentBestBlockHeight.Load(),
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("consolidation tx sent. Error registering confirmation notifcation: %w", err)
-	}
-
 	return txHash, nil
 }
 
