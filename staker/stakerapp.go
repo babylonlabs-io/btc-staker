@@ -1088,20 +1088,16 @@ func (app *App) handleSendStakeExpansionRequest(cmd *stakingRequestCmd) (btcTxHa
 // 1. the previous active staking output
 // 2. the funding output to cover the fee and additional staking output if applicable
 // It returns the staking transaction and the funding transaction used to cover the fee.
-func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd, otherRequiredInputs ...wire.OutPoint) (*wire.MsgTx, *wire.MsgTx, error) {
+func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd) (*wire.MsgTx, *wire.MsgTx, error) {
 	if cmd.stakeExpansion == nil {
 		return nil, nil, fmt.Errorf("stake expansion in request is nil")
 	}
 
-	// previous stake output is required for stake expansion
-	requiredInputs := []wire.OutPoint{{
-		Hash:  *cmd.stakeExpansion.prevActiveStkTxHash,
-		Index: cmd.stakeExpansion.prevActiveStkStakingOutputIdx,
-	}}
-	requiredInputs = append(requiredInputs, otherRequiredInputs...)
-
 	stakingTx, err := app.wc.CreateTransactionWithInputs(
-		requiredInputs,
+		[]wire.OutPoint{{
+			Hash:  *cmd.stakeExpansion.prevActiveStkTxHash,
+			Index: cmd.stakeExpansion.prevActiveStkStakingOutputIdx,
+		}},
 		2,
 		[]*wire.TxOut{cmd.stakingOutput},
 		btcutil.Amount(cmd.feeRate),
