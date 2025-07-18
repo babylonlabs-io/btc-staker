@@ -926,7 +926,6 @@ func TestStakeExpansion(t *testing.T) {
 		fpKeys,
 		int64(stakingTime),
 		originalTxHash.String(),
-		false, // consolidateUTXOs = false
 	)
 	require.NoError(t, err)
 
@@ -1206,7 +1205,6 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonActiveStatus)
 
-
 	// Step 2: Try stake expansion without consolidation flag - this should fail
 	fpKeys := make([]string, len(testStakingData.FinalityProviderBtcKeys))
 	for i, fpKey := range testStakingData.FinalityProviderBtcKeys {
@@ -1221,12 +1219,34 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 		fpKeys,
 		int64(stakingTime),
 		originalTxHash.String(),
-		false, // consolidateUTXOs = false
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "insufficient funds") // Expected error message
 
-	// Step 3: Try stake expansion with consolidation flag - this should succeed
+	// Step 3: Try stake expansion with consolidation - this should succeed
+	// Call the consolidation endpoint to consolidate the UTXOs
+	consolidationResp, err := tm.StakerClient.ConsolidateUTXOs(
+		context.Background(),
+		tm.MinerAddr.String(),
+		expandedStakingAmount,
+	)
+	require.NoError(t, err)
+
+	// Wait for consolidation transaction to be confirmed
+	consolidationTxHash, err := chainhash.NewHashFromStr(consolidationResp.TxHash)
+	require.NoError(t, err)
+
+	// Mine the consolidation transaction
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{consolidationTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	// report block to babylon
+	mBlock = tm.mineBlock(t)
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
 	expansionResp, err := tm.StakerClient.StakeExpand(
 		context.Background(),
 		tm.MinerAddr.String(),
@@ -1234,7 +1254,6 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 		fpKeys,
 		int64(stakingTime),
 		originalTxHash.String(),
-		true, // consolidateUTXOs = true
 	)
 	require.NoError(t, err)
 
@@ -1267,10 +1286,10 @@ func TestStakeExpansionWithConsolidation(t *testing.T) {
 
 	// Step 7: Mine the expansion transaction
 	expansionBlock := tm.mineBlock(t)
-	require.Equal(t, 3, len(expansionBlock.Transactions))
+	require.Equal(t, 2, len(expansionBlock.Transactions))
 
 	expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
-	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 2)
+	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 1)
 	require.NoError(t, err)
 
 	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&expansionBlock.Header})
