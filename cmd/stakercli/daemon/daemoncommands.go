@@ -24,6 +24,7 @@ var DaemonCommands = []cli.Command{
 			babylonFinalityProvidersCmd,
 			stakeCmd,
 			stakeExpansionCmd,
+			consolidateUtxosCmd,
 			unstakeCmd,
 			stakingDetailsCmd,
 			listStakingTransactionsCmd,
@@ -40,6 +41,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	targetAmountFlag           = "target-amount"
 )
 
 var checkDaemonHealthCmd = cli.Command{
@@ -165,6 +167,30 @@ var stakeExpansionCmd = cli.Command{
 		},
 	},
 	Action: stakeExpand,
+}
+
+var consolidateUtxosCmd = cli.Command{
+	Name:      "consolidate-utxos",
+	ShortName: "cu",
+	Usage:     "Consolidate small UTXOs into a single larger UTXO",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakerAddressFlag,
+			Usage:    "BTC address of the staker in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     targetAmountFlag,
+			Usage:    "Target amount in satoshis for the consolidated UTXO",
+			Required: true,
+		},
+	},
+	Action: consolidateUtxos,
 }
 
 var stakeFromPhase1Cmd = cli.Command{
@@ -429,6 +455,29 @@ func stakeExpand(ctx *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+// consolidateUtxos consolidates small UTXOs into a single larger UTXO
+func consolidateUtxos(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakerAddress := ctx.String(stakerAddressFlag)
+	targetAmount := ctx.Int64(targetAmountFlag)
+
+	result, err := client.ConsolidateUTXOs(sctx, stakerAddress, targetAmount)
+	if err != nil {
+		return fmt.Errorf("failed to consolidate UTXOs: %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
 
 	return nil
 }

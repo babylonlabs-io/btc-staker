@@ -1092,6 +1092,7 @@ func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd) (*wire.MsgTx, *w
 	if cmd.stakeExpansion == nil {
 		return nil, nil, fmt.Errorf("stake expansion in request is nil")
 	}
+
 	stakingTx, err := app.wc.CreateTransactionWithInputs(
 		[]wire.OutPoint{{
 			Hash:  *cmd.stakeExpansion.prevActiveStkTxHash,
@@ -1586,13 +1587,6 @@ func (app *App) StakeExpand(
 		return nil, fmt.Errorf("expansion amount must be greater than previous staking amount")
 	}
 
-	app.logger.WithFields(logrus.Fields{
-		"stakerAddress":     stakerAddress,
-		"stakingAmount":     stakingAmount,
-		"prevStakingAmount": prevStakingAmount,
-		"additionalAmount":  additionalAmount,
-	}).Info("Created funding transaction for stake expansion")
-
 	// Create expansion command using regular staking command
 	req := newOwnedStakingCommand(
 		stakerAddress,
@@ -1603,7 +1597,10 @@ func (app *App) StakeExpand(
 		fpPks,
 		params.ConfirmationTimeBlocks,
 		pop,
-	).WithStakeExpansion(prevActiveStkTxHash, prevDel.StakingOutputIdx)
+	).WithStakeExpansion(
+		prevActiveStkTxHash,
+		prevDel.StakingOutputIdx,
+	)
 
 	utils.PushOrQuit[*stakingRequestCmd](
 		app.stakingRequestedCmdChan,
@@ -1624,6 +1621,51 @@ func (app *App) StakeExpand(
 	case <-app.quit:
 		return nil, nil
 	}
+}
+
+// ConsolidateUTXOs consolidates UTXOs into a single larger UTXO
+// This is a public method that wraps the internal consolidateUTXOs method
+func (app *App) ConsolidateUTXOs(stakerAddress btcutil.Address, targetAmount int64) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+	default:
+	}
+
+	// Create script for the target amount to the staker address
+	changeScript, err := txscript.PayToAddrScript(stakerAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create change script: %w", err)
+	}
+
+	// Create single output for the target amount plus estimated fees
+	outputs := []*wire.TxOut{{
+		Value:    targetAmount,
+		PkScript: changeScript,
+	}}
+
+	feeRate := app.feeEstimator.EstimateFeePerKb()
+
+	// Create the transaction - WalletController will automatically select the best UTXOs
+	tx, err := app.wc.CreateAndSignTx(outputs, btcutil.Amount(feeRate), stakerAddress, app.filterUtxoFnGen())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create consolidation transaction: %w", err)
+	}
+
+	// Send the transaction
+	txHash, err := app.wc.SendRawTransaction(tx, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send consolidation transaction: %w", err)
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress":       stakerAddress,
+		"targetAmount":        targetAmount,
+		"consolidationTxHash": txHash,
+	}).Infof("Successfully consolidated UTXOs")
+
+	return txHash, nil
 }
 
 // StoredTransactions returns a slice of stakerdb.StoredTransaction

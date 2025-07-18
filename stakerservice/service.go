@@ -143,6 +143,30 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	}, nil
 }
 
+// consolidateUTXOs consolidates UTXOs into a single larger UTXO
+func (s *StakerService) consolidateUTXOs(_ *rpctypes.Context,
+	stakerAddress string,
+	targetAmount int64,
+) (*ResultStake, error) {
+	if targetAmount <= 0 {
+		return nil, fmt.Errorf("target amount must be positive")
+	}
+
+	stakerAddr, err := btcutil.DecodeAddress(stakerAddress, &s.config.ActiveNetParams)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding staker address: %w", err)
+	}
+
+	consolidationTxHash, err := s.staker.ConsolidateUTXOs(stakerAddr, targetAmount)
+	if err != nil {
+		return nil, fmt.Errorf("error consolidating UTXOs: %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: consolidationTxHash.String(),
+	}, nil
+}
+
 func parseStkParams(
 	stakerAddress string,
 	btcCfg *chaincfg.Params,
@@ -529,6 +553,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
+		"consolidate_utxos":                  NewRPCFunc(s.consolidateUTXOs, "stakerAddress,targetAmount"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
