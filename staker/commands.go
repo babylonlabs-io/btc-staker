@@ -33,8 +33,6 @@ type stakingRequestCmd struct {
 type stakeExpansionReqFields struct {
 	prevActiveStkTxHash           *chainhash.Hash
 	prevActiveStkStakingOutputIdx uint32
-	additionalStakingAmt          btcutil.Amount
-	consolidateUTXOs              bool
 }
 
 // newOwnedStakingCommand builds a new staking command
@@ -76,14 +74,10 @@ func (req *stakingRequestCmd) EventDesc() string {
 func (req *stakingRequestCmd) WithStakeExpansion(
 	prevActiveStkTxHash *chainhash.Hash,
 	prevActiveStkStakingOutputIdx uint32,
-	additionalStakingAmt btcutil.Amount,
-	consolidateUTXOs bool,
 ) *stakingRequestCmd {
 	req.stakeExpansion = &stakeExpansionReqFields{
 		prevActiveStkTxHash:           prevActiveStkTxHash,
 		prevActiveStkStakingOutputIdx: prevActiveStkStakingOutputIdx,
-		additionalStakingAmt:          additionalStakingAmt,
-		consolidateUTXOs:              consolidateUTXOs,
 	}
 	return req
 }

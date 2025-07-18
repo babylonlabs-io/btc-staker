@@ -97,7 +97,6 @@ func (c *StakerServiceJSONRPCClient) StakeExpand(
 	fpPks []string,
 	stakingTimeBlocks int64,
 	prevActiveStkTxHashHex string,
-	consolidateUTXOs bool,
 ) (*service.ResultStake, error) {
 	result := new(service.ResultStake)
 
@@ -107,11 +106,29 @@ func (c *StakerServiceJSONRPCClient) StakeExpand(
 	params["fpBtcPks"] = fpPks
 	params["stakingTimeBlocks"] = stakingTimeBlocks
 	params["prevActiveStkTxHashHex"] = prevActiveStkTxHashHex
-	params["consolidateUTXOs"] = consolidateUTXOs
 
 	_, err := c.client.Call(ctx, "stake_expand", params, result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call stake expand: %w", err)
+	}
+	return result, nil
+}
+
+// ConsolidateUTXOs consolidates UTXOs into a single larger UTXO
+func (c *StakerServiceJSONRPCClient) ConsolidateUTXOs(
+	ctx context.Context,
+	stakerAddress string,
+	targetAmount int64,
+) (*service.ResultStake, error) {
+	result := new(service.ResultStake)
+
+	params := make(map[string]interface{})
+	params["stakerAddress"] = stakerAddress
+	params["targetAmount"] = targetAmount
+
+	_, err := c.client.Call(ctx, "consolidate_utxos", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call consolidate_utxos: %w", err)
 	}
 	return result, nil
 }

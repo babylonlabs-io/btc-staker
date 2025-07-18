@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,8 +30,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcwallet/wallet/txrules"
-	"github.com/btcsuite/btcwallet/wallet/txsizes"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/channeldb"
@@ -1103,10 +1100,6 @@ func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd, otherRequiredInp
 	}}
 	requiredInputs = append(requiredInputs, otherRequiredInputs...)
 
-	// Try to create the staking expansion transaction
-	// with current UTXOs.
-	// This avoids extra fees for the user when requesting consolidation
-	// and the wallet has enough UTXOs to cover the fee.
 	stakingTx, err := app.wc.CreateTransactionWithInputs(
 		requiredInputs,
 		2,
@@ -1115,22 +1108,6 @@ func (app *App) buildStakingExpansionTx(cmd *stakingRequestCmd, otherRequiredInp
 		cmd.stakerAddress,
 		app.filterUtxoFnGen(),
 	)
-
-	// If consolidation is requested, consolidate UTXOs for the funding tx
-	// and retry building the transaction
-	if err != nil && strings.Contains(err.Error(), "insufficient funds") &&
-		cmd.stakeExpansion.consolidateUTXOs && len(otherRequiredInputs) == 0 {
-		fundingTxHash, err := app.buildFundingTx(cmd)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		// Use the consolidated UTXO as the specific funding input
-		return app.buildStakingExpansionTx(cmd, wire.OutPoint{
-			Hash:  *fundingTxHash,
-			Index: 0, // Consolidation creates a single output at index 0
-		})
-	}
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build stake expansion transaction: %w", err)
@@ -1507,7 +1484,6 @@ func (app *App) StakeExpand(
 	fpPks []*btcec.PublicKey,
 	stakingTimeBlocks uint16,
 	prevActiveStkTxHash *chainhash.Hash,
-	consolidateUTXOs bool,
 ) (*chainhash.Hash, error) {
 	// check we are not shutting down
 	select {
@@ -1628,8 +1604,6 @@ func (app *App) StakeExpand(
 	).WithStakeExpansion(
 		prevActiveStkTxHash,
 		prevDel.StakingOutputIdx,
-		additionalAmount,
-		consolidateUTXOs,
 	)
 
 	utils.PushOrQuit[*stakingRequestCmd](
@@ -1653,50 +1627,9 @@ func (app *App) StakeExpand(
 	}
 }
 
-// buildFundingTx is a helper function used within the stake expansion flow.
-// It consolidates UTXOs to create a funding transaction that covers the additional
-// amount needed for stake expansion, including fees for the next transaction.
-func (app *App) buildFundingTx(cmd *stakingRequestCmd) (*chainhash.Hash, error) {
-	app.logger.WithFields(logrus.Fields{
-		"stakerAddress":    cmd.stakerAddress,
-		"additionalAmount": cmd.stakeExpansion.additionalStakingAmt,
-	}).Info("Consolidating UTXOs for stake expansion funding")
-
-	// Estimate the fee for the subsequent stake expansion transaction using wallet utilities
-	// We know the expansion transaction will have:
-	// - 2 P2WPKH inputs (previous staking + funding UTXO)
-	// - 1 output (the new staking output)
-	// - 1 change output (to the staker address)
-	changeScript, err := txscript.PayToAddrScript(cmd.stakerAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get change script: %w", err)
-	}
-	estimatedVirtualSize := txsizes.EstimateVirtualSize(0, 0, 2, 0, []*wire.TxOut{cmd.stakingOutput}, len(changeScript))
-	estimatedExpansionFee := txrules.FeeForSerializeSize(btcutil.Amount(cmd.feeRate), estimatedVirtualSize)
-
-	// Add buffer for fees of the next transaction that will consume this UTXO
-	consolidatedAmount := cmd.stakeExpansion.additionalStakingAmt + estimatedExpansionFee
-
-	fundingTxHash, err := app.consolidateUTXOs(cmd.stakerAddress, consolidatedAmount, btcutil.Amount(cmd.feeRate))
-	if err != nil {
-		return nil, fmt.Errorf("failed to consolidate UTXOs for stake expansion funding: %w", err)
-	}
-
-	app.logger.WithFields(logrus.Fields{
-		"fundingTxHash": fundingTxHash,
-		"targetAmount":  cmd.stakeExpansion.additionalStakingAmt,
-	}).Info("Successfully consolidated UTXOs, using as staking expansion funding input")
-
-	return fundingTxHash, nil
-}
-
-// consolidateUTXOs consolidates UTXOs into a single larger UTXO
-// to meet the minimum amount required. This is used for stake expansion funding transaction.
-// This helps users who have multiple small UTXOs that individually cannot fund a stake expansion.
-func (app *App) consolidateUTXOs(
-	stakerAddress btcutil.Address,
-	targetAmount, feeRate btcutil.Amount,
-) (*chainhash.Hash, error) {
+// ConsolidateUTXOs consolidates UTXOs into a single larger UTXO
+// This is a public method that wraps the internal consolidateUTXOs method
+func (app *App) ConsolidateUTXOs(stakerAddress btcutil.Address, targetAmount int64) (*chainhash.Hash, error) {
 	// check we are not shutting down
 	select {
 	case <-app.quit:
@@ -1712,12 +1645,14 @@ func (app *App) consolidateUTXOs(
 
 	// Create single output for the target amount plus estimated fees
 	outputs := []*wire.TxOut{{
-		Value:    int64(targetAmount),
+		Value:    targetAmount,
 		PkScript: changeScript,
 	}}
 
+	feeRate := app.feeEstimator.EstimateFeePerKb()
+
 	// Create the transaction - WalletController will automatically select the best UTXOs
-	tx, err := app.wc.CreateAndSignTx(outputs, feeRate, stakerAddress, app.filterUtxoFnGen())
+	tx, err := app.wc.CreateAndSignTx(outputs, btcutil.Amount(feeRate), stakerAddress, app.filterUtxoFnGen())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consolidation transaction: %w", err)
 	}
@@ -1726,6 +1661,23 @@ func (app *App) consolidateUTXOs(
 	txHash, err := app.wc.SendRawTransaction(tx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send consolidation transaction: %w", err)
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress":       stakerAddress,
+		"targetAmount":        targetAmount,
+		"consolidationTxHash": txHash,
+	}).Infof("Successfully consolidated UTXOs")
+
+	_, err = app.notifier.RegisterConfirmationsNtfn(
+		txHash,
+		tx.TxOut[0].PkScript,
+		SpendStakeTxConfirmations,
+		app.currentBestBlockHeight.Load(),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("consolidation tx sent. Error registering confirmation notifcation: %w", err)
 	}
 
 	return txHash, nil
