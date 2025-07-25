@@ -1583,8 +1583,8 @@ func (app *App) StakeExpand(
 
 	prevStakingAmount := btcutil.Amount(prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx].Value)
 	additionalAmount := stakingAmount - prevStakingAmount
-	if additionalAmount <= 0 {
-		return nil, fmt.Errorf("expansion amount must be greater than previous staking amount")
+	if additionalAmount < 0 {
+		return nil, fmt.Errorf("expansion amount must be greater than or equal to previous staking amount")
 	}
 
 	// Create expansion command using regular staking command
