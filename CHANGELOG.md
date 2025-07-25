@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
  - [#188](https://github.com/babylonlabs-io/btc-staker/pull/188) Add stake expansion feature
  - [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
 
+### Bug Fixes
+
+ - [#191](https://github.com/babylonlabs-io/btc-staker/pull/191) Fix stake expansion validation
+
 ## v0.16.0-rc.0
 
 ### Improvements
