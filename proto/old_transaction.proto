@@ -4,7 +4,7 @@ package proto;
 
 // NOTE: This file contains the old transaction format used before the migration.
 // It is used for backward compatibility with existing data.
-// IT can be removed after the migration is complete and all old transactions are migrated.
+// It can be removed after the migration is complete and all old transactions are migrated.
 
 option go_package = "github.com/babylonlabs-io/btc-staker/proto";
 
