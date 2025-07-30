@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
  string in staker pop
  - [#188](https://github.com/babylonlabs-io/btc-staker/pull/188) Add stake expansion feature
  - [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
+ - [#192](https://github.com/babylonlabs-io/btc-staker/pull/192) Add migration command for stored txs
 
 ### Bug Fixes
 
