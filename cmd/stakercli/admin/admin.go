@@ -208,7 +208,7 @@ var migrateTrackedTransactionsCommand = cli.Command{
 	Name:      "migrate-tracked-transactions",
 	ShortName: "mtt",
 	Usage:     "Migrate tracked transactions database to new TrackedTransaction proto format introduced in v0.16+",
-	Description: "This command migrates existing tracked transactions from the old proto format in v0.15" +
+	Description: "This command migrates existing tracked transactions from the old proto format in v0.15 " +
 		"(with many fields) to the new simplified format in v0.16+ (only 3 fields). " +
 		"It preserves essential data: tracked_transaction_idx, staking_transaction, and staker_address.",
 	Flags: []cli.Flag{
