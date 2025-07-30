@@ -221,7 +221,7 @@ var migrateTrackedTransactionsCommand = cli.Command{
 	Action: migrateTrackedTransactions,
 }
 
-func migrateTrackedTransactions(c *cli.Context) error {
+func migrateTrackedTransactions(*cli.Context) error {
 	// Load staker configuration
 	config, _, _, err := stakercfg.LoadConfig()
 	if err != nil {

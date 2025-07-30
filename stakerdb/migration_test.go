@@ -22,6 +22,7 @@ import (
 
 // TestMigrateTrackedTransactions_EmptyDatabase tests migration on an empty database
 func TestMigrateTrackedTransactions_EmptyDatabase(t *testing.T) {
+	t.Parallel()
 	store := MakeTestStore(t)
 
 	// Run migration on empty database
@@ -38,6 +39,7 @@ func TestMigrateTrackedTransactions_EmptyDatabase(t *testing.T) {
 
 // TestMigrateTrackedTransactions_WithOldFormatData tests migration with old format transactions
 func TestMigrateTrackedTransactions_WithOldFormatData(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	store := MakeTestStore(t)
 
@@ -65,6 +67,7 @@ func TestMigrateTrackedTransactions_WithOldFormatData(t *testing.T) {
 
 // TestMigrateTrackedTransactions_WithNewFormatData tests migration when data is already in new format
 func TestMigrateTrackedTransactions_WithNewFormatData(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	store := MakeTestStore(t)
 
@@ -89,6 +92,7 @@ func TestMigrateTrackedTransactions_WithNewFormatData(t *testing.T) {
 
 // TestMigrateTrackedTransactions_MixedFormatData tests migration with both old and new format data
 func TestMigrateTrackedTransactions_MixedFormatData(t *testing.T) {
+	t.Parallel()
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	store := MakeTestStore(t)
 
@@ -118,6 +122,7 @@ func TestMigrateTrackedTransactions_MixedFormatData(t *testing.T) {
 
 // TestMigrateTrackedTransactions_InvalidData tests migration with invalid/corrupted data
 func TestMigrateTrackedTransactions_InvalidData(t *testing.T) {
+	t.Parallel()
 	store := MakeTestStore(t)
 
 	// Insert invalid protobuf data
@@ -138,6 +143,7 @@ func TestMigrateTrackedTransactions_InvalidData(t *testing.T) {
 
 // TestMigrateTrackedTransactions_MissingFields tests migration with missing required fields
 func TestMigrateTrackedTransactions_MissingFields(t *testing.T) {
+	t.Parallel()
 	store := MakeTestStore(t)
 
 	// Create old format transactions with missing required fields
@@ -201,6 +207,7 @@ func createMockBitcoinTx() *wire.MsgTx {
 
 // TestMigrateTrackedTransactions_RealData tests migration with data added through public API
 func TestMigrateTrackedTransactions_RealData(t *testing.T) {
+	t.Parallel()
 	store := MakeTestStore(t)
 
 	// Use the public API to add transactions (this will use current format)

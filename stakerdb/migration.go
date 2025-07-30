@@ -42,14 +42,7 @@ func (c *TrackedTransactionStore) MigrateTrackedTransactions() (*MigrationResult
 		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
 			result.ProcessedCount++
 
-			migrationNeeded, err := c.analyzeTransaction(k, v, true)
-			if err != nil {
-				result.ErrorCount++
-				fmt.Printf("Error analyzing transaction at key %x: %v\n", k, err)
-				continue
-			}
-
-			if !migrationNeeded {
+			if migrationNeeded := c.analyzeTransaction(k, v, true); !migrationNeeded {
 				result.SkippedCount++
 				continue
 			}
@@ -76,31 +69,31 @@ func (c *TrackedTransactionStore) MigrateTrackedTransactions() (*MigrationResult
 }
 
 // analyzeTransaction determines if a transaction needs migration
-func (c *TrackedTransactionStore) analyzeTransaction(key []byte, data []byte, verbose bool) (bool, error) {
+func (c *TrackedTransactionStore) analyzeTransaction(key []byte, data []byte, verbose bool) bool {
 	// Try to unmarshal as new format first
 	var newTx protobufs.TrackedTransaction
 	newFormatErr := proto.Unmarshal(data, &newTx)
 
 	// If it unmarshals successfully as new format and has valid data, it's already migrated
 	if newFormatErr == nil && newTx.StakerAddress != "" && len(data) < 200 {
-		return false, nil // No migration needed
+		return false // No migration needed
 	}
 
 	// If it can be unmarshaled as new format but looks like it might need migration
 	if newFormatErr == nil {
 		// Check if the data looks complete for new format
 		if newTx.TrackedTransactionIdx > 0 && len(newTx.StakingTransaction) > 0 && newTx.StakerAddress != "" {
-			return false, nil // Already in good new format
+			return false // Already in good new format
 		}
 		// Otherwise, it might be partially migrated or corrupted, attempt migration
-		return true, nil
+		return true
 	}
 
 	// Failed to unmarshal as new format, assume it's old format that needs migration
 	if verbose {
 		fmt.Printf("Transaction at key %x failed to unmarshal as new format, marking for migration\n", key)
 	}
-	return true, nil
+	return true
 }
 
 // migrateTransactionData converts old format transaction data to new format
