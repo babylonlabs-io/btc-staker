@@ -7,6 +7,7 @@ import (
 
 	babylonApp "github.com/babylonlabs-io/babylon/v3/app"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/go-bip39"
@@ -23,6 +24,7 @@ var AdminCommands = []cli.Command{
 		Subcommands: []cli.Command{
 			dumpCfgCommand,
 			createCosmosKeyringCommand,
+			migrateTrackedTransactionsCommand,
 		},
 	},
 }
@@ -200,4 +202,56 @@ var createCosmosKeyringCommand = cli.Command{
 		},
 	},
 	Action: createKeyRing,
+}
+
+var migrateTrackedTransactionsCommand = cli.Command{
+	Name:      "migrate-tracked-transactions",
+	ShortName: "mtt",
+	Usage:     "Migrate tracked transactions database to new TrackedTransaction proto format introduced in v0.16+",
+	Description: "This command migrates existing tracked transactions from the old proto format in v0.15" +
+		"(with many fields) to the new simplified format in v0.16+ (only 3 fields). " +
+		"It preserves essential data: tracked_transaction_idx, staking_transaction, and staker_address.",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  configFileDirFlag,
+			Usage: "Path to staker configuration file",
+			Value: defaultConfigPath,
+		},
+	},
+	Action: migrateTrackedTransactions,
+}
+
+func migrateTrackedTransactions(c *cli.Context) error {
+	// Load staker configuration
+	config, _, _, err := stakercfg.LoadConfig()
+	if err != nil {
+		// If config loading fails, use default config
+		fmt.Printf("Failed to load config, using default database path: %v\n", err)
+		defaultConfig := stakercfg.DefaultConfig()
+		config = &defaultConfig
+	}
+
+	// Open database connection
+	db, err := stakercfg.GetDBBackend(config.DBConfig)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	// Create tracked transaction store
+	store, err := stakerdb.NewTrackedTransactionStore(db)
+	if err != nil {
+		return fmt.Errorf("failed to create tracked transaction store: %w", err)
+	}
+
+	// Perform migration
+	result, err := store.MigrateTrackedTransactions()
+	if err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
+
+	// Display results
+	fmt.Printf("Migration complete. %s\n", result.String())
+
+	return nil
 }
