@@ -264,8 +264,15 @@ func (app *App) signTx(tx *wire.MsgTx) (*wire.MsgTx, error) {
 }
 
 func (app *App) logTxDetails(tx *wire.MsgTx, txType string) {
+	// Collect all input UTXO details for checking if already spent
+	inputUTXOs := make([]map[string]interface{}, 0, len(tx.TxIn))
 	unsignedInputs := make([]int, 0)
 	for i, in := range tx.TxIn {
+		inputUTXOs = append(inputUTXOs, map[string]interface{}{
+			"inputIndex": i,
+			"txHash":     in.PreviousOutPoint.Hash.String(),
+			"outputIdx":  in.PreviousOutPoint.Index,
+		})
 		if len(in.Witness) == 0 {
 			unsignedInputs = append(unsignedInputs, i)
 			break
@@ -280,13 +287,16 @@ func (app *App) logTxDetails(tx *wire.MsgTx, txType string) {
 		stkAddrStr = stakerAddr.EncodeAddress()
 	}
 
-	app.logger.WithFields(logrus.Fields{
+	logFields := logrus.Fields{
 		"transactionType":   txType,
 		"inputsNum":         len(tx.TxIn),
 		"unsignedInputsIdx": unsignedInputs,
 		"stakerAddr":        stkAddrStr,
 		"stakingTxHash":     tx.TxHash().String(),
-	}).Debug("could not fully sign transaction with configured wallet")
+		"inputUTXOs":        inputUTXOs,
+	}
+
+	app.logger.WithFields(logFields).Debug("could not fully sign transaction with configured wallet")
 }
 
 func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
