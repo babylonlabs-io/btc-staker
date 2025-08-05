@@ -275,7 +275,6 @@ func (app *App) logTxDetails(tx *wire.MsgTx, txType string) {
 		})
 		if len(in.Witness) == 0 {
 			unsignedInputs = append(unsignedInputs, i)
-			break
 		}
 	}
 
