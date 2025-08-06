@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ### Bug Fixes
 
  - [#191](https://github.com/babylonlabs-io/btc-staker/pull/191) Fix stake expansion validation
+ - [#194](https://github.com/babylonlabs-io/btc-staker/pull/194) Use params by version query in stake expansion
 
 ## v0.16.0-rc.0
 
