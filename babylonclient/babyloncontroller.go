@@ -242,6 +242,31 @@ func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
 	return stakingTrackerParams, nil
 }
 
+// queryStakingTrackerByVersionWithRetries is a helper function to query the babylon client for the staking tracker parameters by version
+func (bc *BabylonController) queryStakingTrackerByVersionWithRetries(
+	version uint32,
+) (*StakingTrackerResponse, error) {
+	var stakingTrackerParams *StakingTrackerResponse
+	if err := retry.Do(func() error {
+		trackerParams, err := bc.QueryStakingTrackerByVersion(version)
+		if err != nil {
+			return fmt.Errorf("failed to get staking tracker params by version: %w", err)
+		}
+		stakingTrackerParams = trackerParams
+		return nil
+	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		bc.logger.WithFields(logrus.Fields{
+			"attempt":      n + 1,
+			"max_attempts": RtyAttNum,
+			"error":        err,
+		}).Error("Failed to query babylon client for staking tracker params")
+	})); err != nil {
+		return nil, fmt.Errorf("failed to get staking tracker params by version after multiple retries: %w", err)
+	}
+
+	return stakingTrackerParams, nil
+}
+
 // ContextSigningInfo is a helper function to get the context signing info
 func (bc *BabylonController) StakerPopSignCtx() (string, error) {
 	stakingModuleAddressBytes, err := bech32.ConvertAndEncode(
@@ -274,6 +299,17 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 		BTCCheckpointParams: *bccParams,
 		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
+}
+
+// ParamsByVersion is a helper function to query the babylon client for the staking parameters by version
+func (bc *BabylonController) ParamsByVersion(version uint32) (*BtcStakingParams, error) {
+	stakingTrackerParams, err := bc.queryStakingTrackerByVersionWithRetries(version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staking tracker params by version with retries: %w", err)
+	}
+	p := BtcStakingParamsFromStakingTracker(stakingTrackerParams)
+
+	return &p, nil
 }
 
 // GetKeyAddress is a helper function to get the key address
@@ -710,6 +746,25 @@ func (bc *BabylonController) QueryStakingTrackerByBtcHeight(btcHeight uint32) (*
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to query babylon params by btc height: %w", err)
+	}
+
+	return parseParams(&response.Params)
+}
+
+// QueryStakingTrackerByVersion queries the staking tracker from the Babylon node
+func (bc *BabylonController) QueryStakingTrackerByVersion(version uint32) (*StakingTrackerResponse, error) {
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
+	queryClient := btcstypes.NewQueryClient(clientCtx)
+
+	response, err := queryClient.ParamsByVersion(ctx, &btcstypes.QueryParamsByVersionRequest{
+		Version: version,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query babylon params by version: %w", err)
 	}
 
 	return parseParams(&response.Params)
