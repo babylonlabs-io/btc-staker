@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/sirupsen/logrus"
 )
 
 type stakeExpSignInfo struct {
@@ -81,6 +82,10 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, di *btcstktypes.Qu
 	signedTx, err := app.signTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("staking expansion transaction: %w", err)
+	}
+
+	if signedTx == nil {
+		app.logTxDetails(tx, "stake expansion")
 	}
 
 	return signedTx, nil
@@ -237,6 +242,10 @@ func (app *App) signRegularStakingTransaction(tx *wire.MsgTx) (*wire.MsgTx, erro
 		return nil, fmt.Errorf("regular staking transaction: %w", err)
 	}
 
+	if signedTx == nil {
+		app.logTxDetails(tx, "regular staking")
+	}
+
 	return signedTx, nil
 }
 
@@ -252,6 +261,41 @@ func (app *App) signTx(tx *wire.MsgTx) (*wire.MsgTx, error) {
 	}
 
 	return signedTx, nil
+}
+
+func (app *App) logTxDetails(tx *wire.MsgTx, txType string) {
+	// Collect all input UTXO details for checking if already spent
+	inputUTXOs := make([]map[string]interface{}, 0, len(tx.TxIn))
+	unsignedInputs := make([]int, 0)
+	for i, in := range tx.TxIn {
+		inputUTXOs = append(inputUTXOs, map[string]interface{}{
+			"inputIndex": i,
+			"txHash":     in.PreviousOutPoint.Hash.String(),
+			"outputIdx":  in.PreviousOutPoint.Index,
+		})
+		if len(in.Witness) == 0 {
+			unsignedInputs = append(unsignedInputs, i)
+		}
+	}
+
+	// Get the configured wallet address
+	stakingTxHash := tx.TxHash()
+	_, stakerAddr := app.mustGetTransactionAndStakerAddress(&stakingTxHash)
+	stkAddrStr := "nil"
+	if stakerAddr != nil {
+		stkAddrStr = stakerAddr.EncodeAddress()
+	}
+
+	logFields := logrus.Fields{
+		"transactionType":   txType,
+		"inputsNum":         len(tx.TxIn),
+		"unsignedInputsIdx": unsignedInputs,
+		"stakerAddr":        stkAddrStr,
+		"stakingTxHash":     tx.TxHash().String(),
+		"inputUTXOs":        inputUTXOs,
+	}
+
+	app.logger.WithFields(logFields).Debug("could not fully sign transaction with configured wallet")
 }
 
 func isTransacionFullySigned(tx *wire.MsgTx) (bool, error) {
