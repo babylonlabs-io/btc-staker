@@ -304,7 +304,6 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 // ParamsByVersion is a helper function to query the babylon client for the staking parameters by version
 func (bc *BabylonController) ParamsByVersion(version uint32) (*BtcStakingParams, error) {
 	stakingTrackerParams, err := bc.queryStakingTrackerByVersionWithRetries(version)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get staking tracker params by version with retries: %w", err)
 	}
