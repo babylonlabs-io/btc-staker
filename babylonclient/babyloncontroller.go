@@ -307,7 +307,7 @@ func (bc *BabylonController) ParamsByVersion(version uint32) (*BtcStakingParams,
 	stakingTrackerParams, err := bc.queryStakingTrackerByVersionWithRetries(version)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get staking tracker params by btc height with retries: %w", err)
+		return nil, fmt.Errorf("failed to get staking tracker params by version with retries: %w", err)
 	}
 	p := BtcStakingParamsFromStakingTracker(stakingTrackerParams)
 
