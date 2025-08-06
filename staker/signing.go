@@ -18,7 +18,7 @@ type stakeExpSignInfo struct {
 	FundingOutput *wire.TxOut
 	SpendInfo     *staking.SpendInfo
 	// Params contains the staking parameters for the previous delegation
-	Params *cl.StakingParams
+	Params *cl.BtcStakingParams
 }
 
 // signStakingTransaction signs a staking transaction, handling both regular staking
@@ -119,7 +119,7 @@ func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOut
 	}
 
 	// get the params from the previous delegation
-	prevDelParams, err := app.babylonClient.ParamsByBtcHeight(prevDel.ParamsVersion)
+	prevDelParams, err := app.babylonClient.ParamsByVersion(prevDel.ParamsVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get babylon params: %w", err)
 	}
@@ -138,7 +138,7 @@ func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOut
 	}, nil
 }
 
-func (app *App) getUnbondingSpendInfo(params *cl.StakingParams, stakerAddr btcutil.Address, del *btcstktypes.BTCDelegationResponse) (*staking.SpendInfo, error) {
+func (app *App) getUnbondingSpendInfo(params *cl.BtcStakingParams, stakerAddr btcutil.Address, del *btcstktypes.BTCDelegationResponse) (*staking.SpendInfo, error) {
 	stakerPubKey, err := app.wc.AddressPublicKey(stakerAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get staker public key: %w", err)

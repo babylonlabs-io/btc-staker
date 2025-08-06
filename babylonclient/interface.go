@@ -82,6 +82,7 @@ type BabylonClient interface {
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
+	ParamsByVersion(version uint32) (*BtcStakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
@@ -126,6 +127,10 @@ func (m *MockBabylonClient) Params() (*StakingParams, error) {
 
 func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {
 	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) ParamsByVersion(_ uint32) (*BtcStakingParams, error) {
+	return &m.ClientParams.BtcStakingParams, nil
 }
 
 func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) {
