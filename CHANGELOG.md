@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.17.0
+
 ### Improvements
 
  - [#189](https://github.com/babylonlabs-io/btc-staker/pull/189) Use signing context
