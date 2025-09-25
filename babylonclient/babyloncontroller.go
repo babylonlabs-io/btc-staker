@@ -947,7 +947,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	commission *sdkmath.LegacyDec,
 	description *sttypes.Description,
 	pop *btcstypes.ProofOfPossessionBTC,
-	bsnID string,
 ) error {
 	registerMsg := &btcstypes.MsgCreateFinalityProvider{
 		Addr: fpAddr.String(),
