@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	babylonApp "github.com/babylonlabs-io/babylon/v3/app"
+	babylonApp "github.com/babylonlabs-io/babylon/v4/app"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"

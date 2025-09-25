@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"

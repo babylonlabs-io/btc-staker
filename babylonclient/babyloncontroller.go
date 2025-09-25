@@ -12,15 +12,12 @@ import (
 	sdkErr "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
-	appparams "github.com/babylonlabs-io/babylon/v3/app/params"
-	"github.com/babylonlabs-io/babylon/v3/app/signingcontext"
-	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
-	bbnclient "github.com/babylonlabs-io/babylon/v3/client/client"
-	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
-	btcctypes "github.com/babylonlabs-io/babylon/v3/x/btccheckpoint/types"
-	btclctypes "github.com/babylonlabs-io/babylon/v3/x/btclightclient/types"
-	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
-	bsctypes "github.com/babylonlabs-io/babylon/v3/x/btcstkconsumer/types"
+	bct "github.com/babylonlabs-io/babylon/v4/client/babylonclient"
+	bbnclient "github.com/babylonlabs-io/babylon/v4/client/client"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
+	btclctypes "github.com/babylonlabs-io/babylon/v4/x/btclightclient/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -32,7 +29,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/bech32"
 	bq "github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	sttypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -265,20 +261,6 @@ func (bc *BabylonController) queryStakingTrackerByVersionWithRetries(
 	}
 
 	return stakingTrackerParams, nil
-}
-
-// ContextSigningInfo is a helper function to get the context signing info
-func (bc *BabylonController) StakerPopSignCtx() (string, error) {
-	stakingModuleAddressBytes, err := bech32.ConvertAndEncode(
-		appparams.Bech32PrefixAccAddr,
-		appparams.AccBTCStaking,
-	)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to convert and encode staking module address: %w", err)
-	}
-
-	return signingcontext.StakerPopContextV0(bc.bbnClient.GetConfig().ChainID, stakingModuleAddressBytes), nil
 }
 
 // ParamsByBtcHeight is a helper function to query the babylon client for the staking parameters by btc height
@@ -977,7 +959,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 		BtcPk:       btcPubKey,
 		Description: description,
 		Pop:         pop,
-		BsnId:       bsnID,
 	}
 
 	relayerMsgs := bbnclient.ToProviderMsgs([]sdk.Msg{registerMsg})
@@ -1115,19 +1096,6 @@ func (bc *BabylonController) SubmitMultipleCovenantMessages(
 	}
 
 	return bc.reliablySendMsgs(msgs)
-}
-
-// RegisterConsumerChain registers a consumer chain
-// Test methods for e2e testing
-func (bc *BabylonController) RegisterConsumerChain(id, name, description string) (*bct.RelayerTxResponse, error) {
-	msg := &bsctypes.MsgRegisterConsumer{
-		Signer:              bc.getTxSigner(),
-		ConsumerId:          id,
-		ConsumerName:        name,
-		ConsumerDescription: description,
-	}
-
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
 }
 
 // QueryPendingBTCDelegations queries for pending BTC delegations

@@ -3,9 +3,9 @@ package babylonclient
 import (
 	"fmt"
 
-	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
-	bbn "github.com/babylonlabs-io/babylon/v3/types"
-	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
+	bbn "github.com/babylonlabs-io/babylon/v4/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -119,7 +119,6 @@ func (pop *BabylonPop) ValidatePop(
 
 	btcPkBabylonFormat := bbn.NewBIP340PubKeyFromBTCPK(btcPk)
 	return bPop.Verify(
-		"",
 		bbnAddr,
 		btcPkBabylonFormat,
 		net,
