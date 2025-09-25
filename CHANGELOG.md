@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
  - [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
  - [#192](https://github.com/babylonlabs-io/btc-staker/pull/192) Add migration command for stored txs
  - [#195](https://github.com/babylonlabs-io/btc-staker/pull/195) Add logs with tx details on tx signature failure
+ - [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
 
 ### Bug Fixes
 
