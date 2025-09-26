@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/babylonlabs-io/babylon/v3/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"

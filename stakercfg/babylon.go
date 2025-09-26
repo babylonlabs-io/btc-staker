@@ -3,7 +3,7 @@ package stakercfg
 import (
 	"time"
 
-	bbncfg "github.com/babylonlabs-io/babylon/v3/client/config"
+	bbncfg "github.com/babylonlabs-io/babylon/v4/client/config"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 

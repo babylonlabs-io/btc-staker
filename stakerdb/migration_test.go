@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
 	protobufs "github.com/babylonlabs-io/btc-staker/proto"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcutil"

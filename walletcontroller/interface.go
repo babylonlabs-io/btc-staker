@@ -3,7 +3,7 @@ package walletcontroller
 import (
 	"fmt"
 
-	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"

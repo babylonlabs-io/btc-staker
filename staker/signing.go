@@ -3,9 +3,9 @@ package staker
 import (
 	"fmt"
 
-	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
-	bbntypes "github.com/babylonlabs-io/babylon/v3/types"
-	btcstktypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcstktypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
 	"github.com/btcsuite/btcd/btcutil"

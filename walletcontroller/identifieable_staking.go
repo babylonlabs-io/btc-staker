@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"fmt"
 
-	staking "github.com/babylonlabs-io/babylon/v3/btcstaking"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 )
 
-// copy from https://github.com/babylonlabs-io/babylon/v3/blob/b6635c95fa1ad4018af74152140abd71c8e4a05e/btcstaking/identifiable_staking.go#L376
+// copy from https://github.com/babylonlabs-io/babylon/v4/blob/b6635c95fa1ad4018af74152140abd71c8e4a05e/btcstaking/identifiable_staking.go#L376
 // one a new tag of main is made, update go mod import and load it from there.
 
 // ParseV0StakingTxWithoutTag takes a btc transaction and checks whether it is a staking transaction and if so parses it

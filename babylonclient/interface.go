@@ -3,11 +3,11 @@ package babylonclient
 import (
 	"fmt"
 
-	bct "github.com/babylonlabs-io/babylon/v3/client/babylonclient"
+	bct "github.com/babylonlabs-io/babylon/v4/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/babylonlabs-io/babylon/v3/testutil/datagen"
-	btcstypes "github.com/babylonlabs-io/babylon/v3/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -78,7 +78,6 @@ type SingleKeyKeyring interface {
 
 type BabylonClient interface {
 	SingleKeyKeyring
-	StakerPopSignCtx() (string, error)
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
@@ -229,10 +228,6 @@ func (m *MockBabylonClient) Undelegate(
 
 func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
 	return 0, nil
-}
-
-func (m *MockBabylonClient) StakerPopSignCtx() (string, error) {
-	return "", nil
 }
 
 func GetMockClient() *MockBabylonClient {

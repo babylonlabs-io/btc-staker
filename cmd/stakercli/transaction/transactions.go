@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/babylonlabs-io/babylon/v3/btcstaking"
-	bbn "github.com/babylonlabs-io/babylon/v3/types"
+	"github.com/babylonlabs-io/babylon/v4/btcstaking"
+	bbn "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"

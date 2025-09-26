@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/babylonlabs-io/babylon/v3/btcstaking"
+	"github.com/babylonlabs-io/babylon/v4/btcstaking"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
