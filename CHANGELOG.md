@@ -37,18 +37,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
- - [#189](https://github.com/babylonlabs-io/btc-staker/pull/189) Use signing context
+* [#189](https://github.com/babylonlabs-io/btc-staker/pull/189) Use signing context
  string in staker pop
- - [#188](https://github.com/babylonlabs-io/btc-staker/pull/188) Add stake expansion feature
- - [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
- - [#192](https://github.com/babylonlabs-io/btc-staker/pull/192) Add migration command for stored txs
- - [#195](https://github.com/babylonlabs-io/btc-staker/pull/195) Add logs with tx details on tx signature failure
- - [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
+* [#188](https://github.com/babylonlabs-io/btc-staker/pull/188) Add stake expansion feature
+* [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
+* [#192](https://github.com/babylonlabs-io/btc-staker/pull/192) Add migration command for stored txs
+* [#195](https://github.com/babylonlabs-io/btc-staker/pull/195) Add logs with tx details on tx signature failure
+* [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
+* [#203](https://github.com/babylonlabs-io/btc-staker/pull/203) chore: bump babylon to `v4.0.0-rc.3`
 
 ### Bug Fixes
 
- - [#191](https://github.com/babylonlabs-io/btc-staker/pull/191) Fix stake expansion validation
- - [#194](https://github.com/babylonlabs-io/btc-staker/pull/194) Use params by version query in stake expansion
+* [#191](https://github.com/babylonlabs-io/btc-staker/pull/191) Fix stake expansion validation
+* [#194](https://github.com/babylonlabs-io/btc-staker/pull/194) Use params by version query in stake expansion
 
 ## v0.16.0-rc.0
 
