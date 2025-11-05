@@ -6,7 +6,7 @@ require (
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/math v1.5.3
 	github.com/avast/retry-go/v4 v4.5.1
-	github.com/babylonlabs-io/babylon/v4 v4.0.0-rc.0
+	github.com/babylonlabs-io/babylon/v4 v4.0.0-rc.3
 	github.com/babylonlabs-io/networks/parameters v0.2.2
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
@@ -18,7 +18,7 @@ require (
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5
 	github.com/btcsuite/btcwallet/walletdb v1.4.4
-	github.com/cometbft/cometbft v0.38.18
+	github.com/cometbft/cometbft v0.38.19
 	github.com/cosmos/cosmos-sdk v0.53.4
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
