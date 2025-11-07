@@ -167,6 +167,7 @@ type StakerConfig struct {
 	CheckActiveInterval       time.Duration `long:"checkactiveinterval" description:"The interval for staker to check whether delegation is active on Babylon node"`
 	MaxConcurrentTransactions uint32        `long:"maxconcurrenttransactions" description:"Maximum concurrent transactions in flight to babylon node"`
 	ExitOnCriticalError       bool          `long:"exitoncriticalerror" description:"Exit stakerd on critical error"`
+	ContextUpgradeHeight      uint64        `long:"contextupgradeheight" description:"The height at which the context signing upgrade is applied"`
 }
 
 func DefaultStakerConfig() StakerConfig {
@@ -176,6 +177,8 @@ func DefaultStakerConfig() StakerConfig {
 		CheckActiveInterval:       1 * time.Minute,
 		MaxConcurrentTransactions: 1,
 		ExitOnCriticalError:       true,
+		// zero means it is triggered from the start
+		ContextUpgradeHeight: 0,
 	}
 }
 

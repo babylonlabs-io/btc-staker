@@ -7,8 +7,8 @@ import (
 	"sort"
 
 	sdkmath "cosmossdk.io/math"
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
-	"github.com/babylonlabs-io/babylon/types"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
+	"github.com/babylonlabs-io/babylon/v4/types"
 
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
@@ -176,6 +176,14 @@ func createDelegationData(
 		BabylonStakerAddr:               babylonStakerAddr,
 		BabylonPop:                      req.pop,
 		Ud:                              undelegationData,
+	}
+
+	// Add expansion data if this is a stake expansion
+	if req.prevActiveStkTxHash != nil {
+		dg.StakeExpansion = &cl.StakeExpansionData{
+			PreviousStakingTxHash: req.prevActiveStkTxHash,
+			FundingTx:             req.fundingTx,
+		}
 	}
 
 	return &dg

@@ -37,8 +37,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Improvements
 
-- [#183](https://github.com/babylonlabs-io/btc-staker/pull/183) Add github actions release workflow.
-- [#85](https://github.com/babylonlabs-io/btc-staker/pull/85) Remove unused flags
+* [#189](https://github.com/babylonlabs-io/btc-staker/pull/189) Use signing context
+ string in staker pop
+* [#188](https://github.com/babylonlabs-io/btc-staker/pull/188) Add stake expansion feature
+* [#190](https://github.com/babylonlabs-io/btc-staker/pull/190) Add UTXO consolidation command
+* [#192](https://github.com/babylonlabs-io/btc-staker/pull/192) Add migration command for stored txs
+* [#195](https://github.com/babylonlabs-io/btc-staker/pull/195) Add logs with tx details on tx signature failure
+* [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
+* [#203](https://github.com/babylonlabs-io/btc-staker/pull/203) chore: bump babylon to `v4.0.0-rc.3`
+* [#204](https://github.com/babylonlabs-io/btc-staker/pull/204) chore: bump babylon to `v4.0.0`
+* [#183](https://github.com/babylonlabs-io/btc-staker/pull/183) Add github actions release workflow.
+
+### Bug Fixes
+
+* [#191](https://github.com/babylonlabs-io/btc-staker/pull/191) Fix stake expansion validation
+* [#194](https://github.com/babylonlabs-io/btc-staker/pull/194) Use params by version query in stake expansion
+
+## v0.16.0-rc.0
+
+### Improvements
+
+* [#85](https://github.com/babylonlabs-io/btc-staker/pull/85) Remove unused flags
 in stakercli.
 * [#114](https://github.com/babylonlabs-io/btc-staker/pull/114) **Multi-staking support**.
 This PR contains a series of PRs on multi-staking support and BTC staking integration.
@@ -47,6 +66,8 @@ endpoint and the post-approval flow, and reduction of state in the database.
 
 ### Bug fixes
 
+* [#184](https://github.com/babylonlabs-io/btc-staker/pull/184) remove unnecessary check
+for unstaking
 * [#172](https://github.com/babylonlabs-io/btc-staker/pull/172) chore: spend stake check confirmation
 
 ## v0.15.9
@@ -79,13 +100,15 @@ mainnet
 
 ### Improvements
 
+* [#157](https://github.com/babylonlabs-io/btc-staker/pull/157) Move stakerapp creation from main to stakerservice
 * [#156](https://github.com/babylonlabs-io/btc-staker/pull/156) disable tls in config
 * [#154](https://github.com/babylonlabs-io/btc-staker/pull/154) chore: change default max feerate
+
 * [#155](https://github.com/babylonlabs-io/btc-staker/pull/155) Add basic auth to daemon routes.
 * [#151](https://github.com/babylonlabs-io/btc-staker/pull/151) Load parameters from
 babylon node instead of global parameters input file in `stake-from-phase1`.
 * [#163](https://github.com/babylonlabs-io/btc-staker/pull/163) bump babylon to rc.8
-- [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
+* [#162](https://github.com/babylonlabs-io/btc-staker/pull/162) Update PoP BIP322 signing
 to sign `bytes(bbnAddrString)` due to wallet extension compatibility.
 
 ## v0.15.4
@@ -110,21 +133,21 @@ taproot addresses bip322 signing
 
 ### Bug fixes
 
-- [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
+* [#122](https://github.com/babylonlabs-io/btc-staker/pull/122) Force usage of
 `btcd` v0.24.2 in `go.mod`
 
 ## v0.15.0
 
 ### Improvements
-- [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
+* [#111](https://github.com/babylonlabs-io/btc-staker/pull/111) Add CLI command
 to create phase-1/phase-2 PoP payload
-- [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
+* [#115](https://github.com/babylonlabs-io/btc-staker/pull/115) Add CLI command
 to create payload for phase-1/phase-2 PoP deletion
-- [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
+* [#116](https://github.com/babylonlabs-io/btc-staker/pull/116) Add CLI command
 to sign Cosmos ADR-36 messages
-- [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
+* [#118](https://github.com/babylonlabs-io/btc-staker/pull/118) Add CLI command
 to validate PoP JSON file
-- [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
+* [#119](https://github.com/babylonlabs-io/btc-staker/pull/119) Bump Babylon version
 to v1.0.0-rc.4
 
 ## v0.14.0
@@ -195,7 +218,7 @@ routine to check for activation after startup
 
 ### Bug fix
 
-- [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
+* [#53](https://github.com/babylonlabs-io/btc-staker/pull/53) Use only quorum of
 signatures when building unbonding transaction witness
 
 ## v0.7.0
@@ -230,7 +253,6 @@ spends through psbt's
 bitcoind wallets
 * [26](https://github.com/babylonlabs-io/btc-staker/pull/26) Improve phase-1
 commands to check transaction
-
 
 ## v0.5.0
 

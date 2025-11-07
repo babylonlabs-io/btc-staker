@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/babylonlabs-io/babylon/btcstaking"
-	bbn "github.com/babylonlabs-io/babylon/types"
+	"github.com/babylonlabs-io/babylon/v4/btcstaking"
+	bbn "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/babylonlabs-io/networks/parameters/parser"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -908,7 +908,7 @@ func createWithdrawalInfo(
 
 		unbondingTxHash := unbondingTx.TxHash()
 
-		if err := btcstaking.IsSimpleTransfer(unbondingTx); err != nil {
+		if err := isSimpleTransfer(unbondingTx); err != nil {
 			return nil, fmt.Errorf("unbonding transaction is not valid: %w", err)
 		}
 

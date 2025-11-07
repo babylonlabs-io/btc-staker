@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/babylonlabs-io/babylon/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
@@ -268,6 +268,127 @@ func (w *RPCWalletController) CreateTransaction(
 	return tx, err
 }
 
+// CreateTransactionWithInputs creates a transaction with a specified number of inputs and required inputs
+func (w *RPCWalletController) CreateTransactionWithInputs(
+	requiredInputs []wire.OutPoint,
+	inputsCount int,
+	outputs []*wire.TxOut,
+	feeRatePerKb btcutil.Amount,
+	changeAddress btcutil.Address,
+	useUtxoFn UseUtxoFn,
+) (*wire.MsgTx, error) {
+	// Check if we have too many required inputs
+	if len(requiredInputs) > inputsCount {
+		return nil, fmt.Errorf("number of required inputs (%d) exceeds desired input count (%d)", len(requiredInputs), inputsCount)
+	}
+
+	utxoResults, err := w.ListUnspent()
+	if err != nil {
+		return nil, err
+	}
+
+	utxos, err := resultsToUtxos(utxoResults, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create map for quick lookup of available UTXOs
+	utxoMap := make(map[wire.OutPoint]Utxo)
+	for _, u := range utxos {
+		utxoMap[u.OutPoint] = u
+	}
+
+	// First, collect required inputs and ensure they exist
+	var orderedUtxos []Utxo
+	for _, reqOutPoint := range requiredInputs {
+		if utxo, exists := utxoMap[reqOutPoint]; exists {
+			// Apply useUtxoFn filter if provided
+			if useUtxoFn == nil || useUtxoFn(utxo) {
+				orderedUtxos = append(orderedUtxos, utxo)
+				delete(utxoMap, reqOutPoint) // Remove from available pool
+			} else {
+				return nil, fmt.Errorf("required input %s is filtered out by useUtxoFn", reqOutPoint.String())
+			}
+		} else {
+			// Required input not found in wallet's UTXO set (e.g., taproot staking output)
+			// Create a synthetic UTXO by fetching the transaction and output
+			tx, err := w.Tx(&reqOutPoint.Hash)
+			if err != nil {
+				return nil, fmt.Errorf("required input %s not found in available UTXOs and cannot fetch transaction: %w", reqOutPoint.String(), err)
+			}
+
+			if reqOutPoint.Index >= uint32(len(tx.MsgTx().TxOut)) {
+				return nil, fmt.Errorf("required input %s has invalid output index %d", reqOutPoint.String(), reqOutPoint.Index)
+			}
+
+			txOut := tx.MsgTx().TxOut[reqOutPoint.Index]
+
+			// Create synthetic UTXO for the required input
+			syntheticUtxo := Utxo{
+				Amount:   btcutil.Amount(txOut.Value),
+				OutPoint: reqOutPoint,
+				PkScript: txOut.PkScript,
+				Address:  "", // We don't need the address for synthetic UTXOs
+			}
+
+			// Apply useUtxoFn filter if provided
+			if useUtxoFn == nil || useUtxoFn(syntheticUtxo) {
+				orderedUtxos = append(orderedUtxos, syntheticUtxo)
+			} else {
+				return nil, fmt.Errorf("required input %s is filtered out by useUtxoFn", reqOutPoint.String())
+			}
+		}
+	}
+
+	// Convert remaining UTXOs to slice and apply filter
+	var remainingUtxos []Utxo
+	for _, u := range utxoMap {
+		if useUtxoFn == nil || useUtxoFn(u) {
+			remainingUtxos = append(remainingUtxos, u)
+		}
+	}
+
+	// Sort remaining UTXOs by amount from highest to lowest
+	sort.Sort(sort.Reverse(byAmount(remainingUtxos)))
+
+	// Add additional inputs to reach desired count
+	// Note: orderedUtxos already contains required inputs in specified order
+	// Now we add the highest-value remaining UTXOs to fill up to desiredInputCount
+	remainingInputsNeeded := inputsCount - len(orderedUtxos)
+	if remainingInputsNeeded > 0 {
+		if len(remainingUtxos) < remainingInputsNeeded {
+			return nil, fmt.Errorf("not enough UTXOs available: need %d more inputs, only %d available", remainingInputsNeeded, len(remainingUtxos))
+		}
+
+		// Add the required number of additional inputs (sorted by highest amount first)
+		for i := range remainingInputsNeeded {
+			orderedUtxos = append(orderedUtxos, remainingUtxos[i])
+		}
+	}
+
+	changeScript, err := txscript.PayToAddrScript(changeAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := buildTxFromOutputs(orderedUtxos, outputs, feeRatePerKb, changeScript)
+	if err != nil {
+		return nil, err
+	}
+
+	// Final validation that we have the exact desired input count
+	if len(tx.TxIn) != inputsCount {
+		return nil, fmt.Errorf("transaction must have exactly %d inputs, got %d", inputsCount, len(tx.TxIn))
+	}
+
+	err = utils.CheckTransaction(tx)
+	if err != nil {
+		return nil, fmt.Errorf("transaction is not standard: %w", err)
+	}
+
+	return tx, nil
+}
+
 func (w *RPCWalletController) CreateAndSignTx(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
@@ -451,52 +572,107 @@ func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 		return nil, fmt.Errorf("cannot sign transaction with more than one input")
 	}
 
-	if !txscript.IsPayToTaproot(request.FundingOutput.PkScript) {
-		return nil, fmt.Errorf("cannot sign transaction spending non-taproot output")
+	return w.signTaprootTransaction(
+		request.TxToSign,
+		request.SignerAddress,
+		request.SpendDescription,
+		[]*wire.TxOut{request.FundingOutput},
+		0, // Sign the only input
+	)
+}
+
+func (w *RPCWalletController) SignTwoInputTaprootSpendingTransaction(request *TwoInputTaprootSigningRequest) (*TaprootSigningResult, error) {
+	if len(request.TxToSign.TxIn) != 2 {
+		return nil, fmt.Errorf("transaction must have exactly two inputs, got %d", len(request.TxToSign.TxIn))
 	}
 
-	key, err := w.AddressPublicKey(request.SignerAddress)
+	return w.signTaprootTransaction(
+		request.TxToSign,
+		request.SignerAddress,
+		request.SpendDescription,
+		[]*wire.TxOut{request.StakingOutput, request.FundingOutput},
+		0, // Sign the first input (staking output)
+	)
+}
 
+// signTaprootTransaction is a generic function that handles taproot transaction signing
+// for both single and multi-input transactions
+func (w *RPCWalletController) signTaprootTransaction(
+	txToSign *wire.MsgTx,
+	signerAddress btcutil.Address,
+	spendDescription *SpendPathDescription,
+	inputUtxos []*wire.TxOut,
+	inputToSignIndex int,
+) (*TaprootSigningResult, error) {
+	// Validate that we're signing a taproot output
+	if !txscript.IsPayToTaproot(inputUtxos[inputToSignIndex].PkScript) {
+		return nil, fmt.Errorf("input %d must be a taproot output", inputToSignIndex)
+	}
+
+	// Get the public key for the signer address
+	key, err := w.AddressPublicKey(signerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get public key for address: %w", err)
 	}
 
-	psbtPacket, err := psbt.New(
-		[]*wire.OutPoint{&request.TxToSign.TxIn[0].PreviousOutPoint},
-		request.TxToSign.TxOut,
-		request.TxToSign.Version,
-		request.TxToSign.LockTime,
-		[]uint32{request.TxToSign.TxIn[0].Sequence},
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create PSBT packet with transaction to sign: %w", err)
+	// Create outpoints and sequences for all inputs
+	outpoints := make([]*wire.OutPoint, len(txToSign.TxIn))
+	sequences := make([]uint32, len(txToSign.TxIn))
+	for i, txIn := range txToSign.TxIn {
+		outpoints[i] = &txIn.PreviousOutPoint
+		sequences[i] = txIn.Sequence
 	}
 
-	psbtPacket.Inputs[0].SighashType = txscript.SigHashDefault
-	psbtPacket.Inputs[0].WitnessUtxo = request.FundingOutput
-	psbtPacket.Inputs[0].Bip32Derivation = []*psbt.Bip32Derivation{
+	// Create PSBT packet
+	psbtPacket, err := psbt.New(
+		outpoints,
+		txToSign.TxOut,
+		txToSign.Version,
+		txToSign.LockTime,
+		sequences,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PSBT packet: %w", err)
+	}
+
+	// Set UTXO information for all inputs
+	for i, utxo := range inputUtxos {
+		psbtPacket.Inputs[i].WitnessUtxo = utxo
+	}
+
+	// Configure signing for the target input only
+	psbtPacket.Inputs[inputToSignIndex].SighashType = txscript.SigHashDefault
+	psbtPacket.Inputs[inputToSignIndex].Bip32Derivation = []*psbt.Bip32Derivation{
 		{
 			PubKey: key.SerializeCompressed(),
 		},
 	}
 
-	ctrlBlockBytes, err := request.SpendDescription.ControlBlock.ToBytes()
-
+	// Set up taproot leaf script for the input to sign
+	ctrlBlockBytes, err := spendDescription.ControlBlock.ToBytes()
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize control block: %w", err)
 	}
 
-	psbtPacket.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+	psbtPacket.Inputs[inputToSignIndex].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
 		{
 			ControlBlock: ctrlBlockBytes,
-			Script:       request.SpendDescription.ScriptLeaf.Script,
-			LeafVersion:  request.SpendDescription.ScriptLeaf.LeafVersion,
+			Script:       spendDescription.ScriptLeaf.Script,
+			LeafVersion:  spendDescription.ScriptLeaf.LeafVersion,
 		},
 	}
 
-	psbtEncoded, err := psbtPacket.B64Encode()
+	// Clear signing information for other inputs
+	for i := range psbtPacket.Inputs {
+		if i != inputToSignIndex {
+			psbtPacket.Inputs[i].SighashType = 0
+			psbtPacket.Inputs[i].Bip32Derivation = nil
+			psbtPacket.Inputs[i].TaprootLeafScript = nil
+		}
+	}
 
+	// Encode and sign the PSBT
+	psbtEncoded, err := psbtPacket.B64Encode()
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode PSBT packet: %w", err)
 	}
@@ -508,30 +684,25 @@ func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 		"DEFAULT",
 		nil,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign PSBT packet: %w", err)
 	}
 
+	// Decode the signed PSBT
 	decodedBytes, err := base64.StdEncoding.DecodeString(signResult.Psbt)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode signed PSBT packet from b64: %w", err)
 	}
 
 	decodedPsbt, err := psbt.NewFromRawBytes(bytes.NewReader(decodedBytes), false)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode signed PSBT packet from bytes: %w", err)
 	}
 
-	// In our signing request we only handle transaction with one input, and request
-	// signature for one public key, thus we can receive at most one signature from btc
-	if len(decodedPsbt.Inputs[0].TaprootScriptSpendSig) == 1 {
-		schnorSignature := decodedPsbt.Inputs[0].TaprootScriptSpendSig[0].Signature
-
+	// Check if we got a signature for the target input
+	if len(decodedPsbt.Inputs[inputToSignIndex].TaprootScriptSpendSig) == 1 {
+		schnorSignature := decodedPsbt.Inputs[inputToSignIndex].TaprootScriptSpendSig[0].Signature
 		parsedSignature, err := schnorr.ParseSignature(schnorSignature)
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse schnorr signature in psbt packet: %w", err)
 		}
@@ -541,12 +712,9 @@ func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 		}, nil
 	}
 
-	// decodedPsbt.Inputs[0].TaprootScriptSpendSig was 0, it is possible that script
-	// required only one signature to build whole witness
-	if len(decodedPsbt.Inputs[0].FinalScriptWitness) > 0 {
-		// we go whole witness, return it to the caller
-		witness, err := bip322.SimpleSigToWitness(decodedPsbt.Inputs[0].FinalScriptWitness)
-
+	// Check if we got a full witness
+	if len(decodedPsbt.Inputs[inputToSignIndex].FinalScriptWitness) > 0 {
+		witness, err := bip322.SimpleSigToWitness(decodedPsbt.Inputs[inputToSignIndex].FinalScriptWitness)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse witness in psbt packet: %w", err)
 		}
@@ -556,6 +724,6 @@ func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 		}, nil
 	}
 
-	// neither witness, nor signature is filled.
+	// No signature found
 	return nil, fmt.Errorf("no signature found in PSBT packet. Wallet can't sign given tx")
 }

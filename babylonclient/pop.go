@@ -3,9 +3,9 @@ package babylonclient
 import (
 	"fmt"
 
-	"github.com/babylonlabs-io/babylon/crypto/bip322"
-	bbn "github.com/babylonlabs-io/babylon/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
+	bbn "github.com/babylonlabs-io/babylon/v4/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"

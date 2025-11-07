@@ -1,7 +1,7 @@
 DOCKER = $(shell which docker)
 BUILDDIR ?= $(CURDIR)/build
 
-BABYLON_PKG := github.com/babylonlabs-io/babylon/cmd/babylond
+BABYLON_PKG := github.com/babylonlabs-io/babylon/v4/cmd/babylond
 
 GO_BIN := ${GOPATH}/bin
 

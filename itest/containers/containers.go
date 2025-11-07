@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	bbn "github.com/babylonlabs-io/babylon/types"
+	bbn "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/btcsuite/btcd/btcec/v2"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
@@ -220,6 +220,9 @@ func (m *Manager) RunBabylondResource(
 			ExposedPorts: []string{
 				"9090/tcp", // only expose what we need
 				"26657/tcp",
+			},
+			Env: []string{
+				"BABYLON_BLS_PASSWORD=password",
 			},
 			Cmd: cmd,
 		},

@@ -3,11 +3,11 @@ package babylonclient
 import (
 	"fmt"
 
-	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
+	bct "github.com/babylonlabs-io/babylon/v4/client/babylonclient"
 
 	sdkmath "cosmossdk.io/math"
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -81,7 +81,9 @@ type BabylonClient interface {
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
 	Params() (*StakingParams, error)
 	ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error)
+	ParamsByVersion(version uint32) (*BtcStakingParams, error)
 	Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error)
+	ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error)
 	QueryFinalityProviders(limit uint64, offset uint64) (*FinalityProvidersClientResponse, error)
 	QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error)
 	QueryHeaderDepth(headerHash *chainhash.Hash) (uint32, error)
@@ -112,7 +114,7 @@ func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResp
 type MockBabylonClient struct {
 	ClientParams           *StakingParams
 	babylonKey             *secp256k1.PrivKey
-	SentMessages           chan *btcstypes.MsgCreateBTCDelegation
+	SentMessages           chan sdk.Msg
 	ActiveFinalityProvider *FinalityProviderInfo
 }
 
@@ -124,6 +126,10 @@ func (m *MockBabylonClient) Params() (*StakingParams, error) {
 
 func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {
 	return m.ClientParams, nil
+}
+
+func (m *MockBabylonClient) ParamsByVersion(_ uint32) (*BtcStakingParams, error) {
+	return &m.ClientParams.BtcStakingParams, nil
 }
 
 func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) {
@@ -161,6 +167,17 @@ func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 
 func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	msg, err := delegationDataToMsg(dg)
+	if err != nil {
+		return nil, err
+	}
+
+	m.SentMessages <- msg
+
+	return &bct.RelayerTxResponse{Code: 0}, nil
+}
+
+func (m *MockBabylonClient) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
+	msg, err := delegationDataToMsgBtcStakeExpand(dg)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +270,7 @@ func GetMockClient() *MockBabylonClient {
 			},
 		},
 		babylonKey:             priv,
-		SentMessages:           make(chan *btcstypes.MsgCreateBTCDelegation),
+		SentMessages:           make(chan sdk.Msg),
 		ActiveFinalityProvider: &vi,
 	}
 }

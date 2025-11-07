@@ -1,7 +1,7 @@
 package staker
 
 import (
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -14,7 +14,7 @@ import (
 // we can make command to implement StakingEvent interface
 var _ StakingEvent = (*stakingRequestCmd)(nil)
 
-// sendDelegationRequestCmd represents a command to send a delegation request
+// stakingRequestCmd represents a command to send a delegation request
 type stakingRequestCmd struct {
 	stakerAddress           btcutil.Address
 	stakingOutput           *wire.TxOut
@@ -26,6 +26,13 @@ type stakingRequestCmd struct {
 	pop                     *cl.BabylonPop
 	errChan                 chan error
 	successChan             chan *chainhash.Hash
+	// Expansion-specific fields for Babylon integration
+	stakeExpansion *stakeExpansionReqFields
+}
+
+type stakeExpansionReqFields struct {
+	prevActiveStkTxHash           *chainhash.Hash
+	prevActiveStkStakingOutputIdx uint32
 }
 
 // newOwnedStakingCommand builds a new staking command
@@ -62,6 +69,17 @@ func (req *stakingRequestCmd) EventID() chainhash.Hash {
 // EventDesc returns the description of the event
 func (req *stakingRequestCmd) EventDesc() string {
 	return "STAKING_REQUESTED_CMD"
+}
+
+func (req *stakingRequestCmd) WithStakeExpansion(
+	prevActiveStkTxHash *chainhash.Hash,
+	prevActiveStkStakingOutputIdx uint32,
+) *stakingRequestCmd {
+	req.stakeExpansion = &stakeExpansionReqFields{
+		prevActiveStkTxHash:           prevActiveStkTxHash,
+		prevActiveStkStakingOutputIdx: prevActiveStkStakingOutputIdx,
+	}
+	return req
 }
 
 // migrateStakingCmd represents a command to migrate a staking transaction

@@ -9,17 +9,15 @@ import (
 	"strings"
 	"time"
 
-	bct "github.com/babylonlabs-io/babylon/client/babylonclient"
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
-
 	sdkErr "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	"github.com/avast/retry-go/v4"
-	bbnclient "github.com/babylonlabs-io/babylon/client/client"
-	bbntypes "github.com/babylonlabs-io/babylon/types"
-	btclctypes "github.com/babylonlabs-io/babylon/x/btclightclient/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
-	bsctypes "github.com/babylonlabs-io/babylon/x/btcstkconsumer/types"
+	bct "github.com/babylonlabs-io/babylon/v4/client/babylonclient"
+	bbnclient "github.com/babylonlabs-io/babylon/v4/client/client"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
+	btclctypes "github.com/babylonlabs-io/babylon/v4/x/btclightclient/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -240,6 +238,31 @@ func (bc *BabylonController) queryStakingTrackerByBtcHeightWithRetries(
 	return stakingTrackerParams, nil
 }
 
+// queryStakingTrackerByVersionWithRetries is a helper function to query the babylon client for the staking tracker parameters by version
+func (bc *BabylonController) queryStakingTrackerByVersionWithRetries(
+	version uint32,
+) (*StakingTrackerResponse, error) {
+	var stakingTrackerParams *StakingTrackerResponse
+	if err := retry.Do(func() error {
+		trackerParams, err := bc.QueryStakingTrackerByVersion(version)
+		if err != nil {
+			return fmt.Errorf("failed to get staking tracker params by version: %w", err)
+		}
+		stakingTrackerParams = trackerParams
+		return nil
+	}, RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		bc.logger.WithFields(logrus.Fields{
+			"attempt":      n + 1,
+			"max_attempts": RtyAttNum,
+			"error":        err,
+		}).Error("Failed to query babylon client for staking tracker params")
+	})); err != nil {
+		return nil, fmt.Errorf("failed to get staking tracker params by version after multiple retries: %w", err)
+	}
+
+	return stakingTrackerParams, nil
+}
+
 // ParamsByBtcHeight is a helper function to query the babylon client for the staking parameters by btc height
 func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams, error) {
 	bccParams, err := bc.btccheckpointParamsWithRetry()
@@ -258,6 +281,17 @@ func (bc *BabylonController) ParamsByBtcHeight(btcHeight uint32) (*StakingParams
 		BTCCheckpointParams: *bccParams,
 		BtcStakingParams:    BtcStakingParamsFromStakingTracker(stakingTrackerParams),
 	}, nil
+}
+
+// ParamsByVersion is a helper function to query the babylon client for the staking parameters by version
+func (bc *BabylonController) ParamsByVersion(version uint32) (*BtcStakingParams, error) {
+	stakingTrackerParams, err := bc.queryStakingTrackerByVersionWithRetries(version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get staking tracker params by version with retries: %w", err)
+	}
+	p := BtcStakingParamsFromStakingTracker(stakingTrackerParams)
+
+	return &p, nil
 }
 
 // GetKeyAddress is a helper function to get the key address
@@ -373,6 +407,13 @@ type DelegationData struct {
 	StakerBtcPk                     *btcec.PublicKey
 	BabylonPop                      *BabylonPop
 	Ud                              *UndelegationData
+	StakeExpansion                  *StakeExpansionData
+}
+
+// StakeExpansionData holds data specific to stake expansion transactions
+type StakeExpansionData struct {
+	PreviousStakingTxHash *chainhash.Hash
+	FundingTx             *wire.MsgTx
 }
 
 // UndelegationData is a helper struct to hold the undelegation data
@@ -506,6 +547,49 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 	}, nil
 }
 
+// delegationDataToMsgBtcStakeExpand is a helper function to convert delegation data to stake expansion message
+func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcStakeExpand, error) {
+	if dg == nil {
+		return nil, fmt.Errorf("nil delegation data")
+	}
+
+	if dg.StakeExpansion == nil {
+		return nil, fmt.Errorf("nil stake expansion data")
+	}
+
+	// First get the common delegation message
+	commonMsg, err := delegationDataToMsg(dg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create common delegation message: %w", err)
+	}
+
+	// Serialize the funding transaction
+	serializedFundingTx, err := utils.SerializeBtcTransaction(dg.StakeExpansion.FundingTx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize funding transaction: %w", err)
+	}
+
+	// Create the stake expansion message with all fields from common delegation
+	return &btcstypes.MsgBtcStakeExpand{
+		StakerAddr:                    commonMsg.StakerAddr,
+		Pop:                           commonMsg.Pop,
+		BtcPk:                         commonMsg.BtcPk,
+		FpBtcPkList:                   commonMsg.FpBtcPkList,
+		StakingTime:                   commonMsg.StakingTime,
+		StakingValue:                  commonMsg.StakingValue,
+		StakingTx:                     commonMsg.StakingTx,
+		SlashingTx:                    commonMsg.SlashingTx,
+		DelegatorSlashingSig:          commonMsg.DelegatorSlashingSig,
+		UnbondingTx:                   commonMsg.UnbondingTx,
+		UnbondingTime:                 commonMsg.UnbondingTime,
+		UnbondingValue:                commonMsg.UnbondingValue,
+		UnbondingSlashingTx:           commonMsg.UnbondingSlashingTx,
+		DelegatorUnbondingSlashingSig: commonMsg.DelegatorUnbondingSlashingSig,
+		PreviousStakingTxHash:         dg.StakeExpansion.PreviousStakingTxHash.String(),
+		FundingTx:                     serializedFundingTx,
+	}, nil
+}
+
 // ReliablySendMsgs sends a batch of messages to the Babylon node
 func (bc *BabylonController) reliablySendMsgs(
 	msgs []sdk.Msg,
@@ -528,6 +612,16 @@ func (bc *BabylonController) Delegate(dg *DelegationData) (*bct.RelayerTxRespons
 	}
 
 	return bc.reliablySendMsgs([]sdk.Msg{delegateMsg})
+}
+
+// ExpandDelegation sends a stake expansion delegation message to the Babylon node
+func (bc *BabylonController) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
+	stkExpandMsg, err := delegationDataToMsgBtcStakeExpand(dg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert delegation data to expansion message: %w", err)
+	}
+
+	return bc.reliablySendMsgs([]sdk.Msg{stkExpandMsg})
 }
 
 // getQueryContext returns context with timeout
@@ -639,6 +733,25 @@ func (bc *BabylonController) QueryStakingTrackerByBtcHeight(btcHeight uint32) (*
 	return parseParams(&response.Params)
 }
 
+// QueryStakingTrackerByVersion queries the staking tracker from the Babylon node
+func (bc *BabylonController) QueryStakingTrackerByVersion(version uint32) (*StakingTrackerResponse, error) {
+	ctx, cancel := getQueryContext(bc.cfg.Timeout)
+	defer cancel()
+
+	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
+	queryClient := btcstypes.NewQueryClient(clientCtx)
+
+	response, err := queryClient.ParamsByVersion(ctx, &btcstypes.QueryParamsByVersionRequest{
+		Version: version,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query babylon params by version: %w", err)
+	}
+
+	return parseParams(&response.Params)
+}
+
 // QueryFinalityProviders queries the finality providers from the Babylon node
 func (bc *BabylonController) QueryFinalityProviders(
 	limit uint64,
@@ -717,9 +830,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 	defer cancel()
 
 	clientCtx := client.Context{Client: bc.bbnClient.RPCClient}
-
 	queryClient := btcstypes.NewQueryClient(clientCtx)
-	bscQueryClient := bsctypes.NewQueryClient(clientCtx)
 
 	hexPubKey := hex.EncodeToString(schnorr.SerializePubKey(btcPubKey))
 
@@ -729,7 +840,7 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 		addr          string
 	)
 	if err := retry.Do(func() error {
-		// check if the finality provider is a Babylon one
+		// check if the finality provider exists
 		resp, err := queryClient.FinalityProvider(
 			ctx,
 			&btcstypes.QueryFinalityProviderRequest{
@@ -743,33 +854,8 @@ func (bc *BabylonController) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (
 			return nil
 		}
 
-		// check if the finality provider is a consumer chain one
-		bscResp, bscErr := bscQueryClient.FinalityProviderConsumer(
-			ctx,
-			&bsctypes.QueryFinalityProviderConsumerRequest{
-				FpBtcPkHex: hexPubKey,
-			},
-		)
-		if bscErr == nil {
-			consumerFPResp, consumerFPErr := bscQueryClient.FinalityProvider(
-				ctx,
-				&bsctypes.QueryFinalityProviderRequest{
-					ConsumerId: bscResp.ConsumerId,
-					FpBtcPkHex: hexPubKey,
-				},
-			)
-			if consumerFPErr != nil {
-				return consumerFPErr
-			}
-			slashedHeight = consumerFPResp.FinalityProvider.SlashedBabylonHeight
-			pk = consumerFPResp.FinalityProvider.BtcPk
-			addr = resp.FinalityProvider.Addr
-			return nil
-		}
-
 		// the finality provider cannot be found
-		if strings.Contains(err.Error(), btcstypes.ErrFpNotFound.Error()) &&
-			strings.Contains(bscErr.Error(), btcstypes.ErrFpNotFound.Error()) {
+		if strings.Contains(err.Error(), btcstypes.ErrFpNotFound.Error()) {
 			// if there is no finality provider with such key, we return unrecoverable error, as we not need to retry any more
 			return retry.Unrecoverable(fmt.Errorf("failed to get finality provider with key: %s: %w", hexPubKey, ErrFinalityProviderDoesNotExist))
 		}
@@ -861,7 +947,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 	commission *sdkmath.LegacyDec,
 	description *sttypes.Description,
 	pop *btcstypes.ProofOfPossessionBTC,
-	consumerID string,
 ) error {
 	registerMsg := &btcstypes.MsgCreateFinalityProvider{
 		Addr: fpAddr.String(),
@@ -873,7 +958,6 @@ func (bc *BabylonController) RegisterFinalityProvider(
 		BtcPk:       btcPubKey,
 		Description: description,
 		Pop:         pop,
-		ConsumerId:  consumerID,
 	}
 
 	relayerMsgs := bbnclient.ToProviderMsgs([]sdk.Msg{registerMsg})
@@ -984,6 +1068,7 @@ func (bc *BabylonController) CreateCovenantMessage(
 	slashStakingAdaptorSigs [][]byte,
 	unbondindgSig *bbntypes.BIP340Signature,
 	slashUnbondingAdaptorSigs [][]byte,
+	stakeExpTxSig *bbntypes.BIP340Signature,
 ) *btcstypes.MsgAddCovenantSigs {
 	msg := &btcstypes.MsgAddCovenantSigs{
 		Signer:                  bc.getTxSigner(),
@@ -992,6 +1077,7 @@ func (bc *BabylonController) CreateCovenantMessage(
 		SlashingTxSigs:          slashStakingAdaptorSigs,
 		UnbondingTxSig:          unbondindgSig,
 		SlashingUnbondingTxSigs: slashUnbondingAdaptorSigs,
+		StakeExpansionTxSig:     stakeExpTxSig,
 	}
 
 	return msg
@@ -1011,22 +1097,21 @@ func (bc *BabylonController) SubmitMultipleCovenantMessages(
 	return bc.reliablySendMsgs(msgs)
 }
 
-// RegisterConsumerChain registers a consumer chain
-// Test methods for e2e testing
-func (bc *BabylonController) RegisterConsumerChain(id, name, description string) (*bct.RelayerTxResponse, error) {
-	msg := &bsctypes.MsgRegisterConsumer{
-		Signer:              bc.getTxSigner(),
-		ConsumerId:          id,
-		ConsumerName:        name,
-		ConsumerDescription: description,
-	}
-
-	return bc.reliablySendMsgs([]sdk.Msg{msg})
-}
-
 // QueryPendingBTCDelegations queries for pending BTC delegations
 // Test methods for e2e testing
 func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDelegationResponse, error) {
+	return bc.QueryBTCDelegationsWithStatus(btcstypes.BTCDelegationStatus_PENDING)
+}
+
+// QueryVerifiedBTCDelegations queries for verified BTC delegations
+// Test methods for e2e testing
+func (bc *BabylonController) QueryVerifiedBTCDelegations() ([]*btcstypes.BTCDelegationResponse, error) {
+	return bc.QueryBTCDelegationsWithStatus(btcstypes.BTCDelegationStatus_VERIFIED)
+}
+
+// QueryBTCDelegationsWithStatus queries for BTC delegations in the specified status
+// Test methods for e2e testing
+func (bc *BabylonController) QueryBTCDelegationsWithStatus(status btcstypes.BTCDelegationStatus) ([]*btcstypes.BTCDelegationResponse, error) {
 	ctx, cancel := getQueryContext(bc.cfg.Timeout)
 	defer cancel()
 
@@ -1035,7 +1120,7 @@ func (bc *BabylonController) QueryPendingBTCDelegations() ([]*btcstypes.BTCDeleg
 
 	// query all the unsigned delegations
 	queryRequest := btcstypes.QueryBTCDelegationsRequest{
-		Status: btcstypes.BTCDelegationStatus_PENDING,
+		Status: status,
 	}
 
 	res, err := queryClient.BTCDelegations(ctx, &queryRequest)
@@ -1095,4 +1180,37 @@ func (bc *BabylonController) ActivateDelegation(
 	}
 
 	return res, nil
+}
+
+// ReportUnbonding sends unbonding message for a delegation
+// Test methods for e2e testing
+func (bc *BabylonController) ReportUnbonding(
+	stakingTxHash chainhash.Hash,
+	stakeSpendingTx *wire.MsgTx,
+	proof *btcctypes.BTCSpvProof,
+	fundingTxs [][]byte,
+) error {
+	stakeSpendingBytes, err := bbntypes.SerializeBTCTx(stakeSpendingTx)
+	if err != nil {
+		return err
+	}
+
+	msg := &btcstypes.MsgBTCUndelegate{
+		Signer:                        bc.getTxSigner(),
+		StakingTxHash:                 stakingTxHash.String(),
+		StakeSpendingTx:               stakeSpendingBytes,
+		StakeSpendingTxInclusionProof: btcstypes.NewInclusionProofFromSpvProof(proof),
+		FundingTransactions:           fundingTxs,
+	}
+
+	resp, err := bc.reliablySendMsgs([]sdk.Msg{msg})
+	if err != nil && resp != nil {
+		return fmt.Errorf("msg MsgBTCUndelegate failed exeuction with code %d and error %w", resp.Code, err)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to report unbonding: %w", err)
+	}
+
+	return nil
 }

@@ -19,19 +19,18 @@ import (
 	"testing"
 	"time"
 
+	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/daemon"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
 	"github.com/ory/dockertest/v3"
 
-	btcctypes "github.com/babylonlabs-io/babylon/x/btccheckpoint/types"
-
-	staking "github.com/babylonlabs-io/babylon/btcstaking"
-	txformat "github.com/babylonlabs-io/babylon/btctxformatter"
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
-	bbntypes "github.com/babylonlabs-io/babylon/types"
-	btcstypes "github.com/babylonlabs-io/babylon/x/btcstaking/types"
-	ckpttypes "github.com/babylonlabs-io/babylon/x/checkpointing/types"
+	staking "github.com/babylonlabs-io/babylon/v4/btcstaking"
+	txformat "github.com/babylonlabs-io/babylon/v4/btctxformatter"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcstypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
+	ckpttypes "github.com/babylonlabs-io/babylon/v4/x/checkpointing/types"
 	"github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/metrics"
 	"github.com/babylonlabs-io/btc-staker/staker"
@@ -732,7 +731,6 @@ func (tm *TestManager) createAndRegisterFinalityProviders(t *testing.T, stkData 
 				Moniker: "tester",
 			},
 			pop,
-			"",
 		)
 		require.NoError(t, err)
 
@@ -912,6 +910,60 @@ func (tm *TestManager) insertAllMinedBlocksToBabylon(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// signStakeExpansionTx creates covenant signature for stake expansion transaction
+func (tm *TestManager) signStakeExpansionTx(t *testing.T, covenantSK *btcec.PrivateKey, del *btcstypes.BTCDelegationResponse, params *babylonclient.StakingParams) *bbntypes.BIP340Signature {
+	require.NotNil(t, del.StkExp, "delegation should be a stake expansion")
+
+	stakingTx := del.StakingTxHex
+	stakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(stakingTx)
+	require.NoError(t, err)
+
+	// Get the previous delegation info by parsing the hex
+	prevDelHash, err := chainhash.NewHashFromStr(del.StkExp.PreviousStakingTxHashHex)
+	require.NoError(t, err)
+	delRes, err := tm.BabylonClient.QueryBTCDelegation(prevDelHash)
+	require.NoError(t, err)
+	require.NotNil(t, delRes.BtcDelegation, "previous delegation should not be nil")
+	prevDel := delRes.BtcDelegation
+
+	prevStakingTx := prevDel.StakingTxHex
+	prevStakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(prevStakingTx)
+	require.NoError(t, err)
+
+	fundingTxBz, err := hex.DecodeString(del.StkExp.OtherFundingTxOutHex)
+	require.NoError(t, err)
+	otherFundingTxOut, err := staking.DeserializeTxOut(fundingTxBz)
+	require.NoError(t, err)
+
+	prevFpBTCPKs, err := bbntypes.NewBTCPKsFromBIP340PKs(prevDel.FpBtcPkList)
+	require.NoError(t, err)
+
+	prevDelInfos, err := staking.BuildStakingInfo(
+		prevDel.BtcPk.MustToBTCPK(),
+		prevFpBTCPKs,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		uint16(prevDel.EndHeight-prevDel.StartHeight),
+		btcutil.Amount(prevDel.TotalSat),
+		regtestParams,
+	)
+	require.NoError(t, err)
+
+	prevDelUnbondPathSpendInfo, err := prevDelInfos.UnbondingPathSpendInfo()
+	require.NoError(t, err)
+
+	sig, err := staking.SignTxForFirstScriptSpendWithTwoInputsFromScript(
+		stakingMsgTx,
+		prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx],
+		otherFundingTxOut,
+		covenantSK,
+		prevDelUnbondPathSpendInfo.GetPkScriptPath(),
+	)
+	require.NoError(t, err)
+
+	return bbntypes.NewBIP340SignatureFromBTCSig(sig)
+}
+
 // insertCovenantSigForDelegation inserts a covenant signature for a delegation
 func (tm *TestManager) insertCovenantSigForDelegation(
 	t *testing.T,
@@ -994,14 +1046,25 @@ func (tm *TestManager) insertCovenantSigForDelegation(
 	)
 	require.NoError(t, err)
 
+	// Check if this is a stake expansion
+	isStakeExpansion := btcDel.StkExp != nil
+
 	var messages []*btcstypes.MsgAddCovenantSigs
 	for i := 0; i < len(tm.CovenantPrivKeys); i++ {
+		// If this is a stake expansion, generate expansion signature
+		var stakeExpansionSig *bbntypes.BIP340Signature
+		if isStakeExpansion {
+			// Generate stake expansion signature
+			stakeExpansionSig = tm.signStakeExpansionTx(t, tm.CovenantPrivKeys[i], btcDel, params)
+		}
+
 		msg := tm.BabylonClient.CreateCovenantMessage(
 			bbntypes.NewBIP340PubKeyFromBTCPK(tm.CovenantPrivKeys[i].PubKey()),
 			stakingMsgTx.TxHash().String(),
 			covenantSlashingTxSigs[i].AdaptorSigs,
 			bbntypes.NewBIP340SignatureFromBTCSig(covUnbondingSigs[i]),
 			covenantUnbondingSlashingTxSigs[i].AdaptorSigs,
+			stakeExpansionSig,
 		)
 		messages = append(messages, msg)
 	}

@@ -89,6 +89,50 @@ func (c *StakerServiceJSONRPCClient) Stake(
 	return result, nil
 }
 
+// StakeExpand expand a previous active stake transaction
+func (c *StakerServiceJSONRPCClient) StakeExpand(
+	ctx context.Context,
+	stakerAddress string,
+	stakingAmount int64,
+	fpPks []string,
+	stakingTimeBlocks int64,
+	prevActiveStkTxHashHex string,
+) (*service.ResultStake, error) {
+	result := new(service.ResultStake)
+
+	params := make(map[string]interface{})
+	params["stakerAddress"] = stakerAddress
+	params["stakingAmount"] = stakingAmount
+	params["fpBtcPks"] = fpPks
+	params["stakingTimeBlocks"] = stakingTimeBlocks
+	params["prevActiveStkTxHashHex"] = prevActiveStkTxHashHex
+
+	_, err := c.client.Call(ctx, "stake_expand", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call stake expand: %w", err)
+	}
+	return result, nil
+}
+
+// ConsolidateUTXOs consolidates UTXOs into a single larger UTXO
+func (c *StakerServiceJSONRPCClient) ConsolidateUTXOs(
+	ctx context.Context,
+	stakerAddress string,
+	targetAmount int64,
+) (*service.ResultStake, error) {
+	result := new(service.ResultStake)
+
+	params := make(map[string]interface{})
+	params["stakerAddress"] = stakerAddress
+	params["targetAmount"] = targetAmount
+
+	_, err := c.client.Call(ctx, "consolidate_utxos", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call consolidate_utxos: %w", err)
+	}
+	return result, nil
+}
+
 // BtcDelegationFromBtcStakingTx returns a btc delegation from a btc staking transaction
 func (c *StakerServiceJSONRPCClient) BtcDelegationFromBtcStakingTx(
 	ctx context.Context,

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/babylonlabs-io/babylon/testutil/datagen"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/stakerdb"
 	"github.com/btcsuite/btcd/btcutil"
