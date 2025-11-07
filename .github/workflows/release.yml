@@ -27,7 +27,7 @@ jobs:
       tag: ${{ inputs.tag }}
       description: ${{ inputs.description }}
       prerelease: ${{ inputs.prerelease }}
-      changelog_path: "https://github.com/babylonlabs-io/babylon/blob/main/CHANGELOG.md"
+      changelog_path: "https://github.com/babylonlabs-io/btc-staker/blob/main/CHANGELOG.md"
       build_command: |
         make build
       docker_image_table_template: |
