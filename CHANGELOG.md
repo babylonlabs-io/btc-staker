@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 * [#195](https://github.com/babylonlabs-io/btc-staker/pull/195) Add logs with tx details on tx signature failure
 * [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
 * [#203](https://github.com/babylonlabs-io/btc-staker/pull/203) chore: bump babylon to `v4.0.0-rc.3`
+* [#204](https://github.com/babylonlabs-io/btc-staker/pull/204) chore: bump babylon to `v4.0.0`
 
 ### Bug Fixes
 
