@@ -35,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## Unreleased
 
+## v0.18.0
+
 ### Improvements
 
 * [#202](https://github.com/babylonlabs-io/btc-staker/pull/202) chore: bump bbn v4
