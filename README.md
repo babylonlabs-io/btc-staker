@@ -1,5 +1,10 @@
 # BTC Staker
 
+> **⚠️ WARNING: NOT FOR PRODUCTION USE**
+>
+> This repository is for internal Bitcoin staking handling only and is **NOT intended for production use**.
+> Use at your own risk. The software is provided as-is without any warranties or guarantees.
+
 ## 1. Overview
 
 BTC-Staker is a toolset designed for seamless Bitcoin staking. It consists of two
