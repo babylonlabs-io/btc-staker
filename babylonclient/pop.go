@@ -44,16 +44,26 @@ func NewBabylonPop(t BabylonBtcPopType, btcSigOverBbnAddr []byte) (*BabylonPop, 
 func NewBabylonBip322Pop(
 	msg []byte,
 	w wire.TxWitness,
-	a btcutil.Address) (*BabylonPop, error) {
-	// TODO: bip322.Verify does not use it last parameter and this parameter should
-	// be removed from the function signature upstream.
-	// after that, we can remove the nil parameter here
-	if err := bip322.Verify(msg, w, a, nil); err != nil {
+	btcPk *bbn.BIP340PubKey,
+	a btcutil.Address,
+	net *chaincfg.Params,
+) (*BabylonPop, error) {
+	sigSerialized, err := bip322.SerializeWitness(w)
+	if err != nil {
 		return nil, fmt.Errorf("invalid bip322 pop parameters: %w", err)
 	}
 
-	serializedWitness, err := bip322.SerializeWitness(w)
+	btcKeyBytes, err := btcPk.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid bip322 pop parameters, failed to marshal btc pk: %w", err)
+	}
 
+	err = btcstypes.VerifyBIP322SigPop(msg, a.EncodeAddress(), sigSerialized, btcKeyBytes, net)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bip322: %w", err)
+	}
+
+	serializedWitness, err := bip322.SerializeWitness(w)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize bip322 witness: %w", err)
 	}
