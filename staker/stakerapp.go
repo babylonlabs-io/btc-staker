@@ -1952,6 +1952,23 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 				return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake unbonding confirmed tx: %w", err)
 			}
 			spendStakeTxInfo = unbondingConfirmedTxInfo
+		} else {
+			unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmed(
+				pubKey,
+				di.BtcDelegation.StakingOutputIdx,
+				uint16(di.BtcDelegation.StakingTime),
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				tx,
+				destAddressScript,
+				currentFeeRate,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake non-unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingNotConfirmedTxInfo
 		}
 	} else {
 		unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmed(
