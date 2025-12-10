@@ -101,7 +101,9 @@ func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []stri
 	outPut := filepath.Join(t.TempDir(), fmt.Sprintf("%s-out.txt", datagen.GenRandomHexStr(r, 10)))
 	outPutFile, err := os.Create(outPut)
 	require.NoError(t, err)
-	defer outPutFile.Close()
+	defer func() {
+		require.NoError(t, outPutFile.Close())
+	}()
 
 	// set file to stdout to read.
 	oldStd := os.Stdout
@@ -132,7 +134,9 @@ func CreateTempFileWithParams(t require.TestingT) string {
 func CreateTempFileWithData(t require.TestingT, pattern string, data []byte) string {
 	file, err := os.CreateTemp("", pattern)
 	require.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		require.NoError(t, file.Close())
+	}()
 	_, err = file.Write(data)
 	require.NoError(t, err)
 	info, err := file.Stat()

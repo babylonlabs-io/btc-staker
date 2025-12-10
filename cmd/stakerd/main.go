@@ -47,7 +47,9 @@ func main() {
 			http.Handle("/", profileRedirect)
 			cfgLogger.Infof("Pprof listening on %v", cfg.Profile)
 			//nolint:gosec
-			fmt.Println(http.ListenAndServe(cfg.Profile, nil))
+			if err := http.ListenAndServe(cfg.Profile, nil); err != nil {
+				cfgLogger.Errorf("Pprof server error: %v", err)
+			}
 		}()
 	}
 
@@ -59,7 +61,11 @@ func main() {
 			os.Exit(1)
 		}
 		_ = pprof.StartCPUProfile(f)
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Printf("failed to close CPU profile file: %v\n", err)
+			}
+		}()
 		defer pprof.StopCPUProfile()
 	}
 

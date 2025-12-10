@@ -1,3 +1,4 @@
+//nolint:staticcheck // QF1012
 package stakerservice
 
 import (

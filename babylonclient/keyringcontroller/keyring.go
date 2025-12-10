@@ -8,6 +8,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
+// CreateKeyring creates a new keyring with the specified configuration.
 func CreateKeyring(keyringDir string, chainID string, backend string, input *strings.Reader) (keyring.Keyring, error) {
 	ctx, err := CreateClientCtx(keyringDir, chainID)
 	if err != nil {
@@ -32,6 +33,7 @@ func CreateKeyring(keyringDir string, chainID string, backend string, input *str
 	return kr, nil
 }
 
+// CreateClientCtx creates a Cosmos SDK client context with the specified keyring directory and chain ID.
 func CreateClientCtx(keyringDir string, chainID string) (client.Context, error) {
 	if keyringDir == "" {
 		return client.Context{}, fmt.Errorf("the keyring directory should not be empty")

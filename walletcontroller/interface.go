@@ -65,9 +65,10 @@ type TaprootSigningResult struct {
 	FullInputWitness wire.TxWitness
 }
 
-// Function to filer utxos that should be used in transaction creation
+// UseUtxoFn Function to filer utxos that should be used in transaction creation
 type UseUtxoFn func(utxo Utxo) bool
 
+// WalletController Bitcoind wallet interface for controlling transactions and signing
 type WalletController interface {
 	UnlockWallet(timeoutSecs int64) error
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
@@ -124,6 +125,7 @@ type WalletController interface {
 	) (bool, error)
 }
 
+// StkTxV0ParsedWithBlock parses the btc staking transaction for version 0
 func StkTxV0ParsedWithBlock(
 	wc WalletController,
 	btcNetwork *chaincfg.Params,

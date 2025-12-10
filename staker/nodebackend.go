@@ -1,6 +1,7 @@
 package staker
 
 import (
+	"context"
 	"fmt"
 	"net"
 
@@ -17,20 +18,26 @@ import (
 	"github.com/lightningnetwork/lnd/channeldb"
 )
 
+// NodeBackend encapsulates a ChainNotifier implementation backed by the
+// configured Bitcoin node.
 type NodeBackend struct {
 	chainntnfs.ChainNotifier
 }
 
-// TODO  This should be moved to a more appropriate place, most probably to config
+// BuildDialer returns a dialer that always connects to the provided rpcHost.
+// TODO This should be moved to a more appropriate place, most probably to config
 // and be connected to validation of rpc host/port.
 // According to chain.BitcoindConfig docs it should also support tor if node backend
 // works over tor.
 func BuildDialer(rpcHost string) func(string) (net.Conn, error) {
 	return func(_ string) (net.Conn, error) {
-		return net.Dial("tcp", rpcHost)
+		dialer := &net.Dialer{}
+		return dialer.DialContext(context.Background(), "tcp", rpcHost)
 	}
 }
 
+// NewNodeBackend creates a ChainNotifier backed by either btcd or bitcoind
+// depending on the configuration.
 func NewNodeBackend(
 	cfg *scfg.BtcNodeBackendConfig,
 	params *chaincfg.Params,

@@ -292,7 +292,7 @@ func ValidateBTCSignBaby(btcAddr, babyAddr, btcSignBaby, babyPrefix string, btcN
 		return fmt.Errorf("failed to convert btcSignBaby to witness: %w", err)
 	}
 
-	return bip322.Verify(
+	return bip322.VerifyP2WPKHAndP2TR(
 		[]byte(bech32cosmosAddressString),
 		witness,
 		btcAddress,

@@ -334,6 +334,8 @@ func createSpendStakeTxUnbondingNotConfirmed(
 	}, nil
 }
 
+// UnbondingSlashingDesc contains all data needed to build and sign unbonding
+// and slashing transactions for a delegation.
 type UnbondingSlashingDesc struct {
 	UnbondingTransaction               *wire.MsgTx
 	UnbondingTxValue                   btcutil.Amount
