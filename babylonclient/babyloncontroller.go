@@ -1155,7 +1155,7 @@ func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctyp
 
 // QueryBtcLightClientTipHeight queries the height of the BTC light client
 func (bc *BabylonController) QueryBtcLightClientTipHeight() (uint32, error) {
-	res, err := bc.bbnClient.QueryClient.BTCHeaderChainTip()
+	res, err := bc.bbnClient.BTCHeaderChainTip()
 	if err != nil {
 		return 0, fmt.Errorf("failed to query BTC tip: %w", err)
 	}

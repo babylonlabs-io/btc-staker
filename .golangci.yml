@@ -1,3 +1,5 @@
+version: 2
+
 run:
   timeout: 5m
 
@@ -26,7 +28,6 @@ linters:
     - goheader
     - gomodguard
     - goprintffuncname
-    - gosimple
     - govet
     - grouper
     - importas
@@ -47,11 +48,8 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - staticcheck
-    - stylecheck
-    - tenv
     - testableexamples
     - tparallel
-    - typecheck
     - unconvert
     - unparam
     - usestdlibvars
@@ -78,3 +76,8 @@ issues:
     - path-except: _test\.go
       linters:
         - forbidigo
+
+linters-settings:
+  forbidigo:
+    forbid:
+      - p: '^(print|println)$'

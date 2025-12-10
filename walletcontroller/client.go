@@ -419,7 +419,7 @@ func (w *RPCWalletController) CreateAndSignTx(
 func (w *RPCWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error) {
 	switch w.backend {
 	case types.BitcoindWalletBackend:
-		return w.Client.SignRawTransactionWithWallet(tx)
+		return w.SignRawTransactionWithWallet(tx)
 	case types.BtcwalletWalletBackend:
 		return w.Client.SignRawTransaction(tx)
 	default:
@@ -476,17 +476,17 @@ func (w *RPCWalletController) getTxDetails(req notifier.ConfRequest, msg string)
 
 // Tx returns the raw transaction based on the transaction hash
 func (w *RPCWalletController) Tx(txHash *chainhash.Hash) (*btcutil.Tx, error) {
-	return w.Client.GetRawTransaction(txHash)
+	return w.GetRawTransaction(txHash)
 }
 
 // TxVerbose returns the raw transaction verbose based on the transaction hash
 func (w *RPCWalletController) TxVerbose(txHash *chainhash.Hash) (*btcjson.TxRawResult, error) {
-	return w.Client.GetRawTransactionVerbose(txHash)
+	return w.GetRawTransactionVerbose(txHash)
 }
 
 // BlockHeaderVerbose returns the block header data based on the block hash
 func (w *RPCWalletController) BlockHeaderVerbose(blockHash *chainhash.Hash) (*btcjson.GetBlockHeaderVerboseResult, error) {
-	return w.Client.GetBlockHeaderVerbose(blockHash)
+	return w.GetBlockHeaderVerbose(blockHash)
 }
 
 // Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index
@@ -556,7 +556,7 @@ func (w *RPCWalletController) OutputSpent(
 	txHash *chainhash.Hash,
 	outputIdx uint32,
 ) (bool, error) {
-	res, err := w.Client.GetTxOut(
+	res, err := w.GetTxOut(
 		txHash, outputIdx, true,
 	)
 
@@ -678,7 +678,7 @@ func (w *RPCWalletController) signTaprootTransaction(
 	}
 
 	sign := true
-	signResult, err := w.Client.WalletProcessPsbt(
+	signResult, err := w.WalletProcessPsbt(
 		psbtEncoded,
 		&sign,
 		"DEFAULT",
