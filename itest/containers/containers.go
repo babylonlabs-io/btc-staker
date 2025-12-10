@@ -55,6 +55,7 @@ func NewManager(t *testing.T) (docker *Manager, err error) {
 	return docker, nil
 }
 
+// ExecBitcoindCliCmd runs bitcoin-cli inside the bitcoind container.
 func (m *Manager) ExecBitcoindCliCmd(t *testing.T, command []string) (bytes.Buffer, bytes.Buffer, error) {
 	// this is currently hardcoded, as it will be the same for all tests
 	cmd := []string{"bitcoin-cli", "-chain=regtest", "-rpcuser=user", "-rpcpassword=pass"}
@@ -65,11 +66,12 @@ func (m *Manager) ExecBitcoindCliCmd(t *testing.T, command []string) (bytes.Buff
 // ExecCmd executes command by running it on the given container.
 // It word for word `error` in output to discern between error and regular output.
 // It retures stdout and stderr as bytes.Buffer and an error if the command fails.
+// ExecCmd executes a command within the named container and returns stdout/stderr.
 func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string) (bytes.Buffer, bytes.Buffer, error) {
 	if _, ok := m.resources[containerName]; !ok {
 		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("no resource %s found", containerName)
 	}
-	containerId := m.resources[containerName].Container.ID
+	containerID := m.resources[containerName].Container.ID
 
 	var (
 		outBuf bytes.Buffer
@@ -91,7 +93,7 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string) 
 				Context:      ctx,
 				AttachStdout: true,
 				AttachStderr: true,
-				Container:    containerId,
+				Container:    containerID,
 				User:         "root",
 				Cmd:          command,
 			})
@@ -135,6 +137,7 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string) 
 	return outBuf, errBuf, nil
 }
 
+// RunBitcoindResource starts a regtest bitcoind container for tests.
 func (m *Manager) RunBitcoindResource(
 	t *testing.T,
 	bitcoindCfgPath string,
@@ -293,10 +296,12 @@ func (m *Manager) BabylondTxBankMultiSend(t *testing.T, walletName string, coins
 	return m.ExecCmd(t, babylondContainerName, flags)
 }
 
+// WaitForNextBabylonBlock blocks until another Babylon block is mined.
 func (m *Manager) WaitForNextBabylonBlock(t *testing.T) {
 	m.WaitForNextBlocks(t, 1)
 }
 
+// LatestBlockNumber queries babylond for the current block height.
 func (m *Manager) LatestBlockNumber(t *testing.T) uint64 {
 	flags := []string{
 		"babylond",
@@ -314,6 +319,7 @@ func (m *Manager) LatestBlockNumber(t *testing.T) uint64 {
 	return uint64(status.SyncInfo.LatestBlockHeight)
 }
 
+// WaitForNextBlocks waits for the specified number of new blocks to be produced.
 func (m *Manager) WaitForNextBlocks(t *testing.T, numberOfBlocks uint64) {
 	latest := m.LatestBlockNumber(t)
 	blockToWait := latest + numberOfBlocks
@@ -323,10 +329,12 @@ func (m *Manager) WaitForNextBlocks(t *testing.T, numberOfBlocks uint64) {
 	}, fmt.Sprintf("Timed out waiting for block %d. Current height is: %d", latest, blockToWait))
 }
 
+// WaitForCondition polls the provided condition until it succeeds or times out.
 func (m *Manager) WaitForCondition(doneCondition func() bool, errorMsg string) {
 	m.WaitForConditionWithPause(doneCondition, errorMsg, waitUntilRepeatPauseTime)
 }
 
+// WaitForConditionWithPause polls with a custom pause duration until the condition passes.
 func (m *Manager) WaitForConditionWithPause(doneCondition func() bool, errorMsg string, pause time.Duration) {
 	for i := 0; i < waitUntilrepeatMax; i++ {
 		if !doneCondition() {

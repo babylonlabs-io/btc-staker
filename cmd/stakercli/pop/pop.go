@@ -1,3 +1,4 @@
+// Package pop provides CLI commands for proof-of-possession management.
 package pop
 
 import (
@@ -38,6 +39,7 @@ const (
 	outputFileFlag          = "output-file"
 )
 
+// PopCommands exposes the proof-of-possession CLI command tree.
 var PopCommands = []cli.Command{
 	{
 		Name:     "pop",
@@ -52,6 +54,7 @@ var PopCommands = []cli.Command{
 	},
 }
 
+// GenerateCreatePopCmd defines the CLI command that generates a PoP.
 var GenerateCreatePopCmd = cli.Command{
 	Name:      "generate-create-pop",
 	ShortName: "gcp",
@@ -194,6 +197,7 @@ func generatePop(c *cli.Context) error {
 	return nil
 }
 
+// ValidatePopCmd validates a PoP JSON blob.
 var ValidatePopCmd = cli.Command{
 	Name:      "validate",
 	ShortName: "vp",
@@ -250,6 +254,7 @@ func validatePop(c *cli.Context) error {
 	return nil
 }
 
+// ValidatePop verifies both signatures contained in a PoP response.
 func ValidatePop(popResponse staker.Response, btcNetParams *chaincfg.Params, babyPrefix string) error {
 	err := ValidateBTCSignBaby(popResponse.BTCAddress, popResponse.BabyAddress, popResponse.BTCSignBaby, babyPrefix, btcNetParams)
 	if err != nil {
@@ -264,6 +269,7 @@ func ValidatePop(popResponse staker.Response, btcNetParams *chaincfg.Params, bab
 	return nil
 }
 
+// ValidateBTCSignBaby verifies the BTC signature over the Babylon address.
 func ValidateBTCSignBaby(btcAddr, babyAddr, btcSignBaby, babyPrefix string, btcNetParams *chaincfg.Params) error {
 	btcAddress, err := btcutil.DecodeAddress(btcAddr, btcNetParams)
 	if err != nil {
@@ -300,6 +306,7 @@ func ValidateBTCSignBaby(btcAddr, babyAddr, btcSignBaby, babyPrefix string, btcN
 	)
 }
 
+// ValidateBabySignBTC verifies the Cosmos signature over the BTC address.
 func ValidateBabySignBTC(babyPk, babyAddr, btcAddress, babySigOverBTCPk string) error {
 	babyPubKeyBz, err := base64.StdEncoding.DecodeString(babyPk)
 	if err != nil {
@@ -376,6 +383,7 @@ var generateDeletePopCmd = cli.Command{
 	Action: generateDeletePop,
 }
 
+// DeletePopPayload encodes the response when generating a delete-PoP payload.
 type DeletePopPayload struct {
 	BabyAddress   string `json:"babyAddress"`
 	BabySignature string `json:"babySignature"`
@@ -450,6 +458,7 @@ func generateDeletePop(c *cli.Context) error {
 	return nil
 }
 
+// SignatureResponse contains the result of the sign-cosmos-adr36 command.
 type SignatureResponse struct {
 	BabyAddress   string `json:"babyAddress"`
 	BabySignature string `json:"babySignature"`

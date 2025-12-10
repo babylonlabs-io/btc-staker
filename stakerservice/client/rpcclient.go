@@ -1,3 +1,4 @@
+// Package client exposes a JSON-RPC client for interacting with stakerservice.
 package client
 
 import (
@@ -8,6 +9,7 @@ import (
 	jsonrpcclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 )
 
+// StakerServiceJSONRPCClient wraps a CometBFT JSON-RPC client for stakerservice.
 type StakerServiceJSONRPCClient struct {
 	client *jsonrpcclient.Client
 }

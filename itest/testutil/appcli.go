@@ -1,3 +1,4 @@
+// Package testutil provides helpers for driving stakercli in tests.
 package testutil
 
 import (
@@ -44,6 +45,7 @@ var (
 		ConfirmationDepth: 10,
 	}
 
+	// GlobalParams contains the default parameters used by integration tests.
 	GlobalParams = parser.GlobalParams{
 		Versions: []*parser.VersionedGlobalParams{&defaultParam},
 	}
@@ -52,6 +54,7 @@ var (
 	paramsMarshalled, _ = json.Marshal(GlobalParams)
 )
 
+// TestApp wires up a cli.App instance with all command categories.
 func TestApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "stakercli"
@@ -62,6 +65,7 @@ func TestApp() *cli.App {
 	return app
 }
 
+// AppRunCreatePhase1StakingTx executes the CLI command and parses the response.
 func AppRunCreatePhase1StakingTx(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreatePhase1StakingTxResponse {
 	args := []string{"stakercli", "transaction", "create-phase1-staking-transaction"}
 	args = append(args, arguments...)
@@ -74,6 +78,7 @@ func AppRunCreatePhase1StakingTx(r *rand.Rand, t *testing.T, app *cli.App, argum
 	return data
 }
 
+// AppRunCreatePhase1StakingTxWithParams executes the CLI command using param files.
 func AppRunCreatePhase1StakingTxWithParams(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) transaction.CreatePhase1StakingTxResponse {
 	args := []string{"stakercli", "transaction", "create-phase1-staking-transaction-with-params"}
 	args = append(args, arguments...)
@@ -86,6 +91,7 @@ func AppRunCreatePhase1StakingTxWithParams(r *rand.Rand, t *testing.T, app *cli.
 	return data
 }
 
+// AppRunStakeFromPhase1 runs the daemon stake-from-phase1 command.
 func AppRunStakeFromPhase1(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) error {
 	args := []string{"stakercli", "daemon", "stake-from-phase1"}
 	args = append(args, arguments...)
@@ -127,10 +133,12 @@ func readFromFile(t *testing.T, f *os.File) string {
 	return buf.String()
 }
 
+// CreateTempFileWithParams writes the default params into a temp file.
 func CreateTempFileWithParams(t require.TestingT) string {
 	return CreateTempFileWithData(t, "tmpParams-*.json", paramsMarshalled)
 }
 
+// CreateTempFileWithData writes arbitrary data into a temp file for CLI tests.
 func CreateTempFileWithData(t require.TestingT, pattern string, data []byte) string {
 	file, err := os.CreateTemp("", pattern)
 	require.NoError(t, err)

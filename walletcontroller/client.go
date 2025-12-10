@@ -1,3 +1,4 @@
+// Package walletcontroller implements concrete wallet integrations used by the staker.
 package walletcontroller
 
 import (
@@ -25,6 +26,7 @@ import (
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 )
 
+// RPCWalletController manages wallet interactions over RPC for either btcd or bitcoind backends.
 type RPCWalletController struct {
 	*rpcclient.Client
 	walletPassphrase string
@@ -39,6 +41,7 @@ const (
 	txNotFoundErrMsgBitcoind = "No such mempool or blockchain transaction"
 )
 
+// NewRPCWalletController constructs the controller from the provided config.
 func NewRPCWalletController(scfg *stakercfg.Config) (*RPCWalletController, error) {
 	return NewRPCWalletControllerFromArgs(
 		scfg.WalletRPCConfig.Host,
@@ -55,6 +58,7 @@ func NewRPCWalletController(scfg *stakercfg.Config) (*RPCWalletController, error
 	)
 }
 
+// NewRPCWalletControllerFromArgs dials the configured wallet RPC endpoint and returns a controller.
 func NewRPCWalletControllerFromArgs(
 	host string,
 	user string,
@@ -107,6 +111,7 @@ func rpcHostURL(host, walletName string) string {
 	return host
 }
 
+// UnlockWallet unlocks the configured wallet for the provided duration.
 func (w *RPCWalletController) UnlockWallet(timoutSec int64) error {
 	return w.WalletPassphrase(w.walletPassphrase, timoutSec)
 }
@@ -152,6 +157,7 @@ func extractTaprootInternalKey(
 	return internalKey, nil
 }
 
+// AddressPublicKey retrieves the public key associated with an address.
 func (w *RPCWalletController) AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error) {
 	encoded := address.EncodeAddress()
 
@@ -208,10 +214,13 @@ func (w *RPCWalletController) AddressPublicKey(address btcutil.Address) (*btcec.
 	return nil, fmt.Errorf("cannot get public key for address %s", encoded)
 }
 
+// NetworkName returns the name of the connected BTC network.
 func (w *RPCWalletController) NetworkName() string {
 	return w.network
 }
 
+// CreateTransaction builds a transaction paying the provided outputs while
+// selecting UTXOs from the wallet.
 func (w *RPCWalletController) CreateTransaction(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
@@ -389,6 +398,7 @@ func (w *RPCWalletController) CreateTransactionWithInputs(
 	return tx, nil
 }
 
+// CreateAndSignTx builds and signs a transaction using wallet-selected inputs.
 func (w *RPCWalletController) CreateAndSignTx(
 	outputs []*wire.TxOut,
 	feeRatePerKb btcutil.Amount,
@@ -416,6 +426,7 @@ func (w *RPCWalletController) CreateAndSignTx(
 	return fundedTx, nil
 }
 
+// SignRawTransaction signs a partially signed transaction using the wallet.
 func (w *RPCWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, bool, error) {
 	switch w.backend {
 	case types.BitcoindWalletBackend:
@@ -427,10 +438,12 @@ func (w *RPCWalletController) SignRawTransaction(tx *wire.MsgTx) (*wire.MsgTx, b
 	}
 }
 
+// SendRawTransaction broadcasts the transaction to the connected node.
 func (w *RPCWalletController) SendRawTransaction(tx *wire.MsgTx, allowHighFees bool) (*chainhash.Hash, error) {
 	return w.Client.SendRawTransaction(tx, allowHighFees)
 }
 
+// ListOutputs enumerates wallet UTXOs, optionally filtering to spendable ones.
 func (w *RPCWalletController) ListOutputs(onlySpendable bool) ([]Utxo, error) {
 	utxoResults, err := w.ListUnspent()
 
@@ -489,7 +502,7 @@ func (w *RPCWalletController) BlockHeaderVerbose(blockHash *chainhash.Hash) (*bt
 	return w.GetBlockHeaderVerbose(blockHash)
 }
 
-// Fetch info about transaction from mempool or blockchain, requires node to have enabled  transaction index
+// TxDetails fetches transaction confirmation data for the provided script.
 func (w *RPCWalletController) TxDetails(txHash *chainhash.Hash, pkScript []byte) (*notifier.TxConfirmation, TxStatus, error) {
 	req, err := notifier.NewConfRequest(txHash, pkScript)
 
@@ -552,6 +565,7 @@ func (w *RPCWalletController) SignBip322Signature(msg []byte, address btcutil.Ad
 	return signed.TxIn[0].Witness, nil
 }
 
+// OutputSpent returns true if the given outpoint has already been spent.
 func (w *RPCWalletController) OutputSpent(
 	txHash *chainhash.Hash,
 	outputIdx uint32,
@@ -567,6 +581,7 @@ func (w *RPCWalletController) OutputSpent(
 	return res == nil, nil
 }
 
+// SignOneInputTaprootSpendingTransaction signs a single taproot input described by the request.
 func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *TaprootSigningRequest) (*TaprootSigningResult, error) {
 	if len(request.TxToSign.TxIn) != 1 {
 		return nil, fmt.Errorf("cannot sign transaction with more than one input")
@@ -581,6 +596,7 @@ func (w *RPCWalletController) SignOneInputTaprootSpendingTransaction(request *Ta
 	)
 }
 
+// SignTwoInputTaprootSpendingTransaction signs the staking input of a two-input taproot transaction.
 func (w *RPCWalletController) SignTwoInputTaprootSpendingTransaction(request *TwoInputTaprootSigningRequest) (*TaprootSigningResult, error) {
 	if len(request.TxToSign.TxIn) != 2 {
 		return nil, fmt.Errorf("transaction must have exactly two inputs, got %d", len(request.TxToSign.TxIn))

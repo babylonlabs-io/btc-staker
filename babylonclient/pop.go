@@ -13,14 +13,19 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// BabylonBtcPopType enumerates the supported PoP signature types.
 type BabylonBtcPopType uint32
 
 const (
+	// SchnorrType denotes BIP340 schnorr signatures.
 	SchnorrType BabylonBtcPopType = iota
+	// Bip322Type denotes BIP322 message signatures.
 	Bip322Type
+	// EcdsaType denotes legacy ECDSA signatures.
 	EcdsaType
 )
 
+// BabylonPop stores the BTC PoP bytes and their type.
 type BabylonPop struct {
 	popType BabylonBtcPopType
 	BtcSig  []byte
@@ -82,6 +87,7 @@ func NewBabylonBip322Pop(
 	return NewBabylonPop(Bip322Type, m)
 }
 
+// NewBTCSigType converts Babylon pop types into btcstaking enums.
 func NewBTCSigType(t BabylonBtcPopType) (btcstypes.BTCSigType, error) {
 	switch t {
 	case SchnorrType:
@@ -95,10 +101,12 @@ func NewBTCSigType(t BabylonBtcPopType) (btcstypes.BTCSigType, error) {
 	}
 }
 
+// PopTypeNum returns the numeric value for proto serialization.
 func (pop *BabylonPop) PopTypeNum() uint32 {
 	return uint32(pop.popType)
 }
 
+// ToBtcStakingPop converts the helper struct to the btcstaking proto.
 func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error) {
 	popType, err := NewBTCSigType(pop.popType)
 
@@ -112,6 +120,7 @@ func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error
 	}, nil
 }
 
+// ValidatePop ensures the BTC signature matches the given addresses/keys.
 func (pop *BabylonPop) ValidatePop(
 	bbnAddr sdk.AccAddress,
 	btcPk *btcec.PublicKey,
