@@ -1937,6 +1937,8 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 			return nil, nil, fmt.Errorf("cannot spend staking output. Tx status: %s", txStatus.String())
 		}
 
+		// TODO: should we check confirmation.BlockHash and confirmation.BlockHeight even if we already check
+		// confirmation is nil above?
 		if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
 			unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmed(
 				pubKey,
