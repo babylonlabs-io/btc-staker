@@ -1918,38 +1918,41 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 		return nil, nil, fmt.Errorf("cannot spend staking output. Error converting fpBtcPkList to btcPkList: %w", err)
 	}
 
-	// Since we have already verified that the transaction is ACTIVE
-	// on the Babylon chain, we can now be certain that it has been confirmed in Bitcoin.
-	// Therefore, we only need to check whether the unbonding transaction has been confirmed.
-	unbondingTxHash := udi.UnbondingTransaction.TxHash()
-	confirmation, txStatus, err := app.Wallet().TxDetails(
-		&unbondingTxHash,
-		udi.UnbondingTransaction.TxOut[0].PkScript,
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("cannot spend staking output. Error getting confirmation info from btc: %w", err)
-	}
-
-	if confirmation == nil {
-		return nil, nil, fmt.Errorf("cannot spend staking output. Tx status: %s", txStatus.String())
-	}
-
+	// check if the status of btc delegation is already EXPIRED, and if it is,
+	// skip getting tx details of unbondingTxHash
+	// Note: in case of expired staking output, TxDetails of unbondingTxHash will result in nil confirmation
 	var spendStakeTxInfo *spendStakeTxInfo
-	if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
-		unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmed(
-			pubKey,
-			fpBtcPubkeys,
-			params.CovenantPks,
-			params.CovenantQuruomThreshold,
-			destAddressScript,
-			currentFeeRate,
-			udi,
-			app.network,
+	babylonStatus := di.BtcDelegation.GetStatusDesc()
+	if babylonStatus != BabylonExpiredStatus {
+		unbondingTxHash := udi.UnbondingTransaction.TxHash()
+		confirmation, txStatus, err := app.Wallet().TxDetails(
+			&unbondingTxHash,
+			udi.UnbondingTransaction.TxOut[0].PkScript,
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake unbonding confirmed tx: %w", err)
+			return nil, nil, fmt.Errorf("cannot spend staking output. Error getting confirmation info from btc: %w", err)
 		}
-		spendStakeTxInfo = unbondingConfirmedTxInfo
+
+		if confirmation == nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output. Tx status: %s", txStatus.String())
+		}
+
+		if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
+			unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmed(
+				pubKey,
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				destAddressScript,
+				currentFeeRate,
+				udi,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingConfirmedTxInfo
+		}
 	} else {
 		unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmed(
 			pubKey,
@@ -1964,7 +1967,7 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 			app.network,
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake unbonding confirmed tx: %w", err)
+			return nil, nil, fmt.Errorf("cannot spend staking output. Error creating spend stake non-unbonding confirmed tx: %w", err)
 		}
 		spendStakeTxInfo = unbondingNotConfirmedTxInfo
 	}
@@ -2110,7 +2113,7 @@ func (app *App) unlockAndCreatePop(stakerAddress btcutil.Address) (*cl.BabylonPo
 	if err != nil {
 		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
 	}
-	
+
 	msgToSign := []byte(app.babylonClient.GetKeyAddress().String())
 
 	// pop only works for native segwit address and taproot bip86 addresses
