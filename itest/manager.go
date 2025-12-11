@@ -813,7 +813,7 @@ func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testSt
 	return hashes
 }
 
-// spendStakingTxWithHash sends a spend transaction to Babylon
+// spendStakingTxWithHash sends a spend transaction to Bitcoin
 func (tm *TestManager) spendStakingTxWithHash(t *testing.T, stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount) {
 	res, err := tm.StakerClient.SpendStakingTransaction(context.Background(), stakingTxHash.String())
 	require.NoError(t, err)
@@ -863,12 +863,16 @@ func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Has
 }
 
 func (tm *TestManager) waitForTxOutputSpent(t *testing.T, unbondingTxHash *chainhash.Hash) {
+	waitForTxOutputSpentAtIndex(t, unbondingTxHash, 0)
+}
+
+func (tm *TestManager) waitForTxOutputSpentAtIndex(t *testing.T, txHash *chainhash.Hash, index uint32) {
 	require.Eventually(t, func() bool {
-		unbondingOutputSpent, err := tm.Sa.Wallet().OutputSpent(unbondingTxHash, 0)
+		outputSpent, err := tm.Sa.Wallet().OutputSpent(txHash, index)
 		if err != nil {
 			return false
 		}
-		return unbondingOutputSpent
+		return outputSpent
 	}, eventuallyTimeout, eventuallyPollTime)
 }
 
