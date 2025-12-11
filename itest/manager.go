@@ -863,7 +863,7 @@ func (tm *TestManager) waitForStakingTxState(t *testing.T, txHash *chainhash.Has
 }
 
 func (tm *TestManager) waitForTxOutputSpent(t *testing.T, unbondingTxHash *chainhash.Hash) {
-	waitForTxOutputSpentAtIndex(t, unbondingTxHash, 0)
+	tm.waitForTxOutputSpentAtIndex(t, unbondingTxHash, 0)
 }
 
 func (tm *TestManager) waitForTxOutputSpentAtIndex(t *testing.T, txHash *chainhash.Hash, index uint32) {
