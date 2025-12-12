@@ -38,7 +38,9 @@ func TestMetrics(t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	defer resp.Body.Close()
+	defer func() {
+		require.NoError(t, resp.Body.Close())
+	}()
 
 	fullBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

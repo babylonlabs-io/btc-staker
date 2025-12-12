@@ -9,6 +9,7 @@ const (
 	// to be used for bitcoind backend.
 	DefaultTxPollingJitter = 0.5
 
+	// DefaultEstimateMode is the default fee estimation mode for bitcoind.
 	DefaultEstimateMode           = "CONSERVATIVE"
 	defaultBitcoindRPCHost        = "127.0.0.1:8334"
 	defaultBitcoindRPCUser        = "user"
@@ -40,6 +41,7 @@ type Bitcoind struct {
 	DisableTLS           bool          `long:"noclienttls" description:"disables tls for the wallet rpc client"`
 }
 
+// DefaultBitcoindConfig returns the default bitcoind configuration.
 func DefaultBitcoindConfig() Bitcoind {
 	return Bitcoind{
 		RPCHost:              defaultBitcoindRPCHost,

@@ -31,6 +31,8 @@ type StakingParams struct {
 	BtcStakingParams
 }
 
+// BtcStakingParams captures the BTC staking-related thresholds and scripts the
+// Babylon chain exposes.
 type BtcStakingParams struct {
 	// Minimum amount of satoshis required for slashing transaction
 	MinSlashingTxFeeSat btcutil.Amount
@@ -69,13 +71,14 @@ type BtcStakingParams struct {
 	AllowListExpirationHeight uint64
 }
 
-// SingleKeyCosmosKeyring represents a keyring that supports only one pritvate/public key pair
+// SingleKeyKeyring represents a keyring that supports only one private/public key pair.
 type SingleKeyKeyring interface {
 	Sign(msg []byte) ([]byte, error)
 	GetKeyAddress() sdk.AccAddress
 	GetPubKey() *secp256k1.PubKey
 }
 
+// BabylonClient defines the Babylon RPC queries the staker relies on.
 type BabylonClient interface {
 	SingleKeyKeyring
 	BTCCheckpointParams() (*BTCCheckpointParams, error)
@@ -94,6 +97,7 @@ type BabylonClient interface {
 	QueryBtcLightClientTipHeight() (uint32, error)
 }
 
+// BtcStakingParamsFromStakingTracker converts tracker responses into staking params.
 func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResponse) BtcStakingParams {
 	return BtcStakingParams{
 		SlashingPkScript:          stakingTrackerParams.SlashingPkScript,
@@ -111,6 +115,7 @@ func BtcStakingParamsFromStakingTracker(stakingTrackerParams *StakingTrackerResp
 	}
 }
 
+// MockBabylonClient is a lightweight BabylonClient implementation for tests.
 type MockBabylonClient struct {
 	ClientParams           *StakingParams
 	babylonKey             *secp256k1.PrivKey
@@ -120,18 +125,22 @@ type MockBabylonClient struct {
 
 var _ BabylonClient = (*MockBabylonClient)(nil)
 
+// Params returns the mock staking parameters.
 func (m *MockBabylonClient) Params() (*StakingParams, error) {
 	return m.ClientParams, nil
 }
 
+// ParamsByBtcHeight returns the same params regardless of height for tests.
 func (m *MockBabylonClient) ParamsByBtcHeight(_ uint32) (*StakingParams, error) {
 	return m.ClientParams, nil
 }
 
+// ParamsByVersion returns the embedded BTC staking params.
 func (m *MockBabylonClient) ParamsByVersion(_ uint32) (*BtcStakingParams, error) {
 	return &m.ClientParams.BtcStakingParams, nil
 }
 
+// BTCCheckpointParams exposes checkpoint timing derived from the staking params.
 func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) {
 	return &BTCCheckpointParams{
 		ConfirmationTimeBlocks:    m.ClientParams.ConfirmationTimeBlocks,
@@ -139,6 +148,7 @@ func (m *MockBabylonClient) BTCCheckpointParams() (*BTCCheckpointParams, error) 
 	}, nil
 }
 
+// Sign signs arbitrary data with the mock Babylon key.
 func (m *MockBabylonClient) Sign(msg []byte) ([]byte, error) {
 	sig, err := m.babylonKey.Sign(msg)
 
@@ -148,12 +158,14 @@ func (m *MockBabylonClient) Sign(msg []byte) ([]byte, error) {
 	return sig, nil
 }
 
+// GetKeyAddress returns the Babylon account address associated with the key.
 func (m *MockBabylonClient) GetKeyAddress() sdk.AccAddress {
 	address := m.babylonKey.PubKey().Address()
 
 	return sdk.AccAddress(address)
 }
 
+// GetPubKey exposes the Babylon public key.
 func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 	pk := m.babylonKey.PubKey()
 
@@ -165,6 +177,7 @@ func (m *MockBabylonClient) GetPubKey() *secp256k1.PubKey {
 	}
 }
 
+// Delegate stores the delegation message in the SentMessages channel.
 func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	msg, err := delegationDataToMsg(dg)
 	if err != nil {
@@ -176,6 +189,7 @@ func (m *MockBabylonClient) Delegate(dg *DelegationData) (*bct.RelayerTxResponse
 	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
+// ExpandDelegation tracks expansion messages for verification in tests.
 func (m *MockBabylonClient) ExpandDelegation(dg *DelegationData) (*bct.RelayerTxResponse, error) {
 	msg, err := delegationDataToMsgBtcStakeExpand(dg)
 	if err != nil {
@@ -187,6 +201,7 @@ func (m *MockBabylonClient) ExpandDelegation(dg *DelegationData) (*bct.RelayerTx
 	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
+// QueryFinalityProviders returns the single configured provider.
 func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*FinalityProvidersClientResponse, error) {
 	return &FinalityProvidersClientResponse{
 		FinalityProviders: []FinalityProviderInfo{*m.ActiveFinalityProvider},
@@ -194,6 +209,7 @@ func (m *MockBabylonClient) QueryFinalityProviders(_ uint64, _ uint64) (*Finalit
 	}, nil
 }
 
+// QueryFinalityProvider returns the mock provider if keys match.
 func (m *MockBabylonClient) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*FinalityProviderClientResponse, error) {
 	if m.ActiveFinalityProvider.BtcPk.IsEqual(btcPubKey) {
 		return &FinalityProviderClientResponse{
@@ -204,32 +220,39 @@ func (m *MockBabylonClient) QueryFinalityProvider(btcPubKey *btcec.PublicKey) (*
 	return nil, ErrFinalityProviderDoesNotExist
 }
 
+// QueryHeaderDepth pretends every header is deeply confirmed.
 func (m *MockBabylonClient) QueryHeaderDepth(_ *chainhash.Hash) (uint32, error) {
 	// return always confirmed depth
 	return m.ClientParams.ConfirmationTimeBlocks + 1, nil
 }
 
+// IsTxAlreadyPartOfDelegation always returns false in tests.
 func (m *MockBabylonClient) IsTxAlreadyPartOfDelegation(_ *chainhash.Hash) (bool, error) {
 	return false, nil
 }
 
+// QueryBTCDelegation reports that delegations do not exist for simplicity.
 func (m *MockBabylonClient) QueryBTCDelegation(_ *chainhash.Hash) (*btcstypes.QueryBTCDelegationResponse, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
+// GetUndelegationInfo always returns an error in the mock implementation.
 func (m *MockBabylonClient) GetUndelegationInfo(_ *btcstypes.QueryBTCDelegationResponse) (*UndelegationInfo, error) {
 	return nil, fmt.Errorf("delegation do not exist")
 }
 
+// Undelegate pretends undelegations always succeed.
 func (m *MockBabylonClient) Undelegate(
 	_ *UndelegationRequest) (*bct.RelayerTxResponse, error) {
 	return &bct.RelayerTxResponse{Code: 0}, nil
 }
 
+// GetLatestBlockHeight returns zero for deterministic tests.
 func (m *MockBabylonClient) GetLatestBlockHeight() (uint64, error) {
 	return 0, nil
 }
 
+// GetMockClient constructs a ready-to-use MockBabylonClient for tests.
 func GetMockClient() *MockBabylonClient {
 	covenantPk, err := btcec.NewPrivateKey()
 	if err != nil {
@@ -275,6 +298,7 @@ func GetMockClient() *MockBabylonClient {
 	}
 }
 
+// QueryBtcLightClientTipHeight returns zero for deterministic tests.
 func (m *MockBabylonClient) QueryBtcLightClientTipHeight() (uint32, error) {
 	return 0, nil
 }

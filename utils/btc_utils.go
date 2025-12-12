@@ -1,3 +1,5 @@
+// Package utils provides utility functions for Bitcoin operations.
+// nolint: revive
 package utils
 
 import (
@@ -12,9 +14,8 @@ const (
 	minTransactionSize = 65
 )
 
-// Perform subset of transactions standard tests:
-// - whether transaction is not considered dust
-// - whether transactions is not too small
+// CheckTransaction performs a subset of standard transaction validation checks.
+// It verifies the transaction is not considered dust and is not too small.
 func CheckTransaction(tx *wire.MsgTx) error {
 	if tx.SerializeSizeStripped() < minTransactionSize {
 		return fmt.Errorf("transaction is too small. Tx size: %d, min size: %d", tx.SerializeSizeStripped(), minTransactionSize)

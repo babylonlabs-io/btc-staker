@@ -1,3 +1,4 @@
+// Package metrics provides Prometheus metrics collection and HTTP server functionality.
 package metrics
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Start launches a Prometheus metrics HTTP server.
 func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	svr := Server(logger, addr, reg)
 
@@ -25,6 +27,7 @@ func Start(logger *logrus.Logger, addr string, reg *prometheus.Registry) {
 	}()
 }
 
+// Server creates and configures a Prometheus metrics HTTP server.
 func Server(logger *logrus.Logger, addr string, reg *prometheus.Registry) *http.Server {
 	// Add Go module build info.
 	reg.MustRegister(collectors.NewBuildInfoCollector())

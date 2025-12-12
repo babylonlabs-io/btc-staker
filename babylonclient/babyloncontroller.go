@@ -1,3 +1,4 @@
+// Package babylonclient provides helpers for communicating with the Babylon chain.
 package babylonclient
 
 import (
@@ -37,20 +38,30 @@ import (
 )
 
 var (
-	// TODO: Maybe configurable?
+	// RtyAttNum controls how many times Babylon RPC calls are retried.
 	RtyAttNum = uint(5)
-	RtyAtt    = retry.Attempts(RtyAttNum)
-	RtyDel    = retry.Delay(time.Millisecond * 600)
-	RtyErr    = retry.LastErrorOnly(true)
+	// RtyAtt configures the retry attempts for the retry-go helper.
+	RtyAtt = retry.Attempts(RtyAttNum)
+	// RtyDel defines the delay between retry attempts when querying Babylon.
+	RtyDel = retry.Delay(time.Millisecond * 600)
+	// RtyErr instructs retry-go to return only the last error.
+	RtyErr = retry.LastErrorOnly(true)
 )
 
 var (
-	ErrInvalidBabylonExecution             = errors.New("message send to babylon was executed with error")
-	ErrHeaderNotKnownToBabylon             = errors.New("btc header not known to babylon")
-	ErrHeaderOnBabylonLCFork               = errors.New("btc header is on babylon btc light client fork")
-	ErrFinalityProviderDoesNotExist        = errors.New("finality provider does not exist")
-	ErrFinalityProviderIsSlashed           = errors.New("finality provider is slashed")
-	ErrDelegationNotFound                  = errors.New("delegation not found")
+	// ErrInvalidBabylonExecution indicates Babylon executed a message with an error code.
+	ErrInvalidBabylonExecution = errors.New("message send to babylon was executed with error")
+	// ErrHeaderNotKnownToBabylon indicates the queried BTC header is unknown to Babylon.
+	ErrHeaderNotKnownToBabylon = errors.New("btc header not known to babylon")
+	// ErrHeaderOnBabylonLCFork marks headers that belong to a stale LC fork.
+	ErrHeaderOnBabylonLCFork = errors.New("btc header is on babylon btc light client fork")
+	// ErrFinalityProviderDoesNotExist indicates the provider was not registered on Babylon.
+	ErrFinalityProviderDoesNotExist = errors.New("finality provider does not exist")
+	// ErrFinalityProviderIsSlashed indicates the provider has been slashed.
+	ErrFinalityProviderIsSlashed = errors.New("finality provider is slashed")
+	// ErrDelegationNotFound indicates Babylon has no record of the delegation.
+	ErrDelegationNotFound = errors.New("delegation not found")
+	// ErrInvalidValueReceivedFromBabylonNode indicates Babylon returned malformed data.
 	ErrInvalidValueReceivedFromBabylonNode = errors.New("invalid value received from babylon node")
 )
 
@@ -132,7 +143,7 @@ type FinalityProviderClientResponse struct {
 	FinalityProvider FinalityProviderInfo
 }
 
-// Copied from vigilante. Weirdly, there is only Stop function (no Start function ?)
+// Stop shuts down the underlying Babylon client.
 func (bc *BabylonController) Stop() error {
 	return bc.bbnClient.Stop()
 }
@@ -937,9 +948,7 @@ func chainToChainBytes(chain []*wire.BlockHeader) []bbntypes.BTCHeaderBytes {
 	return chainBytes
 }
 
-// Test methods for e2e testing
-// RegisterFinalityProvider registers a BTC finality provider via a MsgCreateFinalityProvider to Babylon
-// it returns tx hash and error
+// RegisterFinalityProvider is a helpers used in tests to register a finality provider on Babylon.
 func (bc *BabylonController) RegisterFinalityProvider(
 	fpAddr sdk.AccAddress,
 	fpPrivKeyBBN *secp256k1.PrivKey,
@@ -1155,7 +1164,7 @@ func (bc *BabylonController) InsertSpvProofs(submitter string, proofs []*btcctyp
 
 // QueryBtcLightClientTipHeight queries the height of the BTC light client
 func (bc *BabylonController) QueryBtcLightClientTipHeight() (uint32, error) {
-	res, err := bc.bbnClient.QueryClient.BTCHeaderChainTip()
+	res, err := bc.bbnClient.BTCHeaderChainTip()
 	if err != nil {
 		return 0, fmt.Errorf("failed to query BTC tip: %w", err)
 	}

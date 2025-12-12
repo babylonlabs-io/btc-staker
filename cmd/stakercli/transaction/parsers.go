@@ -1,3 +1,4 @@
+// Package transaction provides CLI helpers for managing Babylon staking transactions.
 package transaction
 
 import (

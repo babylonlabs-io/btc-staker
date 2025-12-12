@@ -353,7 +353,7 @@ func TestBitcoindWalletBip322Signing(t *testing.T) {
 	bip322Signature, err := controller.SignBip322Signature(msg, segwitAddress)
 	require.NoError(t, err)
 
-	err = bip322.Verify(msg, bip322Signature, segwitAddress, regtestParams)
+	err = bip322.VerifyP2WPKHAndP2TR(msg, bip322Signature, segwitAddress, regtestParams)
 	require.NoError(t, err)
 }
 

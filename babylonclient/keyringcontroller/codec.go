@@ -1,3 +1,4 @@
+// Package keyringcontroller provides keyring management functionality for Cosmos SDK chains.
 package keyringcontroller
 
 import (
@@ -6,6 +7,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 )
 
+// MakeCodec creates a ProtoCodec with crypto interfaces registered.
 func MakeCodec() *codec.ProtoCodec {
 	ir := codectypes.NewInterfaceRegistry()
 	cdc := codec.NewProtoCodec(ir)

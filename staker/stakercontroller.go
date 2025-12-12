@@ -7,13 +7,15 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 )
 
-// Controller for different client operations
+// Controller handles wallet and Babylon client operations used by the CLI.
 type Controller struct {
 	BabylonClient cl.BabylonClient
 	Wc            walletcontroller.WalletController
 	network       *chaincfg.Params
 }
 
+// NewStakerControllerFromClients builds a Controller from the provided wallet
+// and Babylon clients.
 func NewStakerControllerFromClients(
 	wc walletcontroller.WalletController,
 	babylonClient cl.BabylonClient,
