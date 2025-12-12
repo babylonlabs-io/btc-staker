@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	// ErrBabylonBtcLightClientNotReady indicates the BTC LC has not yet processed the inclusion block.
 	ErrBabylonBtcLightClientNotReady = errors.New("babylon btc light client is not ready to receive delegation")
 )
 
@@ -35,7 +36,7 @@ func newSendDelegationRequest(
 	}
 }
 
-// BabylonMsgSender is responsible for sending delegation and undelegation requests to babylon
+// BabylonMsgSender serializes delegation requests heading to Babylon and enforces readiness checks.
 // It makes sure:
 // - that babylon is ready for either delgetion or undelegation
 // - only one messegae is sent to babylon at a time
@@ -51,6 +52,7 @@ type BabylonMsgSender struct {
 	s                         *semaphore.Weighted
 }
 
+// NewBabylonMsgSender creates a sender with the given concurrency bounds.
 func NewBabylonMsgSender(
 	cl BabylonClient,
 	logger *logrus.Logger,
@@ -66,6 +68,7 @@ func NewBabylonMsgSender(
 	}
 }
 
+// Start launches the background goroutine that drains delegation requests.
 func (m *BabylonMsgSender) Start() {
 	m.startOnce.Do(func() {
 		m.wg.Add(1)
@@ -73,6 +76,7 @@ func (m *BabylonMsgSender) Start() {
 	})
 }
 
+// Stop terminates the background goroutine and waits for it to finish.
 func (m *BabylonMsgSender) Stop() {
 	m.stopOnce.Do(func() {
 		close(m.quit)
@@ -184,6 +188,7 @@ func (m *BabylonMsgSender) handleSentToBabylon() {
 	}
 }
 
+// SendDelegation enqueues a delegation request and waits for Babylon to respond.
 func (m *BabylonMsgSender) SendDelegation(
 	dg *DelegationData,
 	requiredInclusionBlockDepth uint32,

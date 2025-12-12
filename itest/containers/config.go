@@ -1,3 +1,4 @@
+// Package containers contains helpers for managing dockerized test dependencies.
 package containers
 
 import (

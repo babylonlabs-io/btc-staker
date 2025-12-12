@@ -1,3 +1,4 @@
+// Package admin contains CLI commands for administrative maintenance tasks.
 package admin
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// AdminCommands exposes the admin subcommands consumed by stakercli.
 var AdminCommands = []cli.Command{
 	{
 		Name:      "admin",
@@ -236,7 +238,11 @@ func migrateTrackedTransactions(*cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if closeErr := db.Close(); closeErr != nil {
+			fmt.Printf("Failed to close database: %v\n", closeErr)
+		}
+	}()
 
 	// Create tracked transaction store
 	store, err := stakerdb.NewTrackedTransactionStore(db)

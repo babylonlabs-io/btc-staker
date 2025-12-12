@@ -13,14 +13,19 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// BabylonBtcPopType enumerates the supported PoP signature types.
 type BabylonBtcPopType uint32
 
 const (
+	// SchnorrType denotes BIP340 schnorr signatures.
 	SchnorrType BabylonBtcPopType = iota
+	// Bip322Type denotes BIP322 message signatures.
 	Bip322Type
+	// EcdsaType denotes legacy ECDSA signatures.
 	EcdsaType
 )
 
+// BabylonPop stores the BTC PoP bytes and their type.
 type BabylonPop struct {
 	popType BabylonBtcPopType
 	BtcSig  []byte
@@ -44,16 +49,26 @@ func NewBabylonPop(t BabylonBtcPopType, btcSigOverBbnAddr []byte) (*BabylonPop, 
 func NewBabylonBip322Pop(
 	msg []byte,
 	w wire.TxWitness,
-	a btcutil.Address) (*BabylonPop, error) {
-	// TODO: bip322.Verify does not use it last parameter and this parameter should
-	// be removed from the function signature upstream.
-	// after that, we can remove the nil parameter here
-	if err := bip322.Verify(msg, w, a, nil); err != nil {
+	btcPk *bbn.BIP340PubKey,
+	a btcutil.Address,
+	net *chaincfg.Params,
+) (*BabylonPop, error) {
+	sigSerialized, err := bip322.SerializeWitness(w)
+	if err != nil {
 		return nil, fmt.Errorf("invalid bip322 pop parameters: %w", err)
 	}
 
-	serializedWitness, err := bip322.SerializeWitness(w)
+	btcKeyBytes, err := btcPk.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("invalid bip322 pop parameters, failed to marshal btc pk: %w", err)
+	}
 
+	err = btcstypes.VerifyBIP322SigPop(msg, a.EncodeAddress(), sigSerialized, btcKeyBytes, net)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bip322: %w", err)
+	}
+
+	serializedWitness, err := bip322.SerializeWitness(w)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize bip322 witness: %w", err)
 	}
@@ -72,6 +87,7 @@ func NewBabylonBip322Pop(
 	return NewBabylonPop(Bip322Type, m)
 }
 
+// NewBTCSigType converts Babylon pop types into btcstaking enums.
 func NewBTCSigType(t BabylonBtcPopType) (btcstypes.BTCSigType, error) {
 	switch t {
 	case SchnorrType:
@@ -85,10 +101,12 @@ func NewBTCSigType(t BabylonBtcPopType) (btcstypes.BTCSigType, error) {
 	}
 }
 
+// PopTypeNum returns the numeric value for proto serialization.
 func (pop *BabylonPop) PopTypeNum() uint32 {
 	return uint32(pop.popType)
 }
 
+// ToBtcStakingPop converts the helper struct to the btcstaking proto.
 func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error) {
 	popType, err := NewBTCSigType(pop.popType)
 
@@ -102,6 +120,7 @@ func (pop *BabylonPop) ToBtcStakingPop() (*btcstypes.ProofOfPossessionBTC, error
 	}, nil
 }
 
+// ValidatePop ensures the BTC signature matches the given addresses/keys.
 func (pop *BabylonPop) ValidatePop(
 	bbnAddr sdk.AccAddress,
 	btcPk *btcec.PublicKey,

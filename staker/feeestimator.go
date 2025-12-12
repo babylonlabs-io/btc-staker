@@ -19,12 +19,16 @@ const (
 	DefaultNumBlockForEstimation = 1
 )
 
+// FeeEstimator exposes the subset of functionality required by the staker to
+// estimate BTC transaction fees.
 type FeeEstimator interface {
 	Start() error
 	Stop() error
 	EstimateFeePerKb() chainfee.SatPerKVByte
 }
 
+// DynamicBtcFeeEstimator wraps the LND fee estimator implementations and enforces
+// configured min/max fee rates.
 type DynamicBtcFeeEstimator struct {
 	estimator  chainfee.Estimator
 	logger     *logrus.Logger
@@ -32,6 +36,8 @@ type DynamicBtcFeeEstimator struct {
 	MaxFeeRate chainfee.SatPerKVByte
 }
 
+// NewDynamicBtcFeeEstimator creates a dynamic estimator backed by the configured
+// node backend and clamps results to the provided fee range.
 func NewDynamicBtcFeeEstimator(
 	cfg *scfg.BtcNodeBackendConfig,
 	_ *chaincfg.Params,
@@ -107,14 +113,18 @@ func NewDynamicBtcFeeEstimator(
 
 var _ FeeEstimator = (*DynamicBtcFeeEstimator)(nil)
 
+// Start opens the underlying estimation backend connections.
 func (e *DynamicBtcFeeEstimator) Start() error {
 	return e.estimator.Start()
 }
 
+// Stop closes the underlying estimation backend connections.
 func (e *DynamicBtcFeeEstimator) Stop() error {
 	return e.estimator.Stop()
 }
 
+// EstimateFeePerKb returns the current fee rate after bounding it within the
+// configured range.
 func (e *DynamicBtcFeeEstimator) EstimateFeePerKb() chainfee.SatPerKVByte {
 	fee, err := e.estimator.EstimateFeePerKW(DefaultNumBlockForEstimation)
 
@@ -153,26 +163,31 @@ func (e *DynamicBtcFeeEstimator) EstimateFeePerKb() chainfee.SatPerKVByte {
 	return estimatedFee
 }
 
+// StaticFeeEstimator always returns the configured default fee.
 type StaticFeeEstimator struct {
 	DefaultFee chainfee.SatPerKVByte
 }
 
 var _ FeeEstimator = (*StaticFeeEstimator)(nil)
 
+// NewStaticBtcFeeEstimator creates a new static estimator with the provided fee.
 func NewStaticBtcFeeEstimator(defaultFee chainfee.SatPerKVByte) *StaticFeeEstimator {
 	return &StaticFeeEstimator{
 		DefaultFee: defaultFee,
 	}
 }
 
+// Start satisfies the FeeEstimator interface and is a no-op for static fees.
 func (e *StaticFeeEstimator) Start() error {
 	return nil
 }
 
+// Stop satisfies the FeeEstimator interface and is a no-op for static fees.
 func (e *StaticFeeEstimator) Stop() error {
 	return nil
 }
 
+// EstimateFeePerKb always returns the configured default fee.
 func (e *StaticFeeEstimator) EstimateFeePerKb() chainfee.SatPerKVByte {
 	return e.DefaultFee
 }

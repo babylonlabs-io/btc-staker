@@ -1,6 +1,7 @@
 // This file is derived from the lnd repository (https://github.com/lightningnetwork/lnd/blob/master/lncfg/address.go),
 // original copyright: Copyright (C) 2015-2022 Lightning Labs and The Lightning Network Developers
 
+// Package stakercfg provides configuration utilities for the BTC staker daemon.
 package stakercfg
 
 import (
@@ -10,6 +11,7 @@ import (
 	"strings"
 )
 
+// TCPResolver is a function type for resolving TCP addresses.
 type TCPResolver = func(network, addr string) (*net.TCPAddr, error)
 
 // verifyPort makes sure that an address string has both a host and a port. If
@@ -46,6 +48,7 @@ func verifyPort(address string, defaultPort string) string {
 	return address
 }
 
+// IsLoopback returns true if the host is a loopback address.
 func IsLoopback(host string) bool {
 	if strings.Contains(host, "localhost") {
 		return true
@@ -82,6 +85,7 @@ func isUnspecifiedHost(host string) bool {
 	return addr.IsUnspecified()
 }
 
+// ParseAddressString parses an address string into a net.Addr using the provided TCP resolver.
 func ParseAddressString(strAddress string, defaultPort string,
 	tcpResolver TCPResolver) (net.Addr, error) {
 	var parsedNetwork, parsedAddr string
@@ -148,6 +152,7 @@ func ParseAddressString(strAddress string, defaultPort string,
 	}
 }
 
+// NormalizeAddresses normalizes a list of address strings by parsing and deduplicating them.
 func NormalizeAddresses(addrs []string, defaultPort string,
 	tcpResolver TCPResolver) ([]net.Addr, error) {
 	result := make([]net.Addr, 0, len(addrs))

@@ -5,6 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// StakerMetrics contains Prometheus metrics for the staker daemon.
 type StakerMetrics struct {
 	Registry                        *prometheus.Registry
 	ValidReceivedDelegationRequests prometheus.Counter
@@ -15,6 +16,7 @@ type StakerMetrics struct {
 	CurrentBtcBlockHeight           prometheus.Gauge
 }
 
+// NewStakerMetrics creates and initializes a new StakerMetrics instance.
 func NewStakerMetrics() *StakerMetrics {
 	registry := prometheus.NewRegistry()
 	registerer := promauto.With(registry)

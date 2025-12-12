@@ -1,14 +1,19 @@
+// Package types provides common type definitions for the staker daemon.
 package types
 
 import "fmt"
 
+// SupportedNodeBackend represents the supported Bitcoin node backends.
 type SupportedNodeBackend int
 
 const (
+	// BitcoindNodeBackend represents the bitcoind node backend.
 	BitcoindNodeBackend SupportedNodeBackend = iota
+	// BtcdNodeBackend represents the btcd node backend.
 	BtcdNodeBackend
 )
 
+// NewNodeBackend creates a new SupportedNodeBackend from a string.
 func NewNodeBackend(backend string) (SupportedNodeBackend, error) {
 	switch backend {
 	case "btcd":

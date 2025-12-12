@@ -1,3 +1,4 @@
+// Package e2etest contains helpers for integration tests against dockerized nodes.
 package e2etest
 
 import (
@@ -19,11 +20,13 @@ var (
 	startTimeout = 30 * time.Second
 )
 
+// CreateWalletResponse mirrors the JSON response from bitcoind's createwallet RPC.
 type CreateWalletResponse struct {
 	Name    string `json:"name"`
 	Warning string `json:"warning"`
 }
 
+// GenerateBlockResponse contains the addresses and hashes returned by generateblocks.
 type GenerateBlockResponse struct {
 	// address of the recipient of rewards
 	Address string `json:"address"`
@@ -31,11 +34,13 @@ type GenerateBlockResponse struct {
 	Blocks []string `json:"blocks"`
 }
 
+// BitcoindTestHandler orchestrates bitcoind docker resources for tests.
 type BitcoindTestHandler struct {
 	t *testing.T
 	m *containers.Manager
 }
 
+// NewBitcoindHandler creates a new test helper for managing bitcoind.
 func NewBitcoindHandler(t *testing.T, m *containers.Manager) *BitcoindTestHandler {
 	return &BitcoindTestHandler{
 		t: t,
@@ -43,6 +48,7 @@ func NewBitcoindHandler(t *testing.T, m *containers.Manager) *BitcoindTestHandle
 	}
 }
 
+// Start launches bitcoind inside docker and waits until it responds.
 func (h *BitcoindTestHandler) Start() *dockertest.Resource {
 	tempPath, err := os.MkdirTemp("", "bitcoind-staker-test-*")
 	require.NoError(h.t, err)
@@ -67,6 +73,7 @@ func (h *BitcoindTestHandler) Start() *dockertest.Resource {
 	return bitcoinResource
 }
 
+// GetBlockCount queries bitcoind for the current block height.
 func (h *BitcoindTestHandler) GetBlockCount() (int, error) {
 	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"getblockcount"})
 	if err != nil {
@@ -85,6 +92,7 @@ func (h *BitcoindTestHandler) GetBlockCount() (int, error) {
 	return num, nil
 }
 
+// CreateWallet provisions a legacy wallet for integration tests.
 func (h *BitcoindTestHandler) CreateWallet(walletName string, passphrase string) *CreateWalletResponse {
 	// last false on the list will create legacy wallet. This is needed, as currently
 	// we are signing all taproot transactions by dumping the private key and signing it
@@ -99,6 +107,7 @@ func (h *BitcoindTestHandler) CreateWallet(walletName string, passphrase string)
 	return &response
 }
 
+// GenerateBlocks mines the requested number of blocks and returns their info.
 func (h *BitcoindTestHandler) GenerateBlocks(count int) *GenerateBlockResponse {
 	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"-generate", fmt.Sprintf("%d", count)})
 	require.NoError(h.t, err)

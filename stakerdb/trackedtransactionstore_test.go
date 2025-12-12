@@ -27,7 +27,7 @@ func MakeTestStore(t *testing.T) *stakerdb.TrackedTransactionStore {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		backend.Close()
+		require.NoError(t, backend.Close())
 	})
 
 	store, err := stakerdb.NewTrackedTransactionStore(backend)

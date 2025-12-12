@@ -42,6 +42,7 @@ const (
 	withdrawalTransactionFeeFlag = "withdrawal-fee"
 )
 
+// TransactionCommands groups all transaction-related CLI subcommands.
 var TransactionCommands = []cli.Command{
 	{
 		Name:      "transaction",
@@ -78,6 +79,7 @@ var checkPhase1StakingTransactionParamsCmd = cli.Command{
 	Action: checkPhase1StakingTransactionParams,
 }
 
+// StakingTxData describes the important fields extracted from a staking tx.
 type StakingTxData struct {
 	StakerPublicKeyHex           string `json:"staker_public_key_hex"`
 	FinalityProviderPublicKeyHex string `json:"finality_provider_public_key_hex"`
@@ -85,6 +87,7 @@ type StakingTxData struct {
 	StakingTimeBlocks            int64  `json:"staking_time_blocks"`
 }
 
+// ValidityInfo reports whether a parameter set validates the staking tx.
 type ValidityInfo struct {
 	ParametersVersion uint64         `json:"parameters_version"`
 	IsValid           bool           `json:"is_valid"`
@@ -92,10 +95,13 @@ type ValidityInfo struct {
 	StakingData       *StakingTxData `json:"staking_data,omitempty"`
 }
 
+// CheckPhase1StakingTxResponse holds validation results across parameter sets.
 type CheckPhase1StakingTxResponse struct {
 	ValidityInfo []*ValidityInfo `json:"validity_info"`
 }
 
+// ValidateTxAgainstParams validates a staking transaction against all available
+// global parameter versions for the provided network.
 func ValidateTxAgainstParams(
 	tx *wire.MsgTx,
 	globalParams *parser.ParsedGlobalParams,
@@ -465,7 +471,9 @@ func checkPhase1StakingTransaction(ctx *cli.Context) error {
 		return fmt.Errorf("staking amount in tx %d is more than the max-staking-amount in flag %d", txAmount, maxAmount)
 	}
 
-	fmt.Println("Provided transaction is valid staking transaction!")
+	if _, err := fmt.Fprintln(ctx.App.Writer, "Provided transaction is valid staking transaction!"); err != nil {
+		return fmt.Errorf("failed to write validation result: %w", err)
+	}
 	return nil
 }
 
@@ -509,6 +517,7 @@ var createPhase1StakingTransactionWithParamsCmd = cli.Command{
 	},
 }
 
+// CreatePhase1StakingTxResponse contains the serialized staking tx hex.
 type CreatePhase1StakingTxResponse struct {
 	StakingTxHex string `json:"staking_tx_hex"`
 }
@@ -657,6 +666,7 @@ var createPhase1UnbondingTransactionCmd = cli.Command{
 	Action: createPhase1UnbondingTransaction,
 }
 
+// CreatePhase1UnbondingTxResponse contains data needed to sign the unbonding tx.
 type CreatePhase1UnbondingTxResponse struct {
 	// bare hex of created unbonding transaction
 	UnbondingTxHex string `json:"unbonding_tx_hex"`
@@ -883,6 +893,7 @@ var createPhase1WithdrawalTransactionCmd = cli.Command{
 	Action: createPhase1WithdrawalTransaction,
 }
 
+// CreateWithdrawalTxResponse wraps the generated withdrawal transaction data.
 type CreateWithdrawalTxResponse struct {
 	// bare hex of created withdrawal transaction
 	WithdrawalTxHex string `json:"withdrawal_tx_hex"`

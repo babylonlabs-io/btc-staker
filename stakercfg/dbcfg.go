@@ -10,6 +10,7 @@ const (
 	defaultDBName = "staker.db"
 )
 
+// DBConfig contains database configuration options.
 type DBConfig struct {
 	// DBPath is the directory path in which the database file should be
 	// stored.
@@ -40,6 +41,7 @@ type DBConfig struct {
 	DBTimeout time.Duration `long:"dbtimeout" description:"Specifies the timeout value to use when opening the wallet database."`
 }
 
+// DefaultDBConfig returns a default database configuration.
 func DefaultDBConfig() DBConfig {
 	return DBConfig{
 		DBPath:            defaultDataDir,
@@ -51,6 +53,7 @@ func DefaultDBConfig() DBConfig {
 	}
 }
 
+// DBConfigToBoltBackenCondfig converts DBConfig to BoltBackendConfig.
 func DBConfigToBoltBackenCondfig(db *DBConfig) kvdb.BoltBackendConfig {
 	return kvdb.BoltBackendConfig{
 		DBPath:            db.DBPath,
@@ -62,6 +65,7 @@ func DBConfigToBoltBackenCondfig(db *DBConfig) kvdb.BoltBackendConfig {
 	}
 }
 
+// GetDBBackend creates a database backend from the given configuration.
 func GetDBBackend(cfg *DBConfig) (kvdb.Backend, error) {
 	boltConfig := DBConfigToBoltBackenCondfig(cfg)
 	return kvdb.GetBoltBackend(&boltConfig)

@@ -25,17 +25,20 @@ import (
 )
 
 const (
-	defaultDataDirname    = "data"
-	defaultLogLevel       = "info"
-	defaultLogDirname     = "logs"
-	defaultLogFilename    = "stakerd.log"
+	defaultDataDirname = "data"
+	defaultLogLevel    = "info"
+	defaultLogDirname  = "logs"
+	defaultLogFilename = "stakerd.log"
+	// DefaultRPCPort is the default RPC server port.
 	DefaultRPCPort        = 15812
 	defaultConfigFileName = "stakerd.conf"
 	defaultFeeMode        = "static"
+	// DefaultMinFeeRate is 2 sat/vbyte as the default minimum fee rate.
 	// We are using 2 sat/vbyte as default min fee rate, as currently our size estimates
 	// for different transaction types are not very accurate and if we would use 1 sat/vbyte (minimum accepted by bitcoin network)
 	// we risk into having transactions rejected by the network due to low fee.
 	DefaultMinFeeRate = 2
+	// DefaultMaxFeeRate is the default maximum fee rate in sat/vbyte.
 	DefaultMaxFeeRate = 200
 
 	// JSON-RPC server config
@@ -48,11 +51,13 @@ const (
 )
 
 var (
+	// DefaultStakerdDir is the default directory for stakerd data files.
 	//   C:\Users\<username>\AppData\Local\stakerd on Windows
 	//   ~/.stakerd on Linux
 	//   ~/Library/Application Support/stakerd on MacOS
 	DefaultStakerdDir = btcutil.AppDataDir("stakerd", false)
 
+	// DefaultConfigFile is the default path to the stakerd configuration file.
 	DefaultConfigFile = filepath.Join(DefaultStakerdDir, defaultConfigFileName)
 	defaultNetwork    = "testnet"
 
@@ -60,22 +65,26 @@ var (
 	defaultLogDir  = filepath.Join(DefaultStakerdDir, defaultLogDirname)
 )
 
+// ChainConfig contains Bitcoin chain configuration.
 type ChainConfig struct {
 	Network         string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"simnet" choice:"signet" choice:"mainnet"`
 	SigNetChallenge string `long:"signetchallenge" description:"Connect to a custom signet network defined by this challenge instead of using the global default signet test network -- Can be specified multiple times"`
 }
 
+// DefaultChainConfig returns a default chain configuration.
 func DefaultChainConfig() ChainConfig {
 	return ChainConfig{
 		Network: defaultNetwork,
 	}
 }
 
+// WalletConfig contains the credentials needed to unlock the BTC wallet.
 type WalletConfig struct {
 	WalletName string `long:"walletname" description:"name of the wallet to sign Bitcoin transactions"`
 	WalletPass string `long:"walletpassphrase" description:"passphrase to unlock the wallet"`
 }
 
+// DefaultWalletConfig returns the default wallet configuration.
 func DefaultWalletConfig() WalletConfig {
 	return WalletConfig{
 		WalletName: "wallet",
@@ -83,6 +92,7 @@ func DefaultWalletConfig() WalletConfig {
 	}
 }
 
+// WalletRPCConfig contains RPC connection settings for the BTC wallet.
 type WalletRPCConfig struct {
 	Host             string `long:"wallethost" description:"location of the wallet rpc server"`
 	User             string `long:"walletuser" description:"user auth for the wallet rpc server"`
@@ -92,6 +102,7 @@ type WalletRPCConfig struct {
 	RawRPCWalletCert string `long:"rawrpcwalletcert" description:"The raw bytes of the wallet daemon's PEM-encoded certificate chain which will be used to authenticate the RPC connection."`
 }
 
+// DefaultWalletRPCConfig returns the default wallet RPC config.
 func DefaultWalletRPCConfig() WalletRPCConfig {
 	return WalletRPCConfig{
 		DisableTLS: true,
@@ -101,6 +112,7 @@ func DefaultWalletRPCConfig() WalletRPCConfig {
 	}
 }
 
+// JSONRPCServerConfig configures the JSON-RPC server exposed by stakerd.
 type JSONRPCServerConfig struct {
 	RawRPCListeners     []string      `long:"rpclisten" description:"Add an interface/port/socket to listen for RPC connections"`
 	MaxOpenConnections  int           `long:"maxopenconnections" description:"Maximum number of concurrent RPC connections allowed"`
@@ -111,6 +123,7 @@ type JSONRPCServerConfig struct {
 	MaxRequestBatchSize int           `long:"maxrequestbatchsize" description:"Maximum number of JSON-RPC requests allowed in a single batch"`
 }
 
+// DefaultJSONRPCServerConfig returns the default JSON-RPC server configuration.
 func DefaultJSONRPCServerConfig() JSONRPCServerConfig {
 	return JSONRPCServerConfig{
 		MaxOpenConnections:  defaultMaxOpenConnections,
@@ -134,6 +147,7 @@ func (cf *JSONRPCServerConfig) Config() *rpc.Config {
 	}
 }
 
+// BtcNodeBackendConfig describes how to connect to the Bitcoin node and wallet backends.
 type BtcNodeBackendConfig struct {
 	Nodetype            string    `long:"nodetype" description:"type of node to connect to {bitcoind, btcd}"`
 	WalletType          string    `long:"wallettype" description:"type of wallet to connect to {bitcoind, btcwallet}"`
@@ -147,6 +161,7 @@ type BtcNodeBackendConfig struct {
 	ActiveWalletBackend types.SupportedWalletBackend
 }
 
+// DefaultBtcNodeBackendConfig returns the default node backend configuration.
 func DefaultBtcNodeBackendConfig() BtcNodeBackendConfig {
 	btcdConfig := DefaultBtcdConfig()
 	bitcoindConfig := DefaultBitcoindConfig()
@@ -161,6 +176,7 @@ func DefaultBtcNodeBackendConfig() BtcNodeBackendConfig {
 	}
 }
 
+// StakerConfig defines the values for running the stakerd daemon
 type StakerConfig struct {
 	BabylonStallingInterval   time.Duration `long:"babylonstallinginterval" description:"The interval for Babylon node BTC light client to catch up with the real chain before re-sending delegation request"`
 	UnbondingTxCheckInterval  time.Duration `long:"unbondingtxcheckinterval" description:"The interval for staker whether delegation received all covenant signatures"`
@@ -170,6 +186,7 @@ type StakerConfig struct {
 	ContextUpgradeHeight      uint64        `long:"contextupgradeheight" description:"The height at which the context signing upgrade is applied"`
 }
 
+// DefaultStakerConfig defines the default staker config
 func DefaultStakerConfig() StakerConfig {
 	return StakerConfig{
 		BabylonStallingInterval:   1 * time.Minute,
@@ -182,6 +199,7 @@ func DefaultStakerConfig() StakerConfig {
 	}
 }
 
+// Config expected configuration structure for stakerd binary
 type Config struct {
 	DebugLevel string `long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, fatal}"`
 	StakerdDir string `long:"stakerddir" description:"The base directory that contains staker's data, logs, configuration file, etc."`
@@ -215,6 +233,7 @@ type Config struct {
 	RPCListeners []net.Addr
 }
 
+// DefaultConfig returns the default values for the config
 func DefaultConfig() Config {
 	rpcConf := DefaultWalletRPCConfig()
 	walletConf := DefaultWalletConfig()

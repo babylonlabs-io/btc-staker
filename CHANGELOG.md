@@ -41,6 +41,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 * [#220](https://github.com/babylonlabs-io/btc-staker/pull/220) fix: `unstake` doesn't work for expired staking output
 
+### Improvements
+
+* [#218](https://github.com/babylonlabs-io/btc-staker/pull/218) chore: bump old deps and fix gosec
+
 ## v0.18.0
 
 ### Improvements

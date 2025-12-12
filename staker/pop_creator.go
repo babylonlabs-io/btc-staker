@@ -16,6 +16,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 )
 
+// Response represents the POP artifact returned to CLI callers.
 type Response struct {
 	BabyAddress   string `json:"babyAddress"`
 	BTCAddress    string `json:"btcAddress"`
@@ -25,16 +26,20 @@ type Response struct {
 	BabyPublicKey string `json:"babyPublicKey"`
 }
 
+// BabyPublicKey describes the Cosmos key that signed the POP payload.
 type BabyPublicKey struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
 }
 
+// PopCreator handles Babylon <-> Bitcoin proof-of-possession generation.
 type PopCreator struct {
 	BitcoinWalletController walletcontroller.WalletController
 	KeyRing                 keyring.Keyring
 }
 
+// NewPopCreator returns a PopCreator backed by the provided wallet controller
+// and Cosmos keyring.
 func NewPopCreator(bitcoinWalletController *walletcontroller.RPCWalletController, keyring keyring.Keyring) *PopCreator {
 	return &PopCreator{
 		BitcoinWalletController: bitcoinWalletController,
@@ -42,6 +47,8 @@ func NewPopCreator(bitcoinWalletController *walletcontroller.RPCWalletController
 	}
 }
 
+// CreatePop generates a POP structure proving control of the Bitcoin and Babylon
+// keys for the provided addresses.
 func (pc *PopCreator) CreatePop(
 	btcAddress btcutil.Address,
 	babyAddressPrefix string,
@@ -97,21 +104,25 @@ func (pc *PopCreator) CreatePop(
 	}, nil
 }
 
+// Fee contains the minimal fee representation required by ADR-36 sign docs.
 type Fee struct {
 	Gas    string   `json:"gas"`
 	Amount []string `json:"amount"`
 }
 
+// MsgValue holds the signer metadata for ADR-36 sign docs.
 type MsgValue struct {
 	Signer string `json:"signer"`
 	Data   string `json:"data"`
 }
 
+// Msg wraps MsgValue to match the Cosmos JSON shape.
 type Msg struct {
 	Type  string   `json:"type"`
 	Value MsgValue `json:"value"`
 }
 
+// SignDoc is the ADR-36 document that Cosmos keys sign.
 type SignDoc struct {
 	ChainID       string `json:"chain_id"`
 	AccountNumber string `json:"account_number"`
@@ -121,6 +132,8 @@ type SignDoc struct {
 	Memo          string `json:"memo"`
 }
 
+// NewCosmosSignDoc creates an ADR-36 compatible SignDoc for the provided signer
+// and payload.
 func NewCosmosSignDoc(
 	signer string,
 	data string,
@@ -146,6 +159,8 @@ func NewCosmosSignDoc(
 	}
 }
 
+// GetBabyPubKey fetches the Babylon key from the keyring and ensures it is a
+// secp256k1 key.
 func GetBabyPubKey(kr keyring.Keyring, babylonAddress sdk.AccAddress) (*keyring.Record, *secp256k1.PubKey, error) {
 	record, err := kr.KeyByAddress(babylonAddress)
 
@@ -167,6 +182,8 @@ func GetBabyPubKey(kr keyring.Keyring, babylonAddress sdk.AccAddress) (*keyring.
 	}
 }
 
+// SignCosmosAdr36 signs the provided bytes using the specified Cosmos key and
+// returns the signature suitable for inclusion in the POP response.
 func SignCosmosAdr36(
 	kr keyring.Keyring,
 	keyName string,

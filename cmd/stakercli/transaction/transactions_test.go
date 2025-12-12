@@ -140,7 +140,9 @@ func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []stri
 	outPut := filepath.Join(t.TempDir(), fmt.Sprintf("%s-out.txt", datagen.GenRandomHexStr(r, 10)))
 	outPutFile, err := os.Create(outPut)
 	require.NoError(t, err)
-	defer outPutFile.Close()
+	defer func() {
+		require.NoError(t, outPutFile.Close())
+	}()
 
 	// set file to stdout to read.
 	oldStd := os.Stdout
@@ -249,7 +251,9 @@ func TestCheckPhase1StakingTransactionCmd(t *testing.T) {
 	validFpPk := "a89e7caf57360bc8b791df72abc3fb6d2ddc0e06e171c9f17c4ea1299e677565"
 	validStakingTime := 52560
 	realStakingAmount := 5000000
-	validCheckArgs := append(stakerCliCheckP1StkTx,
+	validCheckArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+5)
+	validCheckArgs = append(validCheckArgs, stakerCliCheckP1StkTx...)
+	validCheckArgs = append(validCheckArgs,
 		fmt.Sprintf("--staker-pk=%s", validBtcPk),
 		fmt.Sprintf("--finality-provider-pk=%s", validFpPk),
 		fmt.Sprintf("--staking-time=%d", validStakingTime),
@@ -301,35 +305,45 @@ func TestCheckPhase1StakingTransactionCmd(t *testing.T) {
 
 	// check if errors are caught in flags --staker-pk, --finality-provider-pk, --staking-time, --min-staking-amount
 	invalidStakerPk := "badstakerpk"
-	invalidBtcStakerArgs := append(stakerCliCheckP1StkTx,
+	invalidBtcStakerArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+1)
+	invalidBtcStakerArgs = append(invalidBtcStakerArgs, stakerCliCheckP1StkTx...)
+	invalidBtcStakerArgs = append(invalidBtcStakerArgs,
 		fmt.Sprintf("--staker-pk=%s", invalidStakerPk),
 	)
 	err = app.Run(invalidBtcStakerArgs)
 	require.EqualError(t, err, fmt.Errorf("staker pk in tx %s do not match with flag %s", validBtcPk, invalidStakerPk).Error())
 
 	invalidFpPk := "badfppk"
-	invalidFpPkArgs := append(stakerCliCheckP1StkTx,
+	invalidFpPkArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+1)
+	invalidFpPkArgs = append(invalidFpPkArgs, stakerCliCheckP1StkTx...)
+	invalidFpPkArgs = append(invalidFpPkArgs,
 		fmt.Sprintf("--finality-provider-pk=%s", invalidFpPk),
 	)
 	err = app.Run(invalidFpPkArgs)
 	require.EqualError(t, err, fmt.Errorf("finality provider pk in tx %s do not match with flag %s", validFpPk, invalidFpPk).Error())
 
 	invalidStakingTime := 50
-	invalidStakingTimeArgs := append(stakerCliCheckP1StkTx,
+	invalidStakingTimeArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+1)
+	invalidStakingTimeArgs = append(invalidStakingTimeArgs, stakerCliCheckP1StkTx...)
+	invalidStakingTimeArgs = append(invalidStakingTimeArgs,
 		fmt.Sprintf("--staking-time=%d", invalidStakingTime),
 	)
 	err = app.Run(invalidStakingTimeArgs)
 	require.EqualError(t, err, fmt.Errorf("staking time in tx %d do not match with flag %d", validStakingTime, invalidStakingTime).Error())
 
 	invalidMinStakingAmount := realStakingAmount + 1
-	invalidMinStakingAmountArgs := append(stakerCliCheckP1StkTx,
+	invalidMinStakingAmountArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+1)
+	invalidMinStakingAmountArgs = append(invalidMinStakingAmountArgs, stakerCliCheckP1StkTx...)
+	invalidMinStakingAmountArgs = append(invalidMinStakingAmountArgs,
 		fmt.Sprintf("--min-staking-amount=%d", invalidMinStakingAmount),
 	)
 	err = app.Run(invalidMinStakingAmountArgs)
 	require.EqualError(t, err, fmt.Errorf("staking amount in tx %d is less than the min-staking-amount in flag %d", realStakingAmount, invalidMinStakingAmount).Error())
 
 	invalidMaxStakingAmount := realStakingAmount - 1
-	invalidMaxStakingAmountArgs := append(stakerCliCheckP1StkTx,
+	invalidMaxStakingAmountArgs := make([]string, 0, len(stakerCliCheckP1StkTx)+1)
+	invalidMaxStakingAmountArgs = append(invalidMaxStakingAmountArgs, stakerCliCheckP1StkTx...)
+	invalidMaxStakingAmountArgs = append(invalidMaxStakingAmountArgs,
 		fmt.Sprintf("--max-staking-amount=%d", invalidMaxStakingAmount),
 	)
 	err = app.Run(invalidMaxStakingAmountArgs)

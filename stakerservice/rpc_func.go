@@ -1,3 +1,4 @@
+//nolint:staticcheck // QF1012
 package stakerservice
 
 import (
@@ -35,6 +36,7 @@ type RPCFunc struct {
 	noCacheDefArgs map[string]interface{} // a lookup table of args that, if not supplied or are set to default values, cause us to not cache
 }
 
+// Option mutates RPCFunc metadata when registering handlers.
 type Option func(*RPCFunc)
 
 // RegisterRPCFuncs adds a route for each function in the funcMap, as well as

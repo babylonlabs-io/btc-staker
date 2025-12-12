@@ -1,3 +1,4 @@
+// Package cmd provides shared helpers for CLI commands.
 package cmd
 
 import (
@@ -7,6 +8,7 @@ import (
 	service "github.com/babylonlabs-io/btc-staker/stakerservice"
 )
 
+// GetEnvBasicAuth reads the daemon route basic-auth credentials from the environment.
 func GetEnvBasicAuth() (expUsername, expPwd string, err error) {
 	expUsername = os.Getenv(service.EnvRouteAuthUser)
 	if len(expUsername) == 0 {

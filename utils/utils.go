@@ -1,3 +1,6 @@
+// Package utils provides utility functions for Bitcoin operations.
+//
+//nolint:revive
 package utils
 
 import (
@@ -8,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+// GetBtcNetworkParams returns Bitcoin network parameters for the given network name.
 func GetBtcNetworkParams(network string) (*chaincfg.Params, error) {
 	switch network {
 	case "testnet3":
@@ -25,6 +29,7 @@ func GetBtcNetworkParams(network string) (*chaincfg.Params, error) {
 	}
 }
 
+// SerializeBtcTransaction serializes a Bitcoin transaction to bytes.
 func SerializeBtcTransaction(tx *wire.MsgTx) ([]byte, error) {
 	var txBuf bytes.Buffer
 	if err := tx.Serialize(&txBuf); err != nil {
@@ -33,7 +38,7 @@ func SerializeBtcTransaction(tx *wire.MsgTx) ([]byte, error) {
 	return txBuf.Bytes(), nil
 }
 
-// push msg to channel c, or quit if quit channel is closed
+// PushOrQuit pushes a message to channel c, or quits if the quit channel is closed.
 func PushOrQuit[T any](c chan<- T, msg T, quit <-chan struct{}) {
 	select {
 	case c <- msg:
@@ -41,6 +46,7 @@ func PushOrQuit[T any](c chan<- T, msg T, quit <-chan struct{}) {
 	}
 }
 
+// HandleReqRespOrQuit handles request/response or quits on the quit channel.
 func HandleReqRespOrQuit[T any](r <-chan T, e <-chan error, q <-chan struct{}) (T, error) {
 	var noResp T
 
@@ -56,16 +62,19 @@ func HandleReqRespOrQuit[T any](r <-chan T, e <-chan error, q <-chan struct{}) (
 	}
 }
 
+// Requestable is an interface for request types with result and error channels.
 type Requestable[Result any] interface {
 	ResultChan() chan Result
 	ErrorChan() chan error
 }
 
+// Request represents a generic request with result and error channels.
 type Request[A any] struct {
 	resultChan chan A
 	errChan    chan error
 }
 
+// NewRequest creates a new Request instance.
 func NewRequest[A any]() Request[A] {
 	return Request[A]{
 		resultChan: make(chan A, 1),
@@ -73,14 +82,17 @@ func NewRequest[A any]() Request[A] {
 	}
 }
 
+// ResultChan returns the result channel.
 func (r *Request[A]) ResultChan() chan A {
 	return r.resultChan
 }
 
+// ErrorChan returns the error channel.
 func (r *Request[A]) ErrorChan() chan error {
 	return r.errChan
 }
 
+// SendRequestAndWaitForResponseOrQuit sends a request and waits for a response or quits.
 func SendRequestAndWaitForResponseOrQuit[Result any, Req Requestable[Result]](
 	r Req,
 	c chan<- Req,

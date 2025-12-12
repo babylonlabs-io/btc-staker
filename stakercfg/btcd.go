@@ -31,6 +31,7 @@ type Btcd struct {
 	BlockCacheSize uint64 `long:"block-cache-size" description:"size of the Bitcoin blocks cache"`
 }
 
+// DefaultBtcdConfig returns the default btcd configuration.
 func DefaultBtcdConfig() Btcd {
 	return Btcd{
 		RPCHost:        defaultBtcdRPCHost,

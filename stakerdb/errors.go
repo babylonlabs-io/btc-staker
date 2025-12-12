@@ -1,3 +1,4 @@
+// Package stakerdb provides database storage for the staker daemon.
 package stakerdb
 
 import "errors"
