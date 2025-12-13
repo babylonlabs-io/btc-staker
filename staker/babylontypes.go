@@ -1,3 +1,5 @@
+// Package staker contains the core logic for managing BTC staking operations and
+// coordinating with the Babylon chain.
 package staker
 
 import (
@@ -22,11 +24,16 @@ import (
 // retrieving data from babylon chain, sending data to babylon chain, queuing data to be send etc.
 
 const (
-	BabylonPendingStatus  = "PENDING"
+	// BabylonPendingStatus indicates that a delegation has been submitted but not yet verified.
+	BabylonPendingStatus = "PENDING"
+	// BabylonVerifiedStatus indicates that the Babylon chain verified the delegation details.
 	BabylonVerifiedStatus = "VERIFIED"
-	BabylonActiveStatus   = "ACTIVE"
+	// BabylonActiveStatus indicates that the delegation is active on the Babylon chain.
+	BabylonActiveStatus = "ACTIVE"
+	// BabylonUnbondedStatus indicates that the delegation has been unbonded.
 	BabylonUnbondedStatus = "UNBONDED"
-	BabylonExpiredStatus  = "EXPIRED"
+	// BabylonExpiredStatus indicates that the delegation expired and is no longer valid.
+	BabylonExpiredStatus = "EXPIRED"
 )
 
 type inclusionInfo struct {

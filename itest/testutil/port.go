@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"fmt"
 	mrand "math/rand/v2"
 	"net"
@@ -39,7 +40,8 @@ func AllocateUniquePort(t *testing.T) int {
 			continue
 		}
 
-		listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		var lc net.ListenConfig
+		listener, err := lc.Listen(context.Background(), "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if err != nil {
 			portMutex.Unlock()
 			continue

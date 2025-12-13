@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcwallet/wallet/txauthor"
 )
 
+// Utxo unspent transaction output
 type Utxo struct {
 	Amount       btcutil.Amount
 	OutPoint     wire.OutPoint

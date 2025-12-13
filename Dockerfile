@@ -3,6 +3,9 @@ FROM golang:1.23.8 AS builder
 # Install cli tools for building and final image
 RUN apt-get update && apt-get install -y make git bash gcc curl jq
 
+# Allow Go to download and use newer toolchain versions
+ENV GOTOOLCHAIN=auto
+
 # Build
 WORKDIR /go/src/github.com/babylonlabs-io/btc-staker
 # Cache dependencies

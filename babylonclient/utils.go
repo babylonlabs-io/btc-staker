@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+// GenerateProof builds an SPV proof for the given transaction index.
 func GenerateProof(block *wire.MsgBlock, txIdx uint32) ([]byte, error) {
 	headerBytes := babylontypes.NewBTCHeaderBytesFromBlockHeader(&block.Header)
 

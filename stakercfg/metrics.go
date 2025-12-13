@@ -20,6 +20,7 @@ type MetricsConfig struct {
 	ServerPort int `long:"server-pornt" description:"port of prometheus server."`
 }
 
+// Validate validates the metrics configuration.
 func (cfg *MetricsConfig) Validate() error {
 	if cfg.ServerPort < 0 || cfg.ServerPort > 65535 {
 		return fmt.Errorf("invalid port: %d", cfg.ServerPort)
@@ -33,6 +34,7 @@ func (cfg *MetricsConfig) Validate() error {
 	return nil
 }
 
+// DefaultMetricsConfig returns a default metrics configuration.
 func DefaultMetricsConfig() MetricsConfig {
 	return MetricsConfig{
 		Enabled:    false,

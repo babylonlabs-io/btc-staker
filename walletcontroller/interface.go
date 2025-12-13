@@ -17,11 +17,15 @@ import (
 	notifier "github.com/lightningnetwork/lnd/chainntnfs"
 )
 
+// TxStatus describes where a transaction currently resides.
 type TxStatus int
 
 const (
+	// TxNotFound indicates the transaction is unknown.
 	TxNotFound TxStatus = iota
+	// TxInMemPool indicates the transaction is in the mempool.
 	TxInMemPool
+	// TxInChain indicates the transaction has been mined.
 	TxInChain
 )
 
@@ -38,11 +42,13 @@ func (ts TxStatus) String() string {
 	}
 }
 
+// SpendPathDescription contains the taproot control block and leaf being spent.
 type SpendPathDescription struct {
 	ControlBlock *txscript.ControlBlock
 	ScriptLeaf   *txscript.TapLeaf
 }
 
+// TaprootSigningRequest describes a single-input taproot signing operation.
 type TaprootSigningRequest struct {
 	FundingOutput    *wire.TxOut
 	TxToSign         *wire.MsgTx
@@ -50,6 +56,7 @@ type TaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription
 }
 
+// TwoInputTaprootSigningRequest describes a two-input taproot signing operation.
 type TwoInputTaprootSigningRequest struct {
 	TxToSign         *wire.MsgTx           // The two-input transaction to sign
 	StakingOutput    *wire.TxOut           // Input 0: Previous staking output (taproot)
@@ -58,16 +65,16 @@ type TwoInputTaprootSigningRequest struct {
 	SpendDescription *SpendPathDescription // Script path for spending the staking output
 }
 
-// TaprootSigningResult contains result of signing taproot spend through bitcoind
-// wallet. It will contain either Signature or FullInputWitness, never both.
+// TaprootSigningResult contains the outcome of a taproot signing operation.
 type TaprootSigningResult struct {
 	Signature        *schnorr.Signature
 	FullInputWitness wire.TxWitness
 }
 
-// Function to filer utxos that should be used in transaction creation
+// UseUtxoFn filters UTXOs that should be considered during transaction construction.
 type UseUtxoFn func(utxo Utxo) bool
 
+// WalletController abstracts wallet functionality required to build/sign transactions.
 type WalletController interface {
 	UnlockWallet(timeoutSecs int64) error
 	AddressPublicKey(address btcutil.Address) (*btcec.PublicKey, error)
@@ -124,6 +131,7 @@ type WalletController interface {
 	) (bool, error)
 }
 
+// StkTxV0ParsedWithBlock fetches, parses, and annotates a version 0 staking transaction.
 func StkTxV0ParsedWithBlock(
 	wc WalletController,
 	btcNetwork *chaincfg.Params,

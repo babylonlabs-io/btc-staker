@@ -16,6 +16,7 @@ const (
 	mnemonicEntropySize = 256
 )
 
+// ChainKeyInfo contains information about a chain key including mnemonic and key pair.
 type ChainKeyInfo struct {
 	Name       string
 	Mnemonic   string
@@ -23,6 +24,7 @@ type ChainKeyInfo struct {
 	PrivateKey *btcec.PrivateKey
 }
 
+// ChainKeyringController manages keyring operations for a specific key.
 type ChainKeyringController struct {
 	kr      keyring.Keyring
 	keyName string
@@ -30,6 +32,7 @@ type ChainKeyringController struct {
 	input *strings.Reader
 }
 
+// NewChainKeyringController creates a new ChainKeyringController with a new keyring.
 func NewChainKeyringController(ctx client.Context, name, keyringBackend string) (*ChainKeyringController, error) {
 	if name == "" {
 		return nil, fmt.Errorf("the key name should not be empty")
@@ -58,6 +61,7 @@ func NewChainKeyringController(ctx client.Context, name, keyringBackend string) 
 	}, nil
 }
 
+// NewChainKeyringControllerWithKeyring creates a new ChainKeyringController using an existing keyring.
 func NewChainKeyringControllerWithKeyring(kr keyring.Keyring, name string, input *strings.Reader) (*ChainKeyringController, error) {
 	if name == "" {
 		return nil, fmt.Errorf("the key name should not be empty")
@@ -70,10 +74,12 @@ func NewChainKeyringControllerWithKeyring(kr keyring.Keyring, name string, input
 	}, nil
 }
 
+// GetKeyring returns the underlying keyring.
 func (kc *ChainKeyringController) GetKeyring() keyring.Keyring {
 	return kc.kr
 }
 
+// CreateChainKey creates a new chain key with the given passphrase and HD path.
 func (kc *ChainKeyringController) CreateChainKey(passphrase, hdPath string) (*ChainKeyInfo, error) {
 	keyringAlgos, _ := kc.kr.SupportedAlgorithms()
 	algo, err := keyring.NewSigningAlgoFromString(secp256k1Type, keyringAlgos)
@@ -114,6 +120,7 @@ func (kc *ChainKeyringController) CreateChainKey(passphrase, hdPath string) (*Ch
 	}
 }
 
+// GetChainPrivKey retrieves the private key for the chain key using the given passphrase.
 func (kc *ChainKeyringController) GetChainPrivKey(passphrase string) (*sdksecp256k1.PrivKey, error) {
 	kc.input.Reset(passphrase)
 	k, err := kc.kr.Key(kc.keyName)
@@ -131,6 +138,7 @@ func (kc *ChainKeyringController) GetChainPrivKey(passphrase string) (*sdksecp25
 	}
 }
 
+// KeyRecord retrieves the keyring record for the controller's key.
 func (kc *ChainKeyringController) KeyRecord() (*keyring.Record, error) {
 	return kc.GetKeyring().Key(kc.keyName)
 }

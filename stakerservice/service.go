@@ -30,15 +30,19 @@ import (
 )
 
 const (
-	defaultOffset    = 0
-	defaultLimit     = 50
-	maxLimit         = 100
+	defaultOffset = 0
+	defaultLimit  = 50
+	maxLimit      = 100
+	// EnvRouteAuthUser contains the env var name for daemon route usernames.
 	EnvRouteAuthUser = "BTCSTAKER_USERNAME"
-	EnvRouteAuthPwd  = "BTCSTAKER_PASSWORD"
+	// EnvRouteAuthPwd contains the env var name for daemon route passwords.
+	EnvRouteAuthPwd = "BTCSTAKER_PASSWORD"
 )
 
+// RoutesMap maps route names to their RPC metadata.
 type RoutesMap map[string]*RPCFunc
 
+// StakerService wraps the RPC server exposing staker functionality.
 type StakerService struct {
 	started int32
 
@@ -63,7 +67,7 @@ func NewStakerServiceFromConfig(
 	return NewStakerService(c, s, l, db), nil
 }
 
-// NewStakerService creates a new staker service instance
+// NewStakerService creates a new staker service instance.
 func NewStakerService(
 	c *scfg.Config,
 	s *str.App,
@@ -695,8 +699,7 @@ func ParseCovenantsPubKeyToHex(pks ...*btcec.PublicKey) []string {
 	return pksHex
 }
 
-// parseCovenantPubKeyFromHex parses public key into serialized compressed
-// with 33 bytes and in hex string
+// ParseCovenantPubKeyToHex serializes a covenant pubkey into compressed hex.
 func ParseCovenantPubKeyToHex(pk *btcec.PublicKey) string {
 	return hex.EncodeToString(pk.SerializeCompressed())
 }

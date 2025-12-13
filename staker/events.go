@@ -5,6 +5,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// StakingEvent describes an internal event generated while monitoring Babylon or
+// Bitcoin state transitions for a delegation.
 type StakingEvent interface {
 	EventID() chainhash.Hash // Each staking event is identified by initial staking transaction hash
 	EventDesc() string

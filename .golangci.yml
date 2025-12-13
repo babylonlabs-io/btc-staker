@@ -1,8 +1,6 @@
-run:
-  timeout: 5m
-
+version: "2"
 linters:
-  disable-all: true
+  default: none
   enable:
     - asasalint
     - asciicheck
@@ -18,7 +16,6 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - forbidigo
     - forcetypeassert
     - goconst
     - gocritic
@@ -26,7 +23,6 @@ linters:
     - goheader
     - gomodguard
     - goprintffuncname
-    - gosimple
     - govet
     - grouper
     - importas
@@ -37,9 +33,7 @@ linters:
     - misspell
     - nakedret
     - nilerr
-    #    - nlreturn # Style wise I personally like this one, todo(lazar): unlax at somepoint, good practice
     - noctx
-    # - nonamedreturns
     - nosprintfhostport
     - paralleltest
     - reassign
@@ -47,34 +41,41 @@ linters:
     - rowserrcheck
     - sqlclosecheck
     - staticcheck
-    - stylecheck
-    - tenv
     - testableexamples
     - tparallel
-    - typecheck
     - unconvert
     - unparam
-    - usestdlibvars
     - unused
+    - usestdlibvars
     - wastedassign
     - whitespace
-#    - wrapcheck # we really should be using this, lax for now todo(lazar): unlax at somepoint, good practice
-
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - errcheck
+          - gocritic
+          - gocyclo
+          - gosec
+        path: _test\.go
+    paths:
+      - e2etest
+      - itest
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-same-issues: 0
-  # Default: https://golangci-lint.run/usage/false-positives/#default-exclusions
-  exclude-dirs:
-    - e2etest
-    - itest
-  exclude-rules:
-    # Exclude some linters from running on tests files.
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - dupl
-        - gosec
-        - gocritic
-    - path-except: _test\.go
-      linters:
-        - forbidigo
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

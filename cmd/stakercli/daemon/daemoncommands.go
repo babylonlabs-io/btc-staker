@@ -1,3 +1,4 @@
+// Package daemon exposes CLI commands that talk to the running staker daemon.
 package daemon
 
 import (
@@ -12,6 +13,7 @@ import (
 	"github.com/urfave/cli"
 )
 
+// DaemonCommands is the set of stakercli commands that require a running daemon.
 var DaemonCommands = []cli.Command{
 	{
 		Name:      "daemon",

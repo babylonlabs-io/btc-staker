@@ -7,8 +7,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
+// DefaultKeyringBackend is the default keyring backend type for Babylon configuration.
 const DefaultKeyringBackend = keyring.BackendFile
 
+// BBNConfig holds the configuration for connecting to a Babylon node.
 type BBNConfig struct {
 	Key            string        `long:"key" description:"name of the BTC staker key name inside the keyring to sign transactions with"`
 	ChainID        string        `long:"chain-id" description:"chain id of the chain to connect to"`
@@ -26,6 +28,7 @@ type BBNConfig struct {
 	SignModeStr    string        `long:"sign-mode" description:"sign mode to use"`
 }
 
+// DefaultBBNConfig returns the default Babylon configuration.
 func DefaultBBNConfig() BBNConfig {
 	dc := bbncfg.DefaultBabylonConfig()
 	// fill up the config from dc config
@@ -49,6 +52,7 @@ func DefaultBBNConfig() BBNConfig {
 	}
 }
 
+// BBNConfigToBabylonConfig converts the staker's Babylon config to the Babylon client config.
 func BBNConfigToBabylonConfig(bc *BBNConfig) bbncfg.BabylonConfig {
 	return bbncfg.BabylonConfig{
 		Key:            bc.Key,
