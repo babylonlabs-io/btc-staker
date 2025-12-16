@@ -1,6 +1,7 @@
 package stakercfg
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"go.uber.org/zap"
 
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jessevdk/go-flags"
@@ -90,6 +93,23 @@ func DefaultWalletConfig() WalletConfig {
 		WalletName: "wallet",
 		WalletPass: "walletpass",
 	}
+}
+
+// StakerKeysConfig holds private key material for the staker-controlled taproot
+// multisig branch. These keys are loaded directly into stakerd (testing
+// scenario) and are independent of the wallet RPC config.
+type StakerKeysConfig struct {
+	// StakerKeysWIF contains the list of WIF-encoded private keys to use in the staker multisig branch.
+	StakerKeysWIF []string `long:"stakerkeyswif" description:"WIF-encoded staker private keys used for taproot multisig signing (auto-sorted by pubkey later)"`
+	// StakerThreshold is the required number of signatures for the staker multisig branch.
+	StakerThreshold uint32 `long:"stakerthreshold" description:"threshold for the staker taproot multisig branch"`
+	// DecodedWIFs stores the parsed keys after validation; not serialized but ordered lexicographically by pubkey.
+	DecodedWIFs []*btcutil.WIF `long:"-" ini:"-" json:"-"`
+}
+
+// DefaultStakerKeysConfig returns empty staker key settings.
+func DefaultStakerKeysConfig() StakerKeysConfig {
+	return StakerKeysConfig{}
 }
 
 // WalletRPCConfig contains RPC connection settings for the BTC wallet.
@@ -222,6 +242,8 @@ type Config struct {
 
 	DBConfig *DBConfig `group:"dbconfig" namespace:"dbconfig"`
 
+	StakerKeysConfig *StakerKeysConfig `group:"stakerkeys" namespace:"stakerkeys"`
+
 	StakerConfig *StakerConfig `group:"stakerconfig" namespace:"stakerconfig"`
 
 	MetricsConfig *MetricsConfig `group:"metricsconfig" namespace:"metricsconfig"`
@@ -241,6 +263,7 @@ func DefaultConfig() Config {
 	nodeBackendCfg := DefaultBtcNodeBackendConfig()
 	bbnConfig := DefaultBBNConfig()
 	dbConfig := DefaultDBConfig()
+	stakerKeysConfig := DefaultStakerKeysConfig()
 	stakerConfig := DefaultStakerConfig()
 	metricsCfg := DefaultMetricsConfig()
 	jsonRPCSvrConf := DefaultJSONRPCServerConfig()
@@ -256,6 +279,7 @@ func DefaultConfig() Config {
 		BtcNodeBackendConfig: &nodeBackendCfg,
 		BabylonConfig:        &bbnConfig,
 		DBConfig:             &dbConfig,
+		StakerKeysConfig:     &stakerKeysConfig,
 		StakerConfig:         &stakerConfig,
 		MetricsConfig:        &metricsCfg,
 		JSONRPCServerConfig:  &jsonRPCSvrConf,
@@ -517,6 +541,39 @@ func ValidateConfig(cfg Config) (*Config, error) {
 
 	if cfg.BtcNodeBackendConfig.MinFeeRate > cfg.BtcNodeBackendConfig.MaxFeeRate {
 		return nil, mkErr(fmt.Sprintf("minfeerate must be less or equal maxfeerate. minfeerate: %d, maxfeerate: %d", cfg.BtcNodeBackendConfig.MinFeeRate, cfg.BtcNodeBackendConfig.MaxFeeRate))
+	}
+
+	if len(cfg.StakerKeysConfig.StakerKeysWIF) > 0 {
+		for _, wifStr := range cfg.StakerKeysConfig.StakerKeysWIF {
+			wif, err := btcutil.DecodeWIF(wifStr)
+			if err != nil {
+				return nil, mkErr("failed to decode staker WIF: %v", err)
+			}
+
+			if !wif.IsForNet(&cfg.ActiveNetParams) {
+				return nil, mkErr("staker WIF is for the wrong network")
+			}
+
+			cfg.StakerKeysConfig.DecodedWIFs = append(cfg.StakerKeysConfig.DecodedWIFs, wif)
+		}
+
+		// Sort deterministically by x-only pubkey so tapscript/witness order
+		// is stable regardless of config ordering.
+		sort.Slice(cfg.StakerKeysConfig.DecodedWIFs, func(i, j int) bool {
+			pi := schnorr.SerializePubKey(cfg.StakerKeysConfig.DecodedWIFs[i].PrivKey.PubKey())
+			pj := schnorr.SerializePubKey(cfg.StakerKeysConfig.DecodedWIFs[j].PrivKey.PubKey())
+			return bytes.Compare(pi, pj) < 0
+		})
+
+		if cfg.StakerKeysConfig.StakerThreshold == 0 {
+			return nil, mkErr("stakerthreshold must be greater than 0 when stakerkeyswif are set")
+		}
+
+		if int(cfg.StakerKeysConfig.StakerThreshold) > len(cfg.StakerKeysConfig.StakerKeysWIF) {
+			return nil, mkErr("stakerthreshold cannot exceed number of provided stakerkeyswif")
+		}
+	} else if cfg.StakerKeysConfig.StakerThreshold != 0 {
+		return nil, mkErr("stakerthreshold provided without stakerkeyswif")
 	}
 
 	// TODO: Validate node host and port

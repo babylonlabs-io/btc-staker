@@ -121,6 +121,8 @@ type App struct {
 	txTracker        *stakerdb.TrackedTransactionStore
 	babylonMsgSender *cl.BabylonMsgSender
 	m                *metrics.StakerMetrics
+	// stakerKeyWIFs are independent of the wallet controller above. it's only used for multisig btc staker
+	stakerKeyWIFs []*btcutil.WIF
 
 	stakingRequestedCmdChan                       chan *stakingRequestCmd
 	migrateStakingCmd                             chan *migrateStakingCmd
@@ -225,6 +227,7 @@ func NewStakerAppFromDeps(
 		txTracker:               tracker,
 		babylonMsgSender:        babylonMsgSender,
 		m:                       metrics,
+		stakerKeyWIFs:           config.StakerKeysConfig.DecodedWIFs,
 		config:                  config,
 		logger:                  logger,
 		quit:                    make(chan struct{}),
