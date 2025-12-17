@@ -105,10 +105,10 @@ type StakerKeysConfig struct {
 	// StakerThreshold is the required number of signatures for the staker multisig branch.
 	StakerThreshold uint32 `long:"stakerthreshold" description:"threshold for the staker taproot multisig branch"`
 	// DecodedWIFs stores the parsed keys after validation; not serialized but ordered lexicographically by pubkey.
-	DecodedWIFs []*btcutil.WIF `long:"-" ini:"-" json:"-" mapstructure:"-"`
+	DecodedWIFs []*btcutil.WIF `long:"-" ini:"-" json:"-"`
 	// RawWIFs stores the parsed raw strings (comma split from StakerKeyWIFs[0])
 	// after validation; not serialized.
-	RawWIFs []string `long:"-" ini:"-" json:"-" mapstructure:"-"`
+	RawWIFs []string `long:"-" ini:"-" json:"-"`
 }
 
 // DefaultStakerKeysConfig returns empty staker key settings.
