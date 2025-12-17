@@ -150,7 +150,11 @@ func dumpStakerKeys(c *cli.Context) error {
 	for idx, w := range keys {
 		privHex := hex.EncodeToString(w.PrivKey.Serialize())
 		pubXOnly := hex.EncodeToString(schnorr.SerializePubKey(w.PrivKey.PubKey()))
-		fmt.Printf("%d) priv(hex): %s pub(x-only): %s\n", idx, privHex, pubXOnly)
+		orig := ""
+		if idx < len(cleanCfg.StakerKeysConfig.RawWIFs) {
+			orig = cleanCfg.StakerKeysConfig.RawWIFs[idx]
+		}
+		fmt.Printf("%d) priv(hex): %s pub(x-only): %s original_wif: %s\n", idx, privHex, pubXOnly, orig)
 	}
 
 	return nil

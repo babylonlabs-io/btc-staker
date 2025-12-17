@@ -99,12 +99,16 @@ func DefaultWalletConfig() WalletConfig {
 // multisig branch. These keys are loaded directly into stakerd (testing
 // scenario) and are independent of the wallet RPC config.
 type StakerKeysConfig struct {
-	// StakerKeysWIF contains the list of WIF-encoded private keys to use in the staker multisig branch.
-	StakerKeysWIF []string `long:"stakerkeyswif" description:"WIF-encoded staker private keys used for taproot multisig signing (auto-sorted by pubkey later)"`
+	// StakerKeyWIFs is the raw input from config/flags (slice because of the parser)
+	// but only the first entry is used; it should be a single comma-separated line of WIFs.
+	StakerKeyWIFs []string `long:"stakerkeywifs" description:"Comma-separated WIF-encoded staker private keys used for taproot multisig signing (auto-sorted by pubkey later)"`
 	// StakerThreshold is the required number of signatures for the staker multisig branch.
 	StakerThreshold uint32 `long:"stakerthreshold" description:"threshold for the staker taproot multisig branch"`
 	// DecodedWIFs stores the parsed keys after validation; not serialized but ordered lexicographically by pubkey.
 	DecodedWIFs []*btcutil.WIF `long:"-" ini:"-" json:"-"`
+	// RawWIFs stores the parsed raw strings (comma split from StakerKeyWIFs[0])
+	// after validation; not serialized.
+	RawWIFs []string `long:"-" ini:"-" json:"-"`
 }
 
 // DefaultStakerKeysConfig returns empty staker key settings.
@@ -543,8 +547,25 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		return nil, mkErr(fmt.Sprintf("minfeerate must be less or equal maxfeerate. minfeerate: %d, maxfeerate: %d", cfg.BtcNodeBackendConfig.MinFeeRate, cfg.BtcNodeBackendConfig.MaxFeeRate))
 	}
 
-	if len(cfg.StakerKeysConfig.StakerKeysWIF) > 0 {
-		for _, wifStr := range cfg.StakerKeysConfig.StakerKeysWIF {
+	if len(cfg.StakerKeysConfig.StakerKeyWIFs) > 0 {
+		// Support comma-separated entries on a single line (first entry only).
+		cfg.StakerKeysConfig.DecodedWIFs = nil
+		cfg.StakerKeysConfig.RawWIFs = nil
+		var parsedKeys []string
+		raw := cfg.StakerKeysConfig.StakerKeyWIFs[0]
+		for _, part := range strings.Split(raw, ",") {
+			key := strings.TrimSpace(part)
+			if key == "" {
+				continue
+			}
+			parsedKeys = append(parsedKeys, key)
+		}
+
+		if len(parsedKeys) == 0 {
+			return nil, mkErr("stakerkeywifs provided but no keys parsed (check separators)")
+		}
+
+		for _, wifStr := range parsedKeys {
 			wif, err := btcutil.DecodeWIF(wifStr)
 			if err != nil {
 				return nil, mkErr("failed to decode staker WIF: %v", err)
@@ -555,6 +576,7 @@ func ValidateConfig(cfg Config) (*Config, error) {
 			}
 
 			cfg.StakerKeysConfig.DecodedWIFs = append(cfg.StakerKeysConfig.DecodedWIFs, wif)
+			cfg.StakerKeysConfig.RawWIFs = append(cfg.StakerKeysConfig.RawWIFs, wifStr)
 		}
 
 		// Sort deterministically by x-only pubkey so tapscript/witness order
@@ -566,14 +588,14 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		})
 
 		if cfg.StakerKeysConfig.StakerThreshold == 0 {
-			return nil, mkErr("stakerthreshold must be greater than 0 when stakerkeyswif are set")
+			return nil, mkErr("stakerthreshold must be greater than 0 when stakerkeywifs are set")
 		}
 
-		if int(cfg.StakerKeysConfig.StakerThreshold) > len(cfg.StakerKeysConfig.StakerKeysWIF) {
-			return nil, mkErr("stakerthreshold cannot exceed number of provided stakerkeyswif")
+		if int(cfg.StakerKeysConfig.StakerThreshold) > len(cfg.StakerKeysConfig.DecodedWIFs) {
+			return nil, mkErr("stakerthreshold cannot exceed number of provided stakerkeywifs")
 		}
 	} else if cfg.StakerKeysConfig.StakerThreshold != 0 {
-		return nil, mkErr("stakerthreshold provided without stakerkeyswif")
+		return nil, mkErr("stakerthreshold provided without stakerkeywifs")
 	}
 
 	// TODO: Validate node host and port
