@@ -108,7 +108,7 @@ type StakerKeysConfig struct {
 	DecodedWIFs []*btcutil.WIF `long:"-" ini:"-" json:"-"`
 	// RawWIFs stores the parsed raw strings (comma split from StakerKeyWIFs[0])
 	// after validation; not serialized.
-	RawWIFs []string `long:"-" ini:"-" json:"-"`
+	RawWIFs []string `long:"rawwifs" ini:"-" json:"-"`
 }
 
 // DefaultStakerKeysConfig returns empty staker key settings.
