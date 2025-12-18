@@ -145,7 +145,8 @@ var stakeMultisigCmd = cli.Command{
 			Value: helpers.DefaultStakingDaemonAddress,
 		},
 		cli.StringFlag{
-			Name:     fundingAddressFlag,
+			Name: fundingAddressFlag,
+			// TODO: should we merge funding address and the staker address into one for multisig?
 			Usage:    "BTC funding/change address (must be controlled by the wallet configured in stakerd)",
 			Required: true,
 		},
