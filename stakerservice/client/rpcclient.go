@@ -91,6 +91,29 @@ func (c *StakerServiceJSONRPCClient) Stake(
 	return result, nil
 }
 
+// StakeMultisig initiates a stake transaction using multisig staker keys configured in stakerd.
+func (c *StakerServiceJSONRPCClient) StakeMultisig(
+	ctx context.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpPks []string,
+	stakingTimeBlocks int64,
+) (*service.ResultStake, error) {
+	result := new(service.ResultStake)
+
+	params := make(map[string]interface{})
+	params["fundingAddress"] = fundingAddress
+	params["stakingAmount"] = stakingAmount
+	params["fpBtcPks"] = fpPks
+	params["stakingTimeBlocks"] = stakingTimeBlocks
+
+	_, err := c.client.Call(ctx, "stake_multisig", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call stake_multisig: %w", err)
+	}
+	return result, nil
+}
+
 // StakeExpand expand a previous active stake transaction
 func (c *StakerServiceJSONRPCClient) StakeExpand(
 	ctx context.Context,

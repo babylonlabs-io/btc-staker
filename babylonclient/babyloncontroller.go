@@ -419,6 +419,17 @@ type DelegationData struct {
 	BabylonPop                      *BabylonPop
 	Ud                              *UndelegationData
 	StakeExpansion                  *StakeExpansionData
+	MultisigInfo                    *MultisigStakerInfo
+}
+
+// MultisigStakerInfo holds additional staker information for M-of-N multisig
+// BTC delegations. It intentionally excludes the "main" staker pubkey/signatures
+// which are carried in the top-level fields of MsgCreateBTCDelegation.
+type MultisigStakerInfo struct {
+	StakerBtcPks                   []*btcec.PublicKey
+	StakerQuorum                   uint32
+	DelegatorSlashingSigs          []*schnorr.Signature
+	DelegatorUnbondingSlashingSigs []*schnorr.Signature
 }
 
 // StakeExpansionData holds data specific to stake expansion transactions
@@ -532,19 +543,17 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		)
 	}
 
-	return &btcstypes.MsgCreateBTCDelegation{
+	msg := &btcstypes.MsgCreateBTCDelegation{
 		// Note: this should be always safe conversion as we received data from our db
 		StakerAddr: dg.BabylonStakerAddr.String(),
 		Pop: &btcstypes.ProofOfPossessionBTC{
 			BtcSigType: btcstypes.BTCSigType(dg.BabylonPop.popType),
 			BtcSig:     dg.BabylonPop.BtcSig,
 		},
-		BtcPk:        bbntypes.NewBIP340PubKeyFromBTCPK(dg.StakerBtcPk),
-		FpBtcPkList:  fpPksList,
-		StakingTime:  uint32(dg.StakingTime),
-		StakingValue: int64(dg.StakingValue),
-		// TODO: It is super bad that this thing (TransactionInfo) spread over whole babylon codebase, and it
-		// is used in all modules, rpc, database etc.
+		BtcPk:                   bbntypes.NewBIP340PubKeyFromBTCPK(dg.StakerBtcPk),
+		FpBtcPkList:             fpPksList,
+		StakingTime:             uint32(dg.StakingTime),
+		StakingValue:            int64(dg.StakingValue),
 		StakingTx:               serizalizedStakingTransaction,
 		StakingTxInclusionProof: stakingTransactionInclusionProof,
 		SlashingTx:              slashingTx,
@@ -555,7 +564,46 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		UnbondingValue:                int64(dg.Ud.UnbondingTxValue),
 		UnbondingSlashingTx:           slashUnbondingTx,
 		DelegatorUnbondingSlashingSig: slashUnbondingTxSig,
-	}, nil
+	}
+
+	// in case of multisig btc delegation, it populates DelegationData and adds to MsgCreateBTCDelegation
+	if dg.MultisigInfo != nil {
+		if len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorSlashingSigs) ||
+			len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorUnbondingSlashingSigs) {
+			return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+		}
+
+		stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(dg.MultisigInfo.StakerBtcPks))
+		slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
+		unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
+
+		for i, pk := range dg.MultisigInfo.StakerBtcPks {
+			if pk == nil || dg.MultisigInfo.DelegatorSlashingSigs[i] == nil || dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i] == nil {
+				return nil, fmt.Errorf("invalid multisig info: nil key or signature")
+			}
+
+			bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
+			stakerPkList = append(stakerPkList, *bip340Pk)
+
+			slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
+				Pk:  bip340Pk,
+				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorSlashingSigs[i]),
+			})
+			unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
+				Pk:  bip340Pk,
+				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i]),
+			})
+		}
+
+		msg.MultisigInfo = &btcstypes.AdditionalStakerInfo{
+			StakerBtcPkList:                stakerPkList,
+			StakerQuorum:                   dg.MultisigInfo.StakerQuorum,
+			DelegatorSlashingSigs:          slashingSigs,
+			DelegatorUnbondingSlashingSigs: unbondingSigs,
+		}
+	}
+
+	return msg, nil
 }
 
 // delegationDataToMsgBtcStakeExpand is a helper function to convert delegation data to stake expansion message

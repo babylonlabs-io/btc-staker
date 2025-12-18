@@ -189,6 +189,43 @@ func createDelegationData(
 	return &dg
 }
 
+func createDelegationDataMultisig(
+	req *sendDelegationRequest,
+	mainStakerBtcPk *btcec.PublicKey,
+	extraStakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	extraStakingSlashingSigs []*schnorr.Signature,
+	extraUnbondingSlashingSigs []*schnorr.Signature,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	slashingTx *wire.MsgTx,
+	mainSlashingTxSignature *schnorr.Signature,
+	babylonStakerAddr sdk.AccAddress,
+	undelegationData *cl.UndelegationData,
+) *cl.DelegationData {
+	dg := createDelegationData(
+		req,
+		mainStakerBtcPk,
+		stakingOutputIndex,
+		stakingTime,
+		storedTx,
+		slashingTx,
+		mainSlashingTxSignature,
+		babylonStakerAddr,
+		undelegationData,
+	)
+
+	dg.MultisigInfo = &cl.MultisigStakerInfo{
+		StakerBtcPks:                   extraStakerBtcPks,
+		StakerQuorum:                   stakerQuorum,
+		DelegatorSlashingSigs:          extraStakingSlashingSigs,
+		DelegatorUnbondingSlashingSigs: extraUnbondingSlashingSigs,
+	}
+
+	return dg
+}
+
 // createSpendStakeTx creates a spend stake transaction.
 func createSpendStakeTx(
 	destinationScript []byte,

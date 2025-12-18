@@ -119,6 +119,28 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
+// stakeMultisig stakes staker's requested amount of BTC using multisig staker keys loaded in stakerd.
+func (s *StakerService) stakeMultisig(_ *rpctypes.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+) (*ResultStake, error) {
+	amount, fundingAddr, fpPubKeys, stakingTime, err := parseStkParams(fundingAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	stakingTxHash, err := s.staker.StakeFundsMultisig(fundingAddr, amount, fpPubKeys, stakingTime)
+	if err != nil {
+		return nil, fmt.Errorf("error staking funds (multisig): %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: stakingTxHash.String(),
+	}, nil
+}
+
 // stakeExpand stakes staker's requested amount of BTC
 func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	stakerAddress string,
@@ -556,6 +578,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
+		"stake_multisig":                     NewRPCFunc(s.stakeMultisig, "fundingAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
 		"consolidate_utxos":                  NewRPCFunc(s.consolidateUTXOs, "stakerAddress,targetAmount"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),

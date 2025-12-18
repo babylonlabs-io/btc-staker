@@ -25,6 +25,7 @@ var DaemonCommands = []cli.Command{
 			listOutputsCmd,
 			babylonFinalityProvidersCmd,
 			stakeCmd,
+			stakeMultisigCmd,
 			stakeExpansionCmd,
 			consolidateUtxosCmd,
 			unstakeCmd,
@@ -43,6 +44,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	fundingAddressFlag         = "funding-address"
 	targetAmountFlag           = "target-amount"
 )
 
@@ -130,6 +132,40 @@ var stakeCmd = cli.Command{
 		},
 	},
 	Action: stake,
+}
+
+var stakeMultisigCmd = cli.Command{
+	Name:      "stake-multisig",
+	ShortName: "stm",
+	Usage:     "Stake an amount of BTC to Babylon using multisig staker keys loaded in stakerd",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "Full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     fundingAddressFlag,
+			Usage:    "BTC funding/change address (must be controlled by the wallet configured in stakerd)",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingAmountFlag,
+			Usage:    "Staking amount in satoshis",
+			Required: true,
+		},
+		cli.StringSliceFlag{
+			Name:     fpPksFlag,
+			Usage:    "BTC public keys of the finality providers in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingTimeBlocksFlag,
+			Usage:    "Staking time in BTC blocks",
+			Required: true,
+		},
+	},
+	Action: stakeMultisig,
 }
 
 var stakeExpansionCmd = cli.Command{
@@ -423,6 +459,30 @@ func stake(ctx *cli.Context) error {
 	results, err := client.Stake(sctx, stakerAddress, stakingAmount, fpPks, stakingTimeBlocks)
 	if err != nil {
 		return fmt.Errorf("failed to stake: %w", err)
+	}
+
+	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+func stakeMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	fundingAddress := ctx.String(fundingAddressFlag)
+	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
+	fpPks := ctx.StringSlice(fpPksFlag)
+	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+
+	results, err := client.StakeMultisig(sctx, fundingAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	if err != nil {
+		return fmt.Errorf("failed to stake multisig: %w", err)
 	}
 
 	helpers.PrintRespJSON(results)
