@@ -2079,6 +2079,12 @@ func (app *App) StakeExpand(
 		return nil, fmt.Errorf("expansion amount must be greater than or equal to previous staking amount")
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress": stakerAddress,
+		"stakingAmount": stakingInfo.StakingOutput,
+		"fee":           feeRate,
+	}).Info("Created and signed stake expansion transaction")
+
 	// Create expansion command using regular staking command
 	req := newOwnedStakingCommand(
 		stakerAddress,
@@ -2253,6 +2259,14 @@ func (app *App) StakeExpandMultisig(
 	if additionalAmount < 0 {
 		return nil, fmt.Errorf("expansion amount must be greater than or equal to previous staking amount")
 	}
+
+	app.logger.WithFields(logrus.Fields{
+		"fundingAddress": fundingAddress,
+		"stakingAmount":  stakingInfo.StakingOutput,
+		"fee":            feeRate,
+		"stakerKeys":     len(stakerKeys),
+		"stakerQuorum":   stakerQuorum,
+	}).Info("Created and signed multisig stake expansion transaction")
 
 	req := newOwnedStakingCommand(
 		fundingAddress,

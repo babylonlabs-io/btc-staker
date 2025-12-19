@@ -628,8 +628,7 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcSta
 		return nil, fmt.Errorf("failed to serialize funding transaction: %w", err)
 	}
 
-	// Create the stake expansion message with all fields from common delegation
-	return &btcstypes.MsgBtcStakeExpand{
+	msg := &btcstypes.MsgBtcStakeExpand{
 		StakerAddr:                    commonMsg.StakerAddr,
 		Pop:                           commonMsg.Pop,
 		BtcPk:                         commonMsg.BtcPk,
@@ -646,7 +645,46 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcSta
 		DelegatorUnbondingSlashingSig: commonMsg.DelegatorUnbondingSlashingSig,
 		PreviousStakingTxHash:         dg.StakeExpansion.PreviousStakingTxHash.String(),
 		FundingTx:                     serializedFundingTx,
-	}, nil
+	}
+
+	// in case of multisig btc stake expansion, it populates DelegationData and adds to MsgBtcStakeExpand
+	if dg.MultisigInfo != nil {
+		if len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorSlashingSigs) ||
+			len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorUnbondingSlashingSigs) {
+			return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+		}
+
+		stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(dg.MultisigInfo.StakerBtcPks))
+		slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
+		unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
+
+		for i, pk := range dg.MultisigInfo.StakerBtcPks {
+			if pk == nil || dg.MultisigInfo.DelegatorSlashingSigs[i] == nil || dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i] == nil {
+				return nil, fmt.Errorf("invalid multisig info: nil key or signature")
+			}
+
+			bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
+			stakerPkList = append(stakerPkList, *bip340Pk)
+
+			slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
+				Pk:  bip340Pk,
+				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorSlashingSigs[i]),
+			})
+			unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
+				Pk:  bip340Pk,
+				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i]),
+			})
+		}
+
+		msg.MultisigInfo = &btcstypes.AdditionalStakerInfo{
+			StakerBtcPkList:                stakerPkList,
+			StakerQuorum:                   dg.MultisigInfo.StakerQuorum,
+			DelegatorSlashingSigs:          slashingSigs,
+			DelegatorUnbondingSlashingSigs: unbondingSigs,
+		}
+	}
+
+	return msg, nil
 }
 
 // ReliablySendMsgs sends a batch of messages to the Babylon node
