@@ -2295,6 +2295,189 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 	return spendTxHash, &spendTxValue, nil
 }
 
+// SpendStakeMultisig spends stake identified by stakingTxHash using multisig staker keys configured in stakerd.
+// The funds are sent back to the stored funding/change address (tx.StakerAddress).
+// NOTE: for now tx.StakerAddress is set to the wallet configured in the stakerd.conf, not one of multisig members
+func (app *App) SpendStakeMultisig(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil, nil
+	default:
+	}
+
+	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return nil, nil, fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
+		return nil, nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
+	}
+
+	tx, err := app.txTracker.GetTransaction(stakingTxHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting staking transaction: %w", err)
+	}
+
+	destAddress, err := btcutil.DecodeAddress(tx.StakerAddress, app.network)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error decoding destination address: %w", err)
+	}
+
+	destAddressScript, err := txscript.PayToAddrScript(destAddress)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). cannot build destination script: %w", err)
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting params: %w", err)
+	}
+
+	currentFeeRate := app.feeEstimator.EstimateFeePerKb()
+
+	di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting delegation info: %w", err)
+	}
+
+	udi, err := app.babylonClient.GetUndelegationInfo(di)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting undelegation info: %w", err)
+	}
+
+	fpBtcPubkeys, err := convertFpBtcPkToBtcPk(di.BtcDelegation.FpBtcPkList)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error converting fpBtcPkList to btcPkList: %w", err)
+	}
+
+	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.stakerKeyWIFs))
+	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.stakerKeyWIFs))
+	for _, w := range app.stakerKeyWIFs {
+		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
+		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
+	}
+
+	// check if the status of btc delegation is already EXPIRED, and if it is,
+	// skip getting tx details of unbondingTxHash
+	// Note: in case of expired staking output, TxDetails of unbondingTxHash will result in nil confirmation
+	var spendStakeTxInfo *spendStakeTxInfo
+	babylonStatus := di.BtcDelegation.GetStatusDesc()
+	if babylonStatus != BabylonExpiredStatus {
+		unbondingTxHash := udi.UnbondingTransaction.TxHash()
+		confirmation, txStatus, err := app.Wallet().TxDetails(
+			&unbondingTxHash,
+			udi.UnbondingTransaction.TxOut[0].PkScript,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting confirmation info from btc: %w", err)
+		}
+
+		if confirmation == nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). tx status: %s", txStatus.String())
+		}
+
+		if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
+			unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmedMultisig(
+				stakerPubKeys,
+				stakerQuorum,
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				destAddressScript,
+				currentFeeRate,
+				udi,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingConfirmedTxInfo
+		} else {
+			unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmedMultisig(
+				stakerPubKeys,
+				stakerQuorum,
+				di.BtcDelegation.StakingOutputIdx,
+				uint16(di.BtcDelegation.StakingTime),
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				tx,
+				destAddressScript,
+				currentFeeRate,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake non-unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingNotConfirmedTxInfo
+		}
+	} else {
+		unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmedMultisig(
+			stakerPubKeys,
+			stakerQuorum,
+			di.BtcDelegation.StakingOutputIdx,
+			uint16(di.BtcDelegation.StakingTime),
+			fpBtcPubkeys,
+			params.CovenantPks,
+			params.CovenantQuruomThreshold,
+			tx,
+			destAddressScript,
+			currentFeeRate,
+			app.network,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake non-unbonding confirmed tx: %w", err)
+		}
+		spendStakeTxInfo = unbondingNotConfirmedTxInfo
+	}
+
+	witness, err := buildMultisigTimeLockPathWitness(
+		spendStakeTxInfo.spendStakeTx,
+		spendStakeTxInfo.fundingOutput,
+		spendStakeTxInfo.fundingOutputSpendInfo,
+		spendStakeTxInfo.fundingOutputSpendInfo.RevealedLeaf,
+		stakerPrivKeys,
+		stakerQuorum,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error building witness: %w", err)
+	}
+
+	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = witness
+
+	spendTxHash, err := app.wc.SendRawTransaction(spendStakeTxInfo.spendStakeTx, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error sending tx: %w", err)
+	}
+
+	spendTxValue := btcutil.Amount(spendStakeTxInfo.spendStakeTx.TxOut[0].Value)
+
+	app.logger.WithFields(logrus.Fields{
+		"stakeValue":    btcutil.Amount(spendStakeTxInfo.fundingOutput.Value),
+		"spendTxHash":   spendTxHash,
+		"spendTxValue":  spendTxValue,
+		"fee":           spendStakeTxInfo.calculatedFee,
+		"stakerAddress": destAddress,
+		"destAddress":   destAddress,
+	}).Infof("Successfully sent transaction spending staking output (multisig)")
+
+	confEvent, err := app.notifier.RegisterConfirmationsNtfn(
+		spendTxHash,
+		spendStakeTxInfo.spendStakeTx.TxOut[0].PkScript,
+		SpendStakeTxConfirmations,
+		app.currentBestBlockHeight.Load(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("spend tx sent (multisig). error registering confirmation notification: %w", err)
+	}
+
+	go app.waitForSpendConfirmation(*stakingTxHash, confEvent)
+
+	return spendTxHash, &spendTxValue, nil
+}
+
 // ListActiveFinalityProviders fetches active finality providers using the given
 // pagination parameters.
 func (app *App) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.FinalityProvidersClientResponse, error) {

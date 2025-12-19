@@ -29,6 +29,7 @@ var DaemonCommands = []cli.Command{
 			stakeExpansionCmd,
 			consolidateUtxosCmd,
 			unstakeCmd,
+			unstakeMultisigCmd,
 			stakingDetailsCmd,
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
@@ -279,6 +280,25 @@ var unstakeCmd = cli.Command{
 		},
 	},
 	Action: unstake,
+}
+
+var unstakeMultisigCmd = cli.Command{
+	Name:      "unstake-multisig",
+	ShortName: "ustm",
+	Usage:     "Spends staking transaction using multisig staker keys configured in stakerd; sends funds back to the funding/change address",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: unstakeMultisig,
 }
 
 var unbondCmd = cli.Command{
@@ -597,6 +617,27 @@ func unstake(ctx *cli.Context) error {
 	result, err := client.SpendStakingTransaction(sctx, stakingTransactionHash)
 	if err != nil {
 		return fmt.Errorf("failed to spend staking transaction: %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
+
+	return nil
+}
+
+func unstakeMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.SpendStakingTransactionMultisig(sctx, stakingTransactionHash)
+	if err != nil {
+		return fmt.Errorf("failed to spend staking transaction (multisig): %w", err)
 	}
 
 	helpers.PrintRespJSON(result)

@@ -268,6 +268,20 @@ func (c *StakerServiceJSONRPCClient) SpendStakingTransaction(ctx context.Context
 	return result, nil
 }
 
+// SpendStakingTransactionMultisig spends a staking transaction using multisig staker keys configured in stakerd.
+func (c *StakerServiceJSONRPCClient) SpendStakingTransactionMultisig(ctx context.Context, txHash string) (*service.SpendTxDetails, error) {
+	result := new(service.SpendTxDetails)
+
+	params := make(map[string]interface{})
+	params["stakingTxHash"] = txHash
+
+	_, err := c.client.Call(ctx, "spend_stake_multisig", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call spend_stake_multisig: %w", err)
+	}
+	return result, nil
+}
+
 // UnbondStaking returns an unbond staking transaction details
 func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
 	result := new(service.UnbondingResponse)

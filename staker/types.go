@@ -317,6 +317,60 @@ func createSpendStakeTxUnbondingConfirmed(
 	}, nil
 }
 
+// createSpendStakeTxUnbondingConfirmedMultisig creates a spend stake transaction
+// that spends the unbonding output (confirmed on the Bitcoin network) using the multisig staker script.
+func createSpendStakeTxUnbondingConfirmedMultisig(
+	stakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	fpBtcPubkeys []*btcec.PublicKey,
+	covenantPublicKeys []*btcec.PublicKey,
+	covenantThreshold uint32,
+	destinationScript []byte,
+	feeRate chainfee.SatPerKVByte,
+	undelegationInfo *cl.UndelegationInfo,
+	net *chaincfg.Params,
+) (*spendStakeTxInfo, error) {
+	unbondingInfo, err := staking.BuildMultisigUnbondingInfo(
+		stakerBtcPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		undelegationInfo.UnbondingTime,
+		btcutil.Amount(undelegationInfo.UnbondingTransaction.TxOut[0].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig unbonding info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTimeLockPathInfo, err := unbondingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		// unbonding tx has only one output
+		undelegationInfo.UnbondingTransaction.TxOut[0],
+		0,
+		&unbondingTxHash,
+		undelegationInfo.UnbondingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending unbonding transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutput:          undelegationInfo.UnbondingTransaction.TxOut[0],
+		fundingOutputSpendInfo: unbondingTimeLockPathInfo,
+		calculatedFee:          *calculatedFee,
+	}, nil
+}
+
 // createSpendStakeTxUnbondingNotConfirmed creates a spend stake transaction
 // that is not confirmed yet.
 func createSpendStakeTxUnbondingNotConfirmed(
@@ -342,6 +396,63 @@ func createSpendStakeTxUnbondingNotConfirmed(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build staking info while spending staking transaction: %w", err)
+	}
+
+	stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending staking transaction: %w", err)
+	}
+
+	// transaction is only in sent to babylon state we try to spend staking output directly
+	stakingTxHash := storedtx.StakingTx.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		storedtx.StakingTx.TxOut[stakingOutputIndex],
+		stakingOutputIndex,
+		&stakingTxHash,
+		stakingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending staking transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutputSpendInfo: stakingTimeLockPathInfo,
+		fundingOutput:          storedtx.StakingTx.TxOut[stakingOutputIndex],
+		calculatedFee:          *calculatedFee,
+	}, nil
+}
+
+// createSpendStakeTxUnbondingNotConfirmedMultisig creates a spend stake transaction
+// that spends the original staking output (unbonding not confirmed, or delegation expired)
+// using the multisig staker script.
+func createSpendStakeTxUnbondingNotConfirmedMultisig(
+	stakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	fpBtcPubkeys []*btcec.PublicKey,
+	covenantPublicKeys []*btcec.PublicKey,
+	covenantThreshold uint32,
+	storedtx *stakerdb.StoredTransaction,
+	destinationScript []byte,
+	feeRate chainfee.SatPerKVByte,
+	net *chaincfg.Params,
+) (*spendStakeTxInfo, error) {
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerBtcPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		stakingTime,
+		btcutil.Amount(storedtx.StakingTx.TxOut[stakingOutputIndex].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig staking info while spending staking transaction: %w", err)
 	}
 
 	stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()

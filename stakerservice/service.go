@@ -375,6 +375,29 @@ func (s *StakerService) spendStake(_ *rpctypes.Context,
 	}, nil
 }
 
+// spendStakeMultisig initiates a spend stake transaction using multisig staker keys configured in stakerd.
+func (s *StakerService) spendStakeMultisig(_ *rpctypes.Context,
+	stakingTxHash string) (*SpendTxDetails, error) {
+	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse string type of hash to chainhash.Hash: %w", err)
+	}
+
+	spendTxHash, value, err := s.staker.SpendStakeMultisig(txHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to spend stake (multisig): %w", err)
+	}
+
+	txValue := strconv.FormatInt(int64(*value), 10)
+
+	return &SpendTxDetails{
+		TxHash:  spendTxHash.String(),
+		TxValue: txValue,
+	}, nil
+}
+
 // listOutputs returns a list of outputs
 func (s *StakerService) listOutputs(_ *rpctypes.Context) (*OutputsResponse, error) {
 	outputs, err := s.staker.ListUnspentOutputs()
@@ -584,6 +607,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"spend_stake_multisig":               NewRPCFunc(s.spendStakeMultisig, "stakingTxHash"),
 		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
 		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, "btcHeight"),
