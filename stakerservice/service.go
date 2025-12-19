@@ -579,6 +579,25 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
+// unbondStakingMultisig unbonds a staking transaction using multisig staker keys
+func (s *StakerService) unbondStakingMultisig(_ *rpctypes.Context, stakingTxHash string) (*UnbondingResponse, error) {
+	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx hash: %w", err)
+	}
+
+	unbondingTxHash, err := s.staker.UnbondStakingMultisig(*txHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to unbond staking (multisig): %w", err)
+	}
+
+	return &UnbondingResponse{
+		UnbondingTxHash: unbondingTxHash.String(),
+	}, nil
+}
+
 // btcStakingParamsByBtcHeight loads the BTC staking params for the BTC block height from babylon
 func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeight uint32) (*BtcStakingParamsByBtcHeightResponse, error) {
 	stakingParams, err := s.staker.BabylonController().ParamsByBtcHeight(btcHeight)
@@ -610,6 +629,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"spend_stake_multisig":               NewRPCFunc(s.spendStakeMultisig, "stakingTxHash"),
 		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"unbond_staking_multisig":            NewRPCFunc(s.unbondStakingMultisig, "stakingTxHash"),
 		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, "btcHeight"),
 		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),

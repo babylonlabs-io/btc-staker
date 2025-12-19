@@ -614,6 +614,49 @@ func buildUnbondingSpendInfo(
 	return unbondingPathInfo, nil
 }
 
+func buildMultisigUnbondingSpendInfo(
+	stakerPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	fpBtcPubkeys []*btcec.PublicKey,
+	storedTx *stakerdb.StoredTransaction,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	undelegationInfo *cl.UndelegationInfo,
+	params *cl.StakingParams,
+	net *chaincfg.Params,
+) (*staking.SpendInfo, error) {
+	if undelegationInfo.UnbondingTransaction == nil {
+		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. unbonding data does not contain unbonding transaction")
+	}
+
+	if len(undelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. unbonding data does not contain all necessary signatures. required: %d, received: %d", params.CovenantQuruomThreshold, len(undelegationInfo.CovenantUnbondingSignatures))
+	}
+
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		stakingTime,
+		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unbonding data (multisig): %w", err)
+	}
+
+	unbondingPathInfo, err := stakingInfo.UnbondingPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unbonding path info (multisig): %w", err)
+	}
+
+	return unbondingPathInfo, nil
+}
+
 // haveDuplicates checks if there are any duplicates in a slice of public keys
 func haveDuplicates(btcPKs []*btcec.PublicKey) bool {
 	seen := make(map[string]struct{})

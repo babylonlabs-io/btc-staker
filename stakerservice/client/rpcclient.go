@@ -297,6 +297,21 @@ func (c *StakerServiceJSONRPCClient) UnbondStaking(ctx context.Context, txHash s
 	return result, nil
 }
 
+// UnbondStakingMultisig returns an unbond staking transaction details using multisig staker keys
+func (c *StakerServiceJSONRPCClient) UnbondStakingMultisig(ctx context.Context, txHash string) (*service.UnbondingResponse, error) {
+	result := new(service.UnbondingResponse)
+
+	params := make(map[string]interface{})
+	params["stakingTxHash"] = txHash
+
+	_, err := c.client.Call(ctx, "unbond_staking_multisig", params, result)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to call unbond_staking_multisig: %w", err)
+	}
+	return result, nil
+}
+
 // BtcStakingParamByBtcHeight returns the btc staking parameter for the BTC block height from the babylon chain
 func (c *StakerServiceJSONRPCClient) BtcStakingParamByBtcHeight(ctx context.Context, btcHeight uint32) (*service.BtcStakingParamsByBtcHeightResponse, error) {
 	result := new(service.BtcStakingParamsByBtcHeightResponse)

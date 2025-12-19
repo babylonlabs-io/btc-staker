@@ -857,6 +857,153 @@ func (app *App) sendUnbondingTxToBtc(
 	return notificationEv, nil
 }
 
+// sendUnbondingTxToBtcWithWitnessMultisig sends an unbonding tx to btc with witness (multisig staker keys).
+func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
+	stakingTxHash *chainhash.Hash,
+	fpBtcPubkeys []*btcec.PublicKey,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	undelegationInfo *cl.UndelegationInfo,
+) error {
+	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return fmt.Errorf("error getting params: %w", err)
+	}
+
+	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.stakerKeyWIFs))
+	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.stakerKeyWIFs))
+	for _, w := range app.stakerKeyWIFs {
+		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
+		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
+	}
+
+	unbondingSpendInfo, err := buildMultisigUnbondingSpendInfo(
+		stakerPubKeys,
+		app.config.StakerKeysConfig.StakerThreshold,
+		fpBtcPubkeys,
+		storedTx,
+		stakingOutputIndex,
+		stakingTime,
+		undelegationInfo,
+		params,
+		app.network,
+	)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Error("failed to create multisig unbonding spend info to send unbonding tx to btc")
+		return fmt.Errorf("error building multisig unbonding spend info: %w", err)
+	}
+
+	stakerSigs, err := buildOrderedMultisigSignatures(
+		undelegationInfo.UnbondingTransaction,
+		storedTx.StakingTx.TxOut[stakingOutputIndex],
+		unbondingSpendInfo.RevealedLeaf,
+		stakerPrivKeys,
+		app.config.StakerKeysConfig.StakerThreshold,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build multisig staker signatures for unbonding tx: %w", err)
+	}
+
+	covenantSignatures, err := createWitnessSignaturesForPubKeys(
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		undelegationInfo.CovenantUnbondingSignatures,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build covenant signatures for unbonding tx: %w", err)
+	}
+
+	witness, err := unbondingSpendInfo.CreateMultisigUnbondingPathWitness(
+		covenantSignatures,
+		stakerSigs,
+	)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Fatalf("failed to build multisig witness from correct data")
+	}
+
+	unbondingTx := undelegationInfo.UnbondingTransaction
+	unbondingTx.TxIn[0].Witness = witness
+
+	if _, err = app.wc.SendRawTransaction(unbondingTx, true); err != nil {
+		return fmt.Errorf("failed to send unbonding tx (multisig): %w", err)
+	}
+
+	return nil
+}
+
+// sendUnbondingTxToBtcMultisig sends unbonding tx to btc and registers for inclusion notification (multisig).
+func (app *App) sendUnbondingTxToBtcMultisig(
+	ctx context.Context,
+	stakingTxHash *chainhash.Hash,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	undelegationInfo *cl.UndelegationInfo,
+	fpBtcPubkeys []*btcec.PublicKey,
+) (*notifier.ConfirmationEvent, error) {
+	err := retry.Do(func() error {
+		return app.sendUnbondingTxToBtcWithWitnessMultisig(
+			stakingTxHash,
+			fpBtcPubkeys,
+			stakingOutputIndex,
+			stakingTime,
+			storedTx,
+			undelegationInfo,
+		)
+	},
+		longRetryOps(
+			ctx,
+			unbondingSendRetryTimeout,
+			app.onLongRetryFunc(stakingTxHash, "failed to send unbonding tx to btc (multisig)"),
+		)...,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to send unbonding tx to btc (multisig): %w", err)
+	}
+
+	bestBlockAfterSend := app.currentBestBlockHeight.Load()
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+
+	var notificationEv *notifier.ConfirmationEvent
+	err = retry.Do(func() error {
+		ev, err := app.notifier.RegisterConfirmationsNtfn(
+			&unbondingTxHash,
+			undelegationInfo.UnbondingTransaction.TxOut[0].PkScript,
+			UnbondingTxConfirmations,
+			bestBlockAfterSend,
+		)
+
+		if err != nil {
+			return fmt.Errorf("failed to register for unbonding tx confirmation notification (multisig): %w", err)
+		}
+		notificationEv = ev
+		return nil
+	},
+		longRetryOps(
+			ctx,
+			unbondingSendRetryTimeout,
+			app.onLongRetryFunc(stakingTxHash, "failed to register for unbonding tx confirmation notification (multisig)"),
+		)...,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to register for unbonding tx confirmation notification (multisig): %w", err)
+	}
+	return notificationEv, nil
+}
+
 // waitForUnbondingTxConfirmation blocks until unbonding tx is confirmed on btc chain.
 func (app *App) waitForUnbondingTxConfirmation(
 	waitEv *notifier.ConfirmationEvent,
@@ -928,6 +1075,44 @@ func (app *App) sendUnbondingTxToBtcTask(
 
 	if err != nil {
 		app.reportCriticialError(*stakingTxHash, err, "Failed failed to send unbonding tx to btc")
+		return
+	}
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+
+	app.wg.Add(1)
+	go app.waitForUnbondingTxConfirmation(
+		waitEv,
+		&unbondingTxHash,
+		stakingTxHash,
+	)
+}
+
+// sendUnbondingTxToBtcTaskMultisig tries to send unbonding tx to btc (multisig) and register for confirmation notification.
+func (app *App) sendUnbondingTxToBtcTaskMultisig(
+	stakingTxHash *chainhash.Hash,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	fpBtcPubkeys []*btcec.PublicKey,
+	undelegationInfo *cl.UndelegationInfo,
+) {
+	defer app.wg.Done()
+	quitCtx, cancel := app.appQuitContext()
+	defer cancel()
+
+	waitEv, err := app.sendUnbondingTxToBtcMultisig(
+		quitCtx,
+		stakingTxHash,
+		stakingOutputIndex,
+		stakingTime,
+		storedTx,
+		undelegationInfo,
+		fpBtcPubkeys,
+	)
+
+	if err != nil {
+		app.reportCriticialError(*stakingTxHash, err, "failed to send unbonding tx to btc (multisig)")
 		return
 	}
 
@@ -2485,9 +2670,9 @@ func (app *App) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.Fi
 }
 
 // UnbondStaking initiates whole unbonding process. Whole process looks like this:
-// 1. Unbonding data is build based on exsitng staking transaction data
-// 2. Unbonding data is sent to babylon as part of undelegete request
-// 3. If request is successful, unbonding transaction is registred in db and
+// 1. Unbonding data is built based on existing staking transaction data
+// 2. Unbonding data is sent to babylon as part of undelegate request
+// 3. If request is successful, unbonding transaction is registered in db and
 // staking transaction is marked as unbonded
 // 4. Staker program starts watching for unbodning transactions signatures from
 // covenant and finality provider
@@ -2539,6 +2724,78 @@ func (app *App) UnbondStaking(
 	go app.sendUnbondingTxToBtcTask(
 		&stakingTxHash,
 		stakerAddress,
+		di.BtcDelegation.StakingOutputIdx,
+		uint16(di.BtcDelegation.StakingTime),
+		tx,
+		fpBtcPubkeys,
+		undelegationInfo,
+	)
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+	return &unbondingTxHash, nil
+}
+
+// UnbondStakingMultisig initiates unbonding for a multisig staker configuration.
+// It builds the unbonding witness using in-process multisig keys rather than the wallet.
+// Whole process of unbonding staking transaction for a multisig staker is identical to a
+// single sig staker:
+// 1. Unbonding data is built based on existing staking transaction data
+// 2. Unbonding data is sent to babylon as part of undelegate request
+// 3. If request is successful, unbonding transaction is registered in db and
+// staking transaction is marked as unbonded
+// 4. Staker program starts watching for unbodning transactions signatures from
+// covenant and finality provider
+// 5. After gathering all signatures, unbonding transaction is sent to bitcoin
+// This function returns control to the caller after step 3. Later is up to the caller
+// to check what is state of unbonding transaction
+func (app *App) UnbondStakingMultisig(
+	stakingTxHash chainhash.Hash) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+
+	default:
+	}
+
+	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return nil, fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
+	}
+
+	// Check staking tx is managed by staker program
+	tx, err := app.txTracker.GetTransaction(&stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("cannont unbond (multisig): %w", err)
+	}
+
+	di, err := app.babylonClient.QueryBTCDelegation(&stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("error getting delegation info (multisig): %w", err)
+	}
+
+	if !di.BtcDelegation.Active {
+		return nil, fmt.Errorf("cannot unbond transaction which is not active")
+	}
+
+	fpBtcPubkeys, err := convertFpBtcPkToBtcPk(di.BtcDelegation.FpBtcPkList)
+	if err != nil {
+		return nil, fmt.Errorf("error converting fpBtcPkList to btcPkList (multisig): %w", err)
+	}
+
+	undelegationInfo, err := app.babylonClient.GetUndelegationInfo(di)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get undelegation info from babylon (multisig): %w", err)
+	}
+
+	// TODO: Move this to event handler to avoid somebody starting multiple unbonding routines
+	app.wg.Add(1)
+	go app.sendUnbondingTxToBtcTaskMultisig(
+		&stakingTxHash,
 		di.BtcDelegation.StakingOutputIdx,
 		uint16(di.BtcDelegation.StakingTime),
 		tx,

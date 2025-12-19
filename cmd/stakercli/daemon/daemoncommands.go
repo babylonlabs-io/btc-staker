@@ -34,6 +34,7 @@ var DaemonCommands = []cli.Command{
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
 			unbondCmd,
+			unbondMultisigCmd,
 			stakeFromPhase1Cmd,
 		},
 	},
@@ -318,6 +319,25 @@ var unbondCmd = cli.Command{
 		},
 	},
 	Action: unbond,
+}
+
+var unbondMultisigCmd = cli.Command{
+	Name:      "unbond-multisig",
+	ShortName: "ubdm",
+	Usage:     "initiates unbonding flow using multisig staker keys",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: unbondMultisig,
 }
 
 var stakingDetailsCmd = cli.Command{
@@ -645,7 +665,7 @@ func unstakeMultisig(ctx *cli.Context) error {
 	return nil
 }
 
-// unbondStaking unbonds a staking transaction.
+// unbond unbonds a staking transaction.
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
@@ -660,6 +680,28 @@ func unbond(ctx *cli.Context) error {
 	result, err := client.UnbondStaking(sctx, stakingTransactionHash)
 	if err != nil {
 		return fmt.Errorf("failed to unbond staking: %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
+
+	return nil
+}
+
+// unbondMultisig unbonds a staking transaction using multisig staker keys.
+func unbondMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.UnbondStakingMultisig(sctx, stakingTransactionHash)
+	if err != nil {
+		return fmt.Errorf("failed to unbond staking (multisig): %w", err)
 	}
 
 	helpers.PrintRespJSON(result)

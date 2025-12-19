@@ -399,3 +399,59 @@ func buildMultisigTimeLockPathWitness(
 
 	return staking.CreateWitness(spendInfo, orderedSigBytes)
 }
+
+func buildOrderedMultisigSignatures(
+	spendingTx *wire.MsgTx,
+	fundingOutput *wire.TxOut,
+	leaf txscript.TapLeaf,
+	stakerPrivKeys []*btcec.PrivateKey,
+	stakerQuorum uint32,
+) ([]*schnorr.Signature, error) {
+	if len(stakerPrivKeys) == 0 {
+		return nil, fmt.Errorf("no staker keys provided")
+	}
+	if stakerQuorum == 0 || int(stakerQuorum) > len(stakerPrivKeys) {
+		return nil, fmt.Errorf("invalid staker quorum %d for %d keys", stakerQuorum, len(stakerPrivKeys))
+	}
+
+	delPK2Sig := make(map[string]*bbntypes.BIP340Signature, len(stakerPrivKeys))
+	for _, sk := range stakerPrivKeys {
+		stakerSig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
+			spendingTx,
+			fundingOutput,
+			sk,
+			leaf,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		stakerBIP340Sig := bbntypes.NewBIP340SignatureFromBTCSig(stakerSig)
+		stakerPKHex := bbntypes.NewBIP340PubKeyFromBTCPK(sk.PubKey()).MarshalHex()
+		delPK2Sig[stakerPKHex] = stakerBIP340Sig
+	}
+
+	orderedBIP340Sigs, err := bstypes.GetOrderedDelegatorSignatures(delPK2Sig)
+	if err != nil {
+		return nil, err
+	}
+
+	// only construct quorum number of staker signatures as witnesses
+	orderedSigs := make([]*schnorr.Signature, len(orderedBIP340Sigs))
+	numDelegatorSigs := uint32(0)
+	for i, sig := range orderedBIP340Sigs {
+		if sig == nil || numDelegatorSigs >= stakerQuorum {
+			orderedSigs[i] = nil
+			continue
+		}
+
+		orderedSigs[i] = sig.MustToBTCSig()
+		numDelegatorSigs++
+	}
+
+	if numDelegatorSigs != stakerQuorum {
+		return nil, fmt.Errorf("insufficient multisig signatures: have %d, need %d", numDelegatorSigs, stakerQuorum)
+	}
+
+	return orderedSigs, nil
+}
