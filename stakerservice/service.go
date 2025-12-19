@@ -169,6 +169,34 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	}, nil
 }
 
+// stakeExpandMultisig stakes staker's requested amount of BTC using multisig staker keys and a previous active staking tx as input
+func (s *StakerService) stakeExpandMultisig(_ *rpctypes.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+	prevActiveStkTxHashHex string,
+) (*ResultStake, error) {
+	amount, fundingAddr, fpPubKeys, stakingTime, err := parseStkParams(fundingAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	prevActiveStkTxHash, err := chainhash.NewHashFromStr(prevActiveStkTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse previous staking transaction hash hex %s: %w", prevActiveStkTxHashHex, err)
+	}
+
+	stakingTxHash, err := s.staker.StakeExpandMultisig(fundingAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("error stake expand funds (multisig): %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: stakingTxHash.String(),
+	}, nil
+}
+
 // consolidateUTXOs consolidates UTXOs into a single larger UTXO
 func (s *StakerService) consolidateUTXOs(_ *rpctypes.Context,
 	stakerAddress string,
@@ -622,6 +650,7 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"stake_multisig":                     NewRPCFunc(s.stakeMultisig, "fundingAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
+		"stake_expand_multisig":              NewRPCFunc(s.stakeExpandMultisig, "fundingAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
 		"consolidate_utxos":                  NewRPCFunc(s.consolidateUTXOs, "stakerAddress,targetAmount"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),

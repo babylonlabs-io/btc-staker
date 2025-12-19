@@ -139,6 +139,31 @@ func (c *StakerServiceJSONRPCClient) StakeExpand(
 	return result, nil
 }
 
+// StakeExpandMultisig expands a previous active stake transaction using multisig staker keys
+func (c *StakerServiceJSONRPCClient) StakeExpandMultisig(
+	ctx context.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpPks []string,
+	stakingTimeBlocks int64,
+	prevActiveStkTxHashHex string,
+) (*service.ResultStake, error) {
+	result := new(service.ResultStake)
+
+	params := make(map[string]interface{})
+	params["fundingAddress"] = fundingAddress
+	params["stakingAmount"] = stakingAmount
+	params["fpBtcPks"] = fpPks
+	params["stakingTimeBlocks"] = stakingTimeBlocks
+	params["prevActiveStkTxHashHex"] = prevActiveStkTxHashHex
+
+	_, err := c.client.Call(ctx, "stake_expand_multisig", params, result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call stake_expand_multisig: %w", err)
+	}
+	return result, nil
+}
+
 // ConsolidateUTXOs consolidates UTXOs into a single larger UTXO
 func (c *StakerServiceJSONRPCClient) ConsolidateUTXOs(
 	ctx context.Context,

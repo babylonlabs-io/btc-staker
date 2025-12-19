@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/urfave/cli"
+
 	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
-	"github.com/urfave/cli"
 )
 
 // DaemonCommands is the set of stakercli commands that require a running daemon.
@@ -27,6 +28,7 @@ var DaemonCommands = []cli.Command{
 			stakeCmd,
 			stakeMultisigCmd,
 			stakeExpansionCmd,
+			stakeExpansionMultisigCmd,
 			consolidateUtxosCmd,
 			unstakeCmd,
 			unstakeMultisigCmd,
@@ -208,6 +210,45 @@ var stakeExpansionCmd = cli.Command{
 		},
 	},
 	Action: stakeExpand,
+}
+
+var stakeExpansionMultisigCmd = cli.Command{
+	Name:      "stake-expand-multisig",
+	ShortName: "stxpm",
+	Usage:     "Stakes an amount of BTC to Babylon using multisig staker keys and a previous active BTC staking tx as input",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     fundingAddressFlag,
+			Usage:    "BTC funding/change address (must be controlled by the wallet configured in stakerd)",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingAmountFlag,
+			Usage:    "Staking amount in satoshis",
+			Required: true,
+		},
+		cli.StringSliceFlag{
+			Name:     fpPksFlag,
+			Usage:    "BTC public keys of the finality providers in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingTimeBlocksFlag,
+			Usage:    "Staking time in BTC blocks",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of previous staking transaction in bitcoin hex format which is currently an active BTC delegation",
+			Required: true,
+		},
+	},
+	Action: stakeExpandMultisig,
 }
 
 var consolidateUtxosCmd = cli.Command{
@@ -558,6 +599,33 @@ func stakeExpand(ctx *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+// stakeExpandMultisig creates a new btc staking transaction from an previous
+// active BTC staking delegation and another new input by using multisig staker keys
+func stakeExpandMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	fundingAddress := ctx.String(fundingAddressFlag)
+	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
+	fpPks := ctx.StringSlice(fpPksFlag)
+	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+	prevActiveStkTxHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.StakeExpandMultisig(sctx, fundingAddress, stakingAmount, fpPks, stakingTimeBlocks, prevActiveStkTxHash)
+	if err != nil {
+		return fmt.Errorf("failed to stake expand (multisig): %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
 
 	return nil
 }
