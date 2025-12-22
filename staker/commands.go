@@ -28,6 +28,9 @@ type stakingRequestCmd struct {
 	successChan             chan *chainhash.Hash
 	// Expansion-specific fields for Babylon integration
 	stakeExpansion *stakeExpansionReqFields
+	// When set, the staking output is multisig and Babylon delegation building
+	// must include multisig info (additional pubkeys and signature sets).
+	multisig bool
 }
 
 type stakeExpansionReqFields struct {
@@ -79,6 +82,11 @@ func (req *stakingRequestCmd) WithStakeExpansion(
 		prevActiveStkTxHash:           prevActiveStkTxHash,
 		prevActiveStkStakingOutputIdx: prevActiveStkStakingOutputIdx,
 	}
+	return req
+}
+
+func (req *stakingRequestCmd) WithMultisig() *stakingRequestCmd {
+	req.multisig = true
 	return req
 }
 
