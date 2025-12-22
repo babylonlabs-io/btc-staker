@@ -8,6 +8,7 @@ import (
 	btcstktypes "github.com/babylonlabs-io/babylon/v4/x/btcstaking/types"
 	cl "github.com/babylonlabs-io/btc-staker/babylonclient"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -20,6 +21,9 @@ type stakeExpSignInfo struct {
 	SpendInfo     *staking.SpendInfo
 	// Params contains the staking parameters for the previous delegation
 	Params *cl.BtcStakingParams
+	// Only populated for multisig stake expansions.
+	StakerPrivKeys []*btcec.PrivateKey
+	StakerQuorum   uint32
 }
 
 // signStakingTransaction signs a staking transaction, handling both regular staking
@@ -72,13 +76,20 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, di *btcstktypes.Qu
 	}
 
 	// Build the unbondWitness for the taproot input
-	unbondWitness, err := app.buildUnbondingPathWitness(tx, di.BtcDelegation.StkExp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create unbonding path witness: %w", err)
+	if di.BtcDelegation.MultisigInfo != nil {
+		unbondWitness, err := app.buildUnbondingPathWitnessMultisig(tx, di)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create unbonding path witness (multisig): %w", err)
+		}
+		tx.TxIn[0].Witness = unbondWitness
+	} else {
+		unbondWitness, err := app.buildUnbondingPathWitness(tx, di.BtcDelegation.StkExp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create unbonding path witness: %w", err)
+		}
+		tx.TxIn[0].Witness = unbondWitness
 	}
 
-	// Add the witness to the taproot spent and sign the staking expansion transaction
-	tx.TxIn[0].Witness = unbondWitness
 	signedTx, err := app.signTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("staking expansion transaction: %w", err)
@@ -94,7 +105,11 @@ func (app *App) signStakeExpansionTransaction(tx *wire.MsgTx, di *btcstktypes.Qu
 // getStakeExpansionSignInfo retrieves the necessary information for stake expansion signing.
 // This includes inputs, the previous delegation's unbonding spend path and the
 // parameters for the previous delegation.
-func (app *App) getStakeExpansionSignInfo(stakerAddr btcutil.Address, fundingOutpoint wire.OutPoint, previousStakingTxHashHex string) (*stakeExpSignInfo, error) {
+func (app *App) getStakeExpansionSignInfo(
+	stakerAddr btcutil.Address,
+	fundingOutpoint wire.OutPoint,
+	previousStakingTxHashHex string,
+) (*stakeExpSignInfo, error) {
 	// Get the funding transaction (we need it for validation but don't use it directly)
 	fundingTx, err := app.wc.Tx(&fundingOutpoint.Hash)
 	if err != nil {
@@ -172,6 +187,94 @@ func (app *App) getUnbondingSpendInfo(params *cl.BtcStakingParams, stakerAddr bt
 	return prevStakingInfo.UnbondingPathSpendInfo()
 }
 
+// getStakeExpansionSignInfoMultisig retrieves the necessary information for multisig stake expansion signing.
+// This includes inputs, the previous delegation's unbonding spend path and the
+// parameters for the previous delegation.
+func (app *App) getStakeExpansionSignInfoMultisig(
+	stakerPks []*btcec.PublicKey,
+	stakerPrivKeys []*btcec.PrivateKey,
+	stakerQuorum uint32,
+	fundingOutpoint wire.OutPoint,
+	previousStakingTxHashHex string,
+) (*stakeExpSignInfo, error) {
+	// Get the funding transaction (for completeness; staking input witness does not use it directly)
+	fundingTx, err := app.wc.Tx(&fundingOutpoint.Hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get funding transaction: %w", err)
+	}
+
+	// Get the previous staking transaction
+	prevStakingHash, err := chainhash.NewHashFromStr(previousStakingTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse previous staking transaction hash: %w", err)
+	}
+
+	prevDelegationResult, err := app.babylonClient.QueryBTCDelegation(prevStakingHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous delegation: %w", err)
+	}
+
+	if prevDelegationResult.BtcDelegation == nil {
+		return nil, fmt.Errorf("previous delegation not found")
+	}
+
+	prevDel := prevDelegationResult.BtcDelegation
+
+	prevStakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(prevDel.StakingTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx from previous delegation: %w", err)
+	}
+
+	// get the params from the previous delegation
+	prevDelParams, err := app.babylonClient.ParamsByVersion(prevDel.ParamsVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get babylon params: %w", err)
+	}
+
+	// get the multisig unbonding spend info for the previous delegation
+	si, err := app.getMultisigUnbondingSpendInfo(prevDelParams, stakerPks, stakerQuorum, prevDel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous multisig unbonding spend info: %w", err)
+	}
+
+	return &stakeExpSignInfo{
+		StakingOutput:  prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx],
+		FundingOutput:  fundingTx.MsgTx().TxOut[fundingOutpoint.Index],
+		SpendInfo:      si,
+		Params:         prevDelParams,
+		StakerQuorum:   stakerQuorum,
+		StakerPrivKeys: stakerPrivKeys,
+	}, nil
+}
+
+func (app *App) getMultisigUnbondingSpendInfo(
+	params *cl.BtcStakingParams,
+	stakerPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	del *btcstktypes.BTCDelegationResponse,
+) (*staking.SpendInfo, error) {
+	fpBtcPubkeys, err := convertFpBtcPkToBtcPk(del.FpBtcPkList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert previous fp btc pubkeys: %w", err)
+	}
+
+	prevStakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		uint16(del.StakingTime),
+		btcutil.Amount(del.TotalSat),
+		app.network,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build previous multisig staking info: %w", err)
+	}
+
+	return prevStakingInfo.UnbondingPathSpendInfo()
+}
+
 // buildUnbondingPathWitness retrieves the witness for the unbonding path of a stake expansion transaction.
 // This is used to sign the taproot input that spends the previous staking output.
 // It handles the covenant signatures and the taproot signature for the staker.
@@ -232,6 +335,82 @@ func (app *App) buildUnbondingPathWitness(tx *wire.MsgTx, stkExp *btcstktypes.St
 	return si.SpendInfo.CreateUnbondingPathWitness(
 		covenantSignatures,
 		stakerSig.Signature,
+	)
+}
+
+// buildUnbondingPathWitnessMultisig builds the unbonding path witness for a multisig stake expansion.
+// It signs the previous staking output with the in-process multisig staker keys and combines them
+// with the provided covenant signatures from the previous delegation.
+func (app *App) buildUnbondingPathWitnessMultisig(tx *wire.MsgTx, di *btcstktypes.QueryBTCDelegationResponse) (wire.TxWitness, error) {
+	if di == nil || di.BtcDelegation == nil || di.BtcDelegation.StkExp == nil {
+		return nil, fmt.Errorf("stake expansion info missing for multisig witness")
+	}
+	stkExp := di.BtcDelegation.StkExp
+
+	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.config.StakerKeysConfig.DecodedWIFs) == 0 {
+		return nil, fmt.Errorf("multisig staker keys are not configured")
+	}
+	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerKeysConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerKeysConfig.DecodedWIFs))
+	}
+
+	var (
+		fundingOutpoint = tx.TxIn[1].PreviousOutPoint
+		stakerPrivKeys  []*btcec.PrivateKey
+		stakerPubKeys   []*btcec.PublicKey
+	)
+	for _, w := range app.config.StakerKeysConfig.DecodedWIFs {
+		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
+		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
+	}
+
+	si, err := app.getStakeExpansionSignInfoMultisig(
+		stakerPubKeys,
+		stakerPrivKeys,
+		stakerQuorum,
+		fundingOutpoint,
+		stkExp.PreviousStakingTxHashHex,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get multisig stake expansion signing info: %w", err)
+	}
+
+	if len(stkExp.PreviousStkCovenantSigs) < int(si.Params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("not enough previous staking covenant signatures for stake expansion: have %d, need %d",
+			len(stkExp.PreviousStkCovenantSigs), si.Params.CovenantQuruomThreshold)
+	}
+
+	prevStkCovSigs, err := parseCovenantSigs(stkExp.PreviousStkCovenantSigs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse covenant signatures: %w", err)
+	}
+
+	// Create covenant signatures witness using the stake expansion signatures
+	covenantSignatures, err := createWitnessSignaturesForPubKeys(
+		si.Params.CovenantPks,
+		si.Params.CovenantQuruomThreshold,
+		prevStkCovSigs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create covenant signatures: %w", err)
+	}
+
+	// Build ordered staker signatures for the unbonding path (multisig).
+	stakerSigs, err := buildOrderedMultisigSignatures(
+		tx,
+		si.StakingOutput,
+		si.SpendInfo.RevealedLeaf,
+		si.StakerPrivKeys,
+		si.StakerQuorum,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig staker signatures: %w", err)
+	}
+
+	return si.SpendInfo.CreateMultisigUnbondingPathWitness(
+		covenantSignatures,
+		stakerSigs,
 	)
 }
 
