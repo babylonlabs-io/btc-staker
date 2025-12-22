@@ -358,38 +358,26 @@ func buildMultisigTimeLockPathWitness(
 		return nil, fmt.Errorf("invalid staker quorum %d for %d keys", stakerQuorum, len(stakerPrivKeys))
 	}
 
-	delPK2Sig := make(map[string]*bbntypes.BIP340Signature, len(stakerPrivKeys))
-	for _, sk := range stakerPrivKeys {
-		stakerSig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
-			spendingTx,
-			fundingOutput,
-			sk,
-			leaf,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		stakerBIP340Sig := bbntypes.NewBIP340SignatureFromBTCSig(stakerSig)
-		stakerPKHex := bbntypes.NewBIP340PubKeyFromBTCPK(sk.PubKey()).MarshalHex()
-		delPK2Sig[stakerPKHex] = stakerBIP340Sig
-	}
-
-	orderedBIP340Sigs, err := bstypes.GetOrderedDelegatorSignatures(delPK2Sig)
+	stakerSigs, err := buildOrderedMultisigSignatures(
+		spendingTx,
+		fundingOutput,
+		nil,
+		leaf,
+		stakerPrivKeys,
+		stakerQuorum,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	// only construct quorum number of staker signatures as witnesses
-	orderedSigBytes := make([][]byte, len(orderedBIP340Sigs))
+	orderedSigBytes := make([][]byte, len(stakerSigs))
 	numDelegatorSigs := uint32(0)
-	for i, sig := range orderedBIP340Sigs {
+	for i, sig := range stakerSigs {
 		if sig == nil || numDelegatorSigs >= stakerQuorum {
 			orderedSigBytes[i] = []byte{}
 			continue
 		}
-
-		orderedSigBytes[i] = sig.MustToBTCSig().Serialize()
+		orderedSigBytes[i] = sig.Serialize()
 		numDelegatorSigs++
 	}
 
@@ -402,7 +390,9 @@ func buildMultisigTimeLockPathWitness(
 
 func buildOrderedMultisigSignatures(
 	spendingTx *wire.MsgTx,
-	fundingOutput *wire.TxOut,
+	scriptOutput *wire.TxOut,
+// optional second input's prev output (used for two-input sighash, e.g., stake expansion)
+	secondInputOutput *wire.TxOut,
 	leaf txscript.TapLeaf,
 	stakerPrivKeys []*btcec.PrivateKey,
 	stakerQuorum uint32,
@@ -416,12 +406,26 @@ func buildOrderedMultisigSignatures(
 
 	delPK2Sig := make(map[string]*bbntypes.BIP340Signature, len(stakerPrivKeys))
 	for _, sk := range stakerPrivKeys {
-		stakerSig, err := staking.SignTxWithOneScriptSpendInputFromTapLeaf(
-			spendingTx,
-			fundingOutput,
-			sk,
-			leaf,
+		var (
+			stakerSig *schnorr.Signature
+			err       error
 		)
+		if secondInputOutput != nil && len(spendingTx.TxIn) >= 2 {
+			stakerSig, err = staking.SignTxForFirstScriptSpendWithTwoInputsFromTapLeaf(
+				spendingTx,
+				scriptOutput,
+				secondInputOutput,
+				sk,
+				leaf,
+			)
+		} else {
+			stakerSig, err = staking.SignTxWithOneScriptSpendInputFromTapLeaf(
+				spendingTx,
+				scriptOutput,
+				sk,
+				leaf,
+			)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -904,6 +904,7 @@ func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
 	stakerSigs, err := buildOrderedMultisigSignatures(
 		undelegationInfo.UnbondingTransaction,
 		storedTx.StakingTx.TxOut[stakingOutputIndex],
+		nil,
 		unbondingSpendInfo.RevealedLeaf,
 		stakerPrivKeys,
 		app.config.StakerKeysConfig.StakerThreshold,

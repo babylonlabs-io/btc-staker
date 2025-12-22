@@ -400,6 +400,7 @@ func (app *App) buildUnbondingPathWitnessMultisig(tx *wire.MsgTx, di *btcstktype
 	stakerSigs, err := buildOrderedMultisigSignatures(
 		tx,
 		si.StakingOutput,
+		si.FundingOutput,
 		si.SpendInfo.RevealedLeaf,
 		si.StakerPrivKeys,
 		si.StakerQuorum,
