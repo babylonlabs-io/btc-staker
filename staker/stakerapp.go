@@ -57,6 +57,7 @@ var (
 	RtyErr            = retry.LastErrorOnly(true)
 )
 
+//nolint:unparam // fixedDelay is kept for clarity of retry configuration signature
 func longRetryOps(ctx context.Context, fixedDelay time.Duration, onRetryFn retry.OnRetryFunc) []retry.Option {
 	return []retry.Option{
 		retry.Context(ctx),
@@ -2124,6 +2125,7 @@ func (app *App) StakeExpand(
 
 // StakeExpandMultisig expands an existing stake using multisig staker keys configured in stakerd.
 // Funding (fee/change) still comes from the provided wallet-controlled funding address.
+//nolint:gocyclo // complex staking flow kept as-is for clarity and parity with single-sig flow
 func (app *App) StakeExpandMultisig(
 	fundingAddress btcutil.Address,
 	stakingAmount btcutil.Amount,

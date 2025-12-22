@@ -431,7 +431,7 @@ func LoadConfig() (*Config, *logrus.Logger, *zap.Logger, error) {
 // illegal values or combination of values are set. All file system paths are
 // normalized. The cleaned up config is returned on success.
 //
-//nolint:gocyclo
+//nolint:gocyclo,maintidx
 func ValidateConfig(cfg Config) (*Config, error) {
 	// If the provided stakerd directory is not the default, we'll modify the
 	// path to all of the files and directories that will live within it.
