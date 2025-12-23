@@ -36,8 +36,9 @@ type GenerateBlockResponse struct {
 
 // BitcoindTestHandler orchestrates bitcoind docker resources for tests.
 type BitcoindTestHandler struct {
-	t *testing.T
-	m *containers.Manager
+	t             *testing.T
+	m             *containers.Manager
+	defaultWallet string
 }
 
 // NewBitcoindHandler creates a new test helper for managing bitcoind.
@@ -97,19 +98,29 @@ func (h *BitcoindTestHandler) CreateWallet(walletName string, passphrase string)
 	// last false on the list will create legacy wallet. This is needed, as currently
 	// we are signing all taproot transactions by dumping the private key and signing it
 	// on app level. Descriptor wallets do not allow dumping private keys.
-	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"createwallet", walletName, "false", "false", passphrase})
+	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"createwallet", walletName, "false", "false", passphrase, "false", "false"})
 	require.NoError(h.t, err)
 
 	var response CreateWalletResponse
 	err = json.Unmarshal(buff.Bytes(), &response)
 	require.NoError(h.t, err)
 
+	// remember first wallet as default for mining/generation
+	// Note:
+	if h.defaultWallet == "" {
+		h.defaultWallet = walletName
+	}
+
 	return &response
 }
 
 // GenerateBlocks mines the requested number of blocks and returns their info.
 func (h *BitcoindTestHandler) GenerateBlocks(count int) *GenerateBlockResponse {
-	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"-generate", fmt.Sprintf("%d", count)})
+	cmd := []string{"-generate", fmt.Sprintf("%d", count)}
+	if h.defaultWallet != "" {
+		cmd = append([]string{"-rpcwallet=" + h.defaultWallet}, cmd...)
+	}
+	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, cmd)
 	require.NoError(h.t, err)
 
 	var response GenerateBlockResponse

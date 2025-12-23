@@ -1222,6 +1222,87 @@ func TestSpendExpiredStakingOutput(t *testing.T) {
 	tm.waitForTxOutputSpentAtIndex(t, txHash, di.BtcDelegation.StakingOutputIdx)
 }
 
+// TestMultisigSpendExpiredStakingOutput covers stake-multisig with a short timelock,
+// waits for expiry without unbonding, and spends the staking output via unstake-multisig.
+func TestMultisigSpendExpiredStakingOutput(t *testing.T) {
+	t.Parallel()
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+	stakingTime := params.MinStakingTime
+
+	// build finality providers and Babylon data as in single-sig tests.
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, 100000, 1)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendMultisigStakingTxBTC(t, testStakingData)
+
+	// mine to reach pending/verified as usual.
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+
+	tm.insertCovenantSigForMultisigDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions)) // coinbase + staking tx
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
+
+	blocksToExpire := uint32(stakingTime) + params.ConfirmationTimeBlocks + 1
+	tm.mineNEmptyBlocks(t, blocksToExpire, true)
+
+	require.Eventually(t, func() bool {
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
+		if err != nil {
+			return false
+		}
+		for _, tx := range withdrawableTransactionsResp.Transactions {
+			if tx.StakingTxHash == txHash.String() {
+				return true
+			}
+		}
+		return false
+	}, eventuallyTimeout, eventuallyPollTime)
+
+	_, _ = tm.spendStakingTxWithHashMultisig(t, txHash)
+
+	tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
+
+	di, err := tm.BabylonClient.QueryBTCDelegation(txHash)
+	require.NoError(t, err)
+	tm.waitForTxOutputSpentAtIndex(t, txHash, di.BtcDelegation.StakingOutputIdx)
+}
+
 func TestStakeExpansionWithConsolidation(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.
