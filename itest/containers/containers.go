@@ -159,6 +159,8 @@ func (m *Manager) RunBitcoindResource(
 			},
 			Cmd: []string{
 				"-regtest",
+				// legacy wallet needed for dumpprivkey in tests; create_bdb enables legacy wallet creation
+				"-deprecatedrpc=create_bdb",
 				"-txindex",
 				"-rpcuser=user",
 				"-rpcpassword=pass",
