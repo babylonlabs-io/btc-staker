@@ -189,6 +189,43 @@ func createDelegationData(
 	return &dg
 }
 
+func createDelegationDataMultisig(
+	req *sendDelegationRequest,
+	mainStakerBtcPk *btcec.PublicKey,
+	extraStakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	extraStakingSlashingSigs []*schnorr.Signature,
+	extraUnbondingSlashingSigs []*schnorr.Signature,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	slashingTx *wire.MsgTx,
+	mainSlashingTxSignature *schnorr.Signature,
+	babylonStakerAddr sdk.AccAddress,
+	undelegationData *cl.UndelegationData,
+) *cl.DelegationData {
+	dg := createDelegationData(
+		req,
+		mainStakerBtcPk,
+		stakingOutputIndex,
+		stakingTime,
+		storedTx,
+		slashingTx,
+		mainSlashingTxSignature,
+		babylonStakerAddr,
+		undelegationData,
+	)
+
+	dg.MultisigInfo = &cl.MultisigStakerInfo{
+		StakerBtcPks:                   extraStakerBtcPks,
+		StakerQuorum:                   stakerQuorum,
+		DelegatorSlashingSigs:          extraStakingSlashingSigs,
+		DelegatorUnbondingSlashingSigs: extraUnbondingSlashingSigs,
+	}
+
+	return dg
+}
+
 // createSpendStakeTx creates a spend stake transaction.
 func createSpendStakeTx(
 	destinationScript []byte,
@@ -280,6 +317,60 @@ func createSpendStakeTxUnbondingConfirmed(
 	}, nil
 }
 
+// createSpendStakeTxUnbondingConfirmedMultisig creates a spend stake transaction
+// that spends the unbonding output (confirmed on the Bitcoin network) using the multisig staker script.
+func createSpendStakeTxUnbondingConfirmedMultisig(
+	stakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	fpBtcPubkeys []*btcec.PublicKey,
+	covenantPublicKeys []*btcec.PublicKey,
+	covenantThreshold uint32,
+	destinationScript []byte,
+	feeRate chainfee.SatPerKVByte,
+	undelegationInfo *cl.UndelegationInfo,
+	net *chaincfg.Params,
+) (*spendStakeTxInfo, error) {
+	unbondingInfo, err := staking.BuildMultisigUnbondingInfo(
+		stakerBtcPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		undelegationInfo.UnbondingTime,
+		btcutil.Amount(undelegationInfo.UnbondingTransaction.TxOut[0].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig unbonding info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTimeLockPathInfo, err := unbondingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending unbonding transaction: %w", err)
+	}
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		// unbonding tx has only one output
+		undelegationInfo.UnbondingTransaction.TxOut[0],
+		0,
+		&unbondingTxHash,
+		undelegationInfo.UnbondingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending unbonding transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutput:          undelegationInfo.UnbondingTransaction.TxOut[0],
+		fundingOutputSpendInfo: unbondingTimeLockPathInfo,
+		calculatedFee:          *calculatedFee,
+	}, nil
+}
+
 // createSpendStakeTxUnbondingNotConfirmed creates a spend stake transaction
 // that is not confirmed yet.
 func createSpendStakeTxUnbondingNotConfirmed(
@@ -305,6 +396,63 @@ func createSpendStakeTxUnbondingNotConfirmed(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build staking info while spending staking transaction: %w", err)
+	}
+
+	stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build time lock path info while spending staking transaction: %w", err)
+	}
+
+	// transaction is only in sent to babylon state we try to spend staking output directly
+	stakingTxHash := storedtx.StakingTx.TxHash()
+	spendTx, calculatedFee, err := createSpendStakeTx(
+		destinationScript,
+		storedtx.StakingTx.TxOut[stakingOutputIndex],
+		stakingOutputIndex,
+		&stakingTxHash,
+		stakingTime,
+		feeRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spend stake tx while spending staking transaction: %w", err)
+	}
+
+	return &spendStakeTxInfo{
+		spendStakeTx:           spendTx,
+		fundingOutputSpendInfo: stakingTimeLockPathInfo,
+		fundingOutput:          storedtx.StakingTx.TxOut[stakingOutputIndex],
+		calculatedFee:          *calculatedFee,
+	}, nil
+}
+
+// createSpendStakeTxUnbondingNotConfirmedMultisig creates a spend stake transaction
+// that spends the original staking output (unbonding not confirmed, or delegation expired)
+// using the multisig staker script.
+func createSpendStakeTxUnbondingNotConfirmedMultisig(
+	stakerBtcPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	fpBtcPubkeys []*btcec.PublicKey,
+	covenantPublicKeys []*btcec.PublicKey,
+	covenantThreshold uint32,
+	storedtx *stakerdb.StoredTransaction,
+	destinationScript []byte,
+	feeRate chainfee.SatPerKVByte,
+	net *chaincfg.Params,
+) (*spendStakeTxInfo, error) {
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerBtcPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		covenantPublicKeys,
+		covenantThreshold,
+		stakingTime,
+		btcutil.Amount(storedtx.StakingTx.TxOut[stakingOutputIndex].Value),
+		net,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig staking info while spending staking transaction: %w", err)
 	}
 
 	stakingTimeLockPathInfo, err := stakingInfo.TimeLockPathSpendInfo()
@@ -461,6 +609,49 @@ func buildUnbondingSpendInfo(
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build unbonding path info: %w", err)
+	}
+
+	return unbondingPathInfo, nil
+}
+
+func buildMultisigUnbondingSpendInfo(
+	stakerPks []*btcec.PublicKey,
+	stakerQuorum uint32,
+	fpBtcPubkeys []*btcec.PublicKey,
+	storedTx *stakerdb.StoredTransaction,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	undelegationInfo *cl.UndelegationInfo,
+	params *cl.StakingParams,
+	net *chaincfg.Params,
+) (*staking.SpendInfo, error) {
+	if undelegationInfo.UnbondingTransaction == nil {
+		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. unbonding data does not contain unbonding transaction")
+	}
+
+	if len(undelegationInfo.CovenantUnbondingSignatures) < int(params.CovenantQuruomThreshold) {
+		return nil, fmt.Errorf("cannot create witness for sending unbonding tx. unbonding data does not contain all necessary signatures. required: %d, received: %d", params.CovenantQuruomThreshold, len(undelegationInfo.CovenantUnbondingSignatures))
+	}
+
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerPks,
+		stakerQuorum,
+		fpBtcPubkeys,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		stakingTime,
+		btcutil.Amount(storedTx.StakingTx.TxOut[stakingOutputIndex].Value),
+		net,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unbonding data (multisig): %w", err)
+	}
+
+	unbondingPathInfo, err := stakingInfo.UnbondingPathSpendInfo()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to build unbonding path info (multisig): %w", err)
 	}
 
 	return unbondingPathInfo, nil

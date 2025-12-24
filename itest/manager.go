@@ -14,7 +14,9 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,6 +69,8 @@ var (
 	eventuallyWaitTimeOut = 10 * time.Second
 	eventuallyPollTime    = 250 * time.Millisecond
 	eventuallyTimeout     = 5 * time.Minute
+
+	testWalletPassphrase = "pass"
 
 	bitcoindUser = "user"
 	bitcoindPass = "pass"
@@ -265,7 +269,7 @@ func StartManagerBtc(
 ) *TestManagerBTC {
 	bitcoindHandler := NewBitcoindHandler(t, manager)
 	bitcoind := bitcoindHandler.Start()
-	passphrase := "pass"
+	passphrase := testWalletPassphrase
 	walletName := "test-wallet"
 	_ = bitcoindHandler.CreateWallet(walletName, passphrase)
 	// only outputs which are 100 deep are mature
@@ -393,7 +397,18 @@ func StartManagerStakerApp(
 	require.NoError(t, err)
 
 	metrics := metrics.NewStakerMetrics()
-	cfg.WalletConfig.WalletName = ""
+	//cfg.WalletConfig.WalletName = "
+
+	// Inject multisig staker keys for multisig tests.
+	multisigWIFs, multisigPubKeys := generateMultisigKeys(
+		t,
+		tmBTC.BitcoindHandler,
+		"btcstaker-multisig",
+		testWalletPassphrase,
+		3,
+	)
+	cfg.StakerKeysConfig = buildStakerKeysConfig(t, multisigWIFs, multisigPubKeys, 2)
+
 	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zapLogger, dbbackend, metrics)
 	require.NoError(t, err)
 	// we require separate client to send BTC headers to babylon node (interface does not need this method?)
@@ -449,6 +464,78 @@ func genCovenants(t *testing.T, numCovenants int) []*btcec.PrivateKey {
 		coventantPrivKeys = append(coventantPrivKeys, covenantPrivKey)
 	}
 	return coventantPrivKeys
+}
+
+// generateMultisigKeys provisions a dedicated wallet and returns WIFs/pubkeys for multisig tests.
+func generateMultisigKeys(
+	t *testing.T,
+	bitcoindHandler *BitcoindTestHandler,
+	walletName string,
+	passphrase string,
+	count int,
+) ([]string, []*btcec.PublicKey) {
+	require.Greater(t, count, 0)
+
+	// Create a dedicated wallet for multisig staker keys.
+	_ = bitcoindHandler.CreateWallet(walletName, passphrase)
+
+	// Unlock to allow dumpprivkey on encrypted wallets.
+	_, _, err := bitcoindHandler.m.ExecBitcoindCliCmd(t, []string{"-rpcwallet=" + walletName, "walletpassphrase", passphrase, "60"})
+	require.NoError(t, err)
+
+	wifs := make([]string, 0, count)
+	pubs := make([]*btcec.PublicKey, 0, count)
+
+	for i := 0; i < count; i++ {
+		// create a new address
+		addrOut, _, err := bitcoindHandler.m.ExecBitcoindCliCmd(t, []string{"-rpcwallet=" + walletName, "getnewaddress"})
+		require.NoError(t, err)
+		addr := strings.TrimSpace(addrOut.String())
+
+		// export private keys in WIF (wallet import format)
+		wifOut, _, err := bitcoindHandler.m.ExecBitcoindCliCmd(t, []string{"-rpcwallet=" + walletName, "dumpprivkey", addr})
+		require.NoError(t, err)
+		wifStr := strings.TrimSpace(wifOut.String())
+		wifs = append(wifs, wifStr)
+
+		wif, err := btcutil.DecodeWIF(wifStr)
+		require.NoError(t, err)
+		pubs = append(pubs, wif.PrivKey.PubKey())
+	}
+
+	return wifs, pubs
+}
+
+// buildStakerKeysConfig builds a sorted staker keys config (matching stakercfg validation).
+func buildStakerKeysConfig(
+	t *testing.T,
+	rawWIFs []string,
+	pubKeys []*btcec.PublicKey,
+	threshold uint32,
+) *stakercfg.StakerKeysConfig {
+	require.Equal(t, len(rawWIFs), len(pubKeys))
+
+	decoded := make([]*btcutil.WIF, 0, len(rawWIFs))
+	for _, w := range rawWIFs {
+		dw, err := btcutil.DecodeWIF(w)
+		require.NoError(t, err)
+		decoded = append(decoded, dw)
+	}
+
+	// sort by x-only pubkey lex order
+	sort.Slice(decoded, func(i, j int) bool {
+		return bytes.Compare(schnorr.SerializePubKey(decoded[i].PrivKey.PubKey()), schnorr.SerializePubKey(decoded[j].PrivKey.PubKey())) < 0
+	})
+
+	csv := strings.Join(rawWIFs, ",")
+
+	return &stakercfg.StakerKeysConfig{
+		// Match the real config parsing: single entry with comma-separated WIFs.
+		StakerKeyWIFs:   []string{csv},
+		StakerThreshold: threshold,
+		RawWIFs:         rawWIFs,
+		DecodedWIFs:     decoded,
+	}
 }
 
 func (tm *TestManager) Stop(t *testing.T, cancelFunc context.CancelFunc) {
@@ -803,6 +890,33 @@ func (tm *TestManager) sendStakingTxBTC(
 	return hashFromString
 }
 
+// sendMultisigStakingTxBTC sends a multisig staking transaction to Babylon using the multisig staker keys
+// configured in stakerd and a wallet-controlled funding address.
+func (tm *TestManager) sendMultisigStakingTxBTC(
+	t *testing.T,
+	stkData *testStakingData,
+) *chainhash.Hash {
+	fundingAddr := tm.WalletAddrInfo.Address
+	fpBTCPKs := []string{}
+	for i := 0; i < stkData.GetNumRestakedFPs(); i++ {
+		fpBTCPK := hex.EncodeToString(schnorr.SerializePubKey(stkData.FinalityProviderBtcKeys[i]))
+		fpBTCPKs = append(fpBTCPKs, fpBTCPK)
+	}
+	res, err := tm.StakerClient.StakeMultisig(
+		context.Background(),
+		fundingAddr,
+		stkData.StakingAmount,
+		fpBTCPKs,
+		int64(stkData.StakingTime),
+	)
+	require.NoError(t, err)
+	txHash := res.TxHash
+
+	hashFromString, err := chainhash.NewHashFromStr(txHash)
+	require.NoError(t, err)
+	return hashFromString
+}
+
 func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testStakingData) []*chainhash.Hash {
 	var hashes []*chainhash.Hash
 	for _, data := range tStkData {
@@ -816,6 +930,43 @@ func (tm *TestManager) sendMultipleStakingTxBTC(t *testing.T, tStkData []*testSt
 // spendStakingTxWithHash sends a spend transaction to Bitcoin
 func (tm *TestManager) spendStakingTxWithHash(t *testing.T, stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount) {
 	res, err := tm.StakerClient.SpendStakingTransaction(context.Background(), stakingTxHash.String())
+	require.NoError(t, err)
+	spendTxHash, err := chainhash.NewHashFromStr(res.TxHash)
+	require.NoError(t, err)
+
+	iAmount, err := strconv.ParseInt(res.TxValue, 10, 64)
+	require.NoError(t, err)
+	spendTxValue := btcutil.Amount(iAmount)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{spendTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	sendTx := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{spendTxHash})[0]
+
+	// Tx is in mempool
+	txDetails, txState, err := tm.Sa.Wallet().TxDetails(spendTxHash, sendTx.MsgTx().TxOut[0].PkScript)
+	require.NoError(t, err)
+	require.Nil(t, txDetails)
+	require.Equal(t, txState, walletcontroller.TxInMemPool)
+
+	// Block with spend is mined
+	mBlock1 := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock1.Transactions))
+
+	// Tx is in chain
+	txDetails, txState, err = tm.Sa.Wallet().TxDetails(spendTxHash, sendTx.MsgTx().TxOut[0].PkScript)
+	require.NoError(t, err)
+	require.NotNil(t, txDetails)
+	require.Equal(t, txState, walletcontroller.TxInChain)
+
+	return spendTxHash, &spendTxValue
+}
+
+// spendStakingTxWithHashMultisig sends a multisig spend transaction to Bitcoin.
+func (tm *TestManager) spendStakingTxWithHashMultisig(t *testing.T, stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount) {
+	res, err := tm.StakerClient.SpendStakingTransactionMultisig(context.Background(), stakingTxHash.String())
 	require.NoError(t, err)
 	spendTxHash, err := chainhash.NewHashFromStr(res.TxHash)
 	require.NoError(t, err)
@@ -942,19 +1093,43 @@ func (tm *TestManager) signStakeExpansionTx(t *testing.T, covenantSK *btcec.Priv
 	prevFpBTCPKs, err := bbntypes.NewBTCPKsFromBIP340PKs(prevDel.FpBtcPkList)
 	require.NoError(t, err)
 
-	prevDelInfos, err := staking.BuildStakingInfo(
-		prevDel.BtcPk.MustToBTCPK(),
-		prevFpBTCPKs,
-		params.CovenantPks,
-		params.CovenantQuruomThreshold,
-		uint16(prevDel.EndHeight-prevDel.StartHeight),
-		btcutil.Amount(prevDel.TotalSat),
-		regtestParams,
-	)
-	require.NoError(t, err)
+	var prevDelUnbondPathSpendInfo *staking.SpendInfo
+	if prevDel.MultisigInfo != nil {
+		extraPks, err := bbntypes.NewBTCPKsFromBIP340PKs(prevDel.MultisigInfo.StakerBtcPkList)
+		require.NoError(t, err)
+		stakerKeys := make([]*btcec.PublicKey, 0, len(extraPks)+1)
+		stakerKeys = append(stakerKeys, prevDel.BtcPk.MustToBTCPK())
+		stakerKeys = append(stakerKeys, extraPks...)
 
-	prevDelUnbondPathSpendInfo, err := prevDelInfos.UnbondingPathSpendInfo()
-	require.NoError(t, err)
+		prevDelInfos, err := staking.BuildMultisigStakingInfo(
+			stakerKeys,
+			prevDel.MultisigInfo.StakerQuorum,
+			prevFpBTCPKs,
+			params.CovenantPks,
+			params.CovenantQuruomThreshold,
+			uint16(prevDel.EndHeight-prevDel.StartHeight),
+			btcutil.Amount(prevDel.TotalSat),
+			regtestParams,
+		)
+		require.NoError(t, err)
+
+		prevDelUnbondPathSpendInfo, err = prevDelInfos.UnbondingPathSpendInfo()
+		require.NoError(t, err)
+	} else {
+		prevDelInfos, err := staking.BuildStakingInfo(
+			prevDel.BtcPk.MustToBTCPK(),
+			prevFpBTCPKs,
+			params.CovenantPks,
+			params.CovenantQuruomThreshold,
+			uint16(prevDel.EndHeight-prevDel.StartHeight),
+			btcutil.Amount(prevDel.TotalSat),
+			regtestParams,
+		)
+		require.NoError(t, err)
+
+		prevDelUnbondPathSpendInfo, err = prevDelInfos.UnbondingPathSpendInfo()
+		require.NoError(t, err)
+	}
 
 	sig, err := staking.SignTxForFirstScriptSpendWithTwoInputsFromScript(
 		stakingMsgTx,
@@ -1076,6 +1251,127 @@ func (tm *TestManager) insertCovenantSigForDelegation(
 	// program must handle the case of all signatures being present in Babylon
 	// delegation
 	// it also speeds up the tests
+	_, err = tm.BabylonClient.SubmitMultipleCovenantMessages(messages)
+	require.NoError(t, err)
+}
+
+// insertCovenantSigForMultisigDelegation inserts covenant signatures for a multisig delegation.
+func (tm *TestManager) insertCovenantSigForMultisigDelegation(
+	t *testing.T,
+	btcDel *btcstypes.BTCDelegationResponse,
+) {
+	require.NotNil(t, btcDel.MultisigInfo)
+
+	fpBTCPKs, err := bbntypes.NewBTCPKsFromBIP340PKs(btcDel.FpBtcPkList)
+	require.NoError(t, err)
+
+	extraStakerPks, err := bbntypes.NewBTCPKsFromBIP340PKs(btcDel.MultisigInfo.StakerBtcPkList)
+	require.NoError(t, err)
+
+	stakerKeys := make([]*btcec.PublicKey, 0, len(extraStakerPks)+1)
+	stakerKeys = append(stakerKeys, btcDel.BtcPk.MustToBTCPK())
+	stakerKeys = append(stakerKeys, extraStakerPks...)
+
+	slashingTxBytes, err := hex.DecodeString(btcDel.SlashingTxHex)
+	require.NoError(t, err)
+	slashingTx := btcstypes.BTCSlashingTx(slashingTxBytes)
+	stakingTx := btcDel.StakingTxHex
+	stakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(stakingTx)
+	require.NoError(t, err)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerKeys,
+		btcDel.MultisigInfo.StakerQuorum,
+		fpBTCPKs,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		uint16(btcDel.EndHeight-btcDel.StartHeight),
+		btcutil.Amount(btcDel.TotalSat),
+		regtestParams,
+	)
+	require.NoError(t, err)
+
+	slashingPathInfo, err := stakingInfo.SlashingPathSpendInfo()
+	require.NoError(t, err)
+
+	covenantSlashingTxSigs, err := datagen.GenCovenantAdaptorSigs(
+		tm.CovenantPrivKeys,
+		fpBTCPKs,
+		stakingMsgTx,
+		slashingPathInfo.GetPkScriptPath(),
+		&slashingTx,
+	)
+	require.NoError(t, err)
+
+	// slash unbonding tx spends unbonding tx
+	unbondingMsgTx, _, err := bbntypes.NewBTCTxFromHex(btcDel.UndelegationResponse.UnbondingTxHex)
+	require.NoError(t, err)
+
+	unbondingInfo, err := staking.BuildMultisigUnbondingInfo(
+		stakerKeys,
+		btcDel.MultisigInfo.StakerQuorum,
+		fpBTCPKs,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		uint16(btcDel.UnbondingTime),
+		btcutil.Amount(unbondingMsgTx.TxOut[0].Value),
+		regtestParams,
+	)
+	require.NoError(t, err)
+
+	unbondingSlashingPathInfo, err := unbondingInfo.SlashingPathSpendInfo()
+	require.NoError(t, err)
+
+	// generate all covenant signatures from all covenant members
+	unbondingSlashingTx, err := btcstypes.NewBTCSlashingTxFromHex(btcDel.UndelegationResponse.SlashingTxHex)
+	require.NoError(t, err)
+	covenantUnbondingSlashingTxSigs, err := datagen.GenCovenantAdaptorSigs(
+		tm.CovenantPrivKeys,
+		fpBTCPKs,
+		unbondingMsgTx,
+		unbondingSlashingPathInfo.GetPkScriptPath(),
+		unbondingSlashingTx,
+	)
+	require.NoError(t, err)
+
+	// each covenant member submits signatures
+	unbondingPathInfo, err := stakingInfo.UnbondingPathSpendInfo()
+	require.NoError(t, err)
+	covUnbondingSigs, err := datagen.GenCovenantUnbondingSigs(
+		tm.CovenantPrivKeys,
+		stakingMsgTx,
+		btcDel.StakingOutputIdx,
+		unbondingPathInfo.GetPkScriptPath(),
+		unbondingMsgTx,
+	)
+	require.NoError(t, err)
+
+	// Check if this is a stake expansion
+	isStakeExpansion := btcDel.StkExp != nil
+
+	var messages []*btcstypes.MsgAddCovenantSigs
+	for i := 0; i < len(tm.CovenantPrivKeys); i++ {
+		// If this is a stake expansion, generate expansion signature
+		var stakeExpansionSig *bbntypes.BIP340Signature
+		if isStakeExpansion {
+			stakeExpansionSig = tm.signStakeExpansionTx(t, tm.CovenantPrivKeys[i], btcDel, params)
+		}
+
+		msg := tm.BabylonClient.CreateCovenantMessage(
+			bbntypes.NewBIP340PubKeyFromBTCPK(tm.CovenantPrivKeys[i].PubKey()),
+			stakingMsgTx.TxHash().String(),
+			covenantSlashingTxSigs[i].AdaptorSigs,
+			bbntypes.NewBIP340SignatureFromBTCSig(covUnbondingSigs[i]),
+			covenantUnbondingSlashingTxSigs[i].AdaptorSigs,
+			stakeExpansionSig,
+		)
+		messages = append(messages, msg)
+	}
+
 	_, err = tm.BabylonClient.SubmitMultipleCovenantMessages(messages)
 	require.NoError(t, err)
 }
