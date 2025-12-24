@@ -95,10 +95,18 @@ func (h *BitcoindTestHandler) GetBlockCount() (int, error) {
 
 // CreateWallet provisions a legacy wallet for integration tests.
 func (h *BitcoindTestHandler) CreateWallet(walletName string, passphrase string) *CreateWalletResponse {
-	// last false on the list will create legacy wallet. This is needed, as currently
-	// we are signing all taproot transactions by dumping the private key and signing it
-	// on app level. Descriptor wallets do not allow dumping private keys.
-	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"createwallet", walletName, "false", "false", passphrase, "false", "false"})
+	return h.CreateWalletWithDescriptor(walletName, passphrase, false)
+}
+
+// CreateWalletWithDescriptor provisions a wallet, allowing descriptor wallets when needed.
+func (h *BitcoindTestHandler) CreateWalletWithDescriptor(walletName string, passphrase string, isDescriptor bool) *CreateWalletResponse {
+	// last bool flag controls descriptors. Legacy wallets are needed when we must dump privkeys;
+	// descriptor wallets are needed for taproot address generation.
+	descFlag := "false"
+	if isDescriptor {
+		descFlag = "true"
+	}
+	buff, _, err := h.m.ExecBitcoindCliCmd(h.t, []string{"createwallet", walletName, "false", "false", passphrase, "false", descFlag})
 	require.NoError(h.t, err)
 
 	var response CreateWalletResponse
@@ -106,7 +114,7 @@ func (h *BitcoindTestHandler) CreateWallet(walletName string, passphrase string)
 	require.NoError(h.t, err)
 
 	// remember first wallet as default for mining/generation
-	// Note:
+	// NOTE: for current e2e test, it will be test-wallet
 	if h.defaultWallet == "" {
 		h.defaultWallet = walletName
 	}

@@ -12,21 +12,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/babylonlabs-io/networks/parameters/parser"
+
 	"github.com/babylonlabs-io/btc-staker/babylonclient/keyringcontroller"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/babylonlabs-io/networks/parameters/parser"
-
-	"github.com/babylonlabs-io/babylon/v4/btcstaking"
-	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
-	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
-
-	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
-	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+
+	"github.com/babylonlabs-io/babylon/v4/btcstaking"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
@@ -598,7 +599,7 @@ func TestPopCreationTaprootAddress(t *testing.T) {
 	bitcoind := h.Start()
 	passphrase := "pass"
 	walletName := "test-wallet"
-	_ = h.CreateWallet(walletName, passphrase)
+	_ = h.CreateWalletWithDescriptor(walletName, passphrase, true)
 
 	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 	cfg, c := defaultStakerConfigAndBtc(t, walletName, passphrase, rpcHost)
