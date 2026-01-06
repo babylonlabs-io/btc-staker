@@ -1855,7 +1855,7 @@ func (app *App) StakeFundsMultisig(
 
 	// Ensure multisig staker keys are configured.
 	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
-		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakerkeys].StakerKeyWIFs and StakerThreshold)")
+		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakermultisiginfo].StakerKeyWIFs and StakerThreshold)")
 	}
 
 	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
@@ -2143,7 +2143,7 @@ func (app *App) StakeExpandMultisig(
 	}
 
 	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
-		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakerkeys].StakerKeyWIFs and StakerThreshold)")
+		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakermultisiginfo].StakerKeyWIFs and StakerThreshold)")
 	}
 
 	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
