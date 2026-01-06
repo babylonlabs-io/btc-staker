@@ -407,7 +407,7 @@ func StartManagerStakerApp(
 		testWalletPassphrase,
 		3,
 	)
-	cfg.StakerKeysConfig = buildStakerKeysConfig(t, multisigWIFs, multisigPubKeys, 2)
+	cfg.StakerMultisigConfig = buildStakerMultisigConfig(t, multisigWIFs, multisigPubKeys, 2)
 
 	stakerApp, err := staker.NewStakerAppFromConfig(cfg, logger, zapLogger, dbbackend, metrics)
 	require.NoError(t, err)
@@ -506,13 +506,13 @@ func generateMultisigKeys(
 	return wifs, pubs
 }
 
-// buildStakerKeysConfig builds a sorted staker keys config (matching stakercfg validation).
-func buildStakerKeysConfig(
+// buildStakerMultisigConfig builds a sorted staker keys config (matching stakercfg validation).
+func buildStakerMultisigConfig(
 	t *testing.T,
 	rawWIFs []string,
 	pubKeys []*btcec.PublicKey,
 	threshold uint32,
-) *stakercfg.StakerKeysConfig {
+) *stakercfg.StakerMultisigConfig {
 	require.Equal(t, len(rawWIFs), len(pubKeys))
 
 	decoded := make([]*btcutil.WIF, 0, len(rawWIFs))
@@ -529,7 +529,7 @@ func buildStakerKeysConfig(
 
 	csv := strings.Join(rawWIFs, ",")
 
-	return &stakercfg.StakerKeysConfig{
+	return &stakercfg.StakerMultisigConfig{
 		// Match the real config parsing: single entry with comma-separated WIFs.
 		StakerKeyWIFs:   []string{csv},
 		StakerThreshold: threshold,
