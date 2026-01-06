@@ -138,21 +138,21 @@ func dumpStakerKeys(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("config validation failed: %v", err), 1)
 	}
 
-	keys := cleanCfg.StakerKeysConfig.DecodedWIFs
+	keys := cleanCfg.StakerMultisigConfig.DecodedWIFs
 	if len(keys) == 0 {
 		fmt.Println("no staker keys configured")
 		return nil
 	}
 
-	fmt.Printf("staker threshold: %d\n", cleanCfg.StakerKeysConfig.StakerThreshold)
+	fmt.Printf("staker threshold: %d\n", cleanCfg.StakerMultisigConfig.StakerThreshold)
 	fmt.Printf("staker keys (sorted by x-only pubkey): %d\n", len(keys))
 
 	for idx, w := range keys {
 		privHex := hex.EncodeToString(w.PrivKey.Serialize())
 		pubXOnly := hex.EncodeToString(schnorr.SerializePubKey(w.PrivKey.PubKey()))
 		orig := ""
-		if idx < len(cleanCfg.StakerKeysConfig.RawWIFs) {
-			orig = cleanCfg.StakerKeysConfig.RawWIFs[idx]
+		if idx < len(cleanCfg.StakerMultisigConfig.RawWIFs) {
+			orig = cleanCfg.StakerMultisigConfig.RawWIFs[idx]
 		}
 		fmt.Printf("%d) priv(hex): %s pub(x-only): %s original_wif: %s\n", idx, privHex, pubXOnly, orig)
 	}

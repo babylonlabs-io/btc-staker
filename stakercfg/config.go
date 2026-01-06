@@ -95,10 +95,10 @@ func DefaultWalletConfig() WalletConfig {
 	}
 }
 
-// StakerKeysConfig holds private key material for the staker-controlled taproot
+// StakerMultisigConfig holds private key material for the staker-controlled taproot
 // multisig branch. These keys are loaded directly into stakerd (testing
 // scenario) and are independent of the wallet RPC config.
-type StakerKeysConfig struct {
+type StakerMultisigConfig struct {
 	// StakerKeyWIFs is the raw input from config/flags (slice because of the parser)
 	// but only the first entry is used; it should be a single comma-separated line of WIFs.
 	StakerKeyWIFs []string `long:"stakerkeywifs" description:"Comma-separated WIF-encoded staker private keys used for taproot multisig signing (auto-sorted by pubkey later)"`
@@ -111,9 +111,9 @@ type StakerKeysConfig struct {
 	RawWIFs []string `long:"rawwifs" ini:"-" json:"-"`
 }
 
-// DefaultStakerKeysConfig returns empty staker key settings.
-func DefaultStakerKeysConfig() StakerKeysConfig {
-	return StakerKeysConfig{}
+// DefaultStakerMultisigConfig returns empty staker key settings.
+func DefaultStakerMultisigConfig() StakerMultisigConfig {
+	return StakerMultisigConfig{}
 }
 
 // WalletRPCConfig contains RPC connection settings for the BTC wallet.
@@ -246,7 +246,7 @@ type Config struct {
 
 	DBConfig *DBConfig `group:"dbconfig" namespace:"dbconfig"`
 
-	StakerKeysConfig *StakerKeysConfig `group:"stakerkeys" namespace:"stakerkeys"`
+	StakerMultisigConfig *StakerMultisigConfig `group:"stakermultisigconfig" namespace:"stakermultisigconfig"`
 
 	StakerConfig *StakerConfig `group:"stakerconfig" namespace:"stakerconfig"`
 
@@ -267,7 +267,7 @@ func DefaultConfig() Config {
 	nodeBackendCfg := DefaultBtcNodeBackendConfig()
 	bbnConfig := DefaultBBNConfig()
 	dbConfig := DefaultDBConfig()
-	stakerKeysConfig := DefaultStakerKeysConfig()
+	stakerMultisigConfig := DefaultStakerMultisigConfig()
 	stakerConfig := DefaultStakerConfig()
 	metricsCfg := DefaultMetricsConfig()
 	jsonRPCSvrConf := DefaultJSONRPCServerConfig()
@@ -283,7 +283,7 @@ func DefaultConfig() Config {
 		BtcNodeBackendConfig: &nodeBackendCfg,
 		BabylonConfig:        &bbnConfig,
 		DBConfig:             &dbConfig,
-		StakerKeysConfig:     &stakerKeysConfig,
+		StakerMultisigConfig: &stakerMultisigConfig,
 		StakerConfig:         &stakerConfig,
 		MetricsConfig:        &metricsCfg,
 		JSONRPCServerConfig:  &jsonRPCSvrConf,
@@ -547,12 +547,12 @@ func ValidateConfig(cfg Config) (*Config, error) {
 		return nil, mkErr(fmt.Sprintf("minfeerate must be less or equal maxfeerate. minfeerate: %d, maxfeerate: %d", cfg.BtcNodeBackendConfig.MinFeeRate, cfg.BtcNodeBackendConfig.MaxFeeRate))
 	}
 
-	if len(cfg.StakerKeysConfig.StakerKeyWIFs) > 0 {
+	if len(cfg.StakerMultisigConfig.StakerKeyWIFs) > 0 {
 		// Support comma-separated entries on a single line (first entry only).
-		cfg.StakerKeysConfig.DecodedWIFs = nil
-		cfg.StakerKeysConfig.RawWIFs = nil
+		cfg.StakerMultisigConfig.DecodedWIFs = nil
+		cfg.StakerMultisigConfig.RawWIFs = nil
 		var parsedKeys []string
-		raw := cfg.StakerKeysConfig.StakerKeyWIFs[0]
+		raw := cfg.StakerMultisigConfig.StakerKeyWIFs[0]
 		for _, part := range strings.Split(raw, ",") {
 			key := strings.TrimSpace(part)
 			if key == "" {
@@ -575,26 +575,26 @@ func ValidateConfig(cfg Config) (*Config, error) {
 				return nil, mkErr("staker WIF is for the wrong network")
 			}
 
-			cfg.StakerKeysConfig.DecodedWIFs = append(cfg.StakerKeysConfig.DecodedWIFs, wif)
-			cfg.StakerKeysConfig.RawWIFs = append(cfg.StakerKeysConfig.RawWIFs, wifStr)
+			cfg.StakerMultisigConfig.DecodedWIFs = append(cfg.StakerMultisigConfig.DecodedWIFs, wif)
+			cfg.StakerMultisigConfig.RawWIFs = append(cfg.StakerMultisigConfig.RawWIFs, wifStr)
 		}
 
 		// Sort deterministically by x-only pubkey so tapscript/witness order
 		// is stable regardless of config ordering.
-		sort.Slice(cfg.StakerKeysConfig.DecodedWIFs, func(i, j int) bool {
-			pi := schnorr.SerializePubKey(cfg.StakerKeysConfig.DecodedWIFs[i].PrivKey.PubKey())
-			pj := schnorr.SerializePubKey(cfg.StakerKeysConfig.DecodedWIFs[j].PrivKey.PubKey())
+		sort.Slice(cfg.StakerMultisigConfig.DecodedWIFs, func(i, j int) bool {
+			pi := schnorr.SerializePubKey(cfg.StakerMultisigConfig.DecodedWIFs[i].PrivKey.PubKey())
+			pj := schnorr.SerializePubKey(cfg.StakerMultisigConfig.DecodedWIFs[j].PrivKey.PubKey())
 			return bytes.Compare(pi, pj) < 0
 		})
 
-		if cfg.StakerKeysConfig.StakerThreshold == 0 {
+		if cfg.StakerMultisigConfig.StakerThreshold == 0 {
 			return nil, mkErr("stakerthreshold must be greater than 0 when stakerkeywifs are set")
 		}
 
-		if int(cfg.StakerKeysConfig.StakerThreshold) > len(cfg.StakerKeysConfig.DecodedWIFs) {
+		if int(cfg.StakerMultisigConfig.StakerThreshold) > len(cfg.StakerMultisigConfig.DecodedWIFs) {
 			return nil, mkErr("stakerthreshold cannot exceed number of provided stakerkeywifs")
 		}
-	} else if cfg.StakerKeysConfig.StakerThreshold != 0 {
+	} else if cfg.StakerMultisigConfig.StakerThreshold != 0 {
 		return nil, mkErr("stakerthreshold provided without stakerkeywifs")
 	}
 

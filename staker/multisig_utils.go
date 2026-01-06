@@ -25,7 +25,7 @@ func (app *App) buildDelegationMultisig(
 	stakingTime uint16,
 	storedTx *stakerdb.StoredTransaction,
 ) (*cl.DelegationData, error) {
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.config.StakerKeysConfig.DecodedWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
 		return nil, fmt.Errorf("multisig staker keys are not configured")
 	}
 
@@ -34,10 +34,10 @@ func (app *App) buildDelegationMultisig(
 		return nil, fmt.Errorf("error retrieving external delegation data: %w", err)
 	}
 
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
-	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerKeysConfig.DecodedWIFs))
-	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.config.StakerKeysConfig.DecodedWIFs))
-	for _, w := range app.config.StakerKeysConfig.DecodedWIFs {
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
 		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
 		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
 	}
@@ -173,7 +173,7 @@ func (app *App) retrieveExternalDelegationDataMultisig(inclusionInfo *inclusionI
 		params = p
 	}
 
-	stakerPublicKey := app.config.StakerKeysConfig.DecodedWIFs[0].PrivKey.PubKey()
+	stakerPublicKey := app.config.StakerMultisigConfig.DecodedWIFs[0].PrivKey.PubKey()
 
 	return &externalDelegationData{
 		babylonStakerAddr: app.babylonClient.GetKeyAddress(),
@@ -391,7 +391,7 @@ func buildMultisigTimeLockPathWitness(
 func buildOrderedMultisigSignatures(
 	spendingTx *wire.MsgTx,
 	scriptOutput *wire.TxOut,
-// optional second input's prev output (used for two-input sighash, e.g., stake expansion)
+	// optional second input's prev output (used for two-input sighash, e.g., stake expansion)
 	secondInputOutput *wire.TxOut,
 	leaf txscript.TapLeaf,
 	stakerPrivKeys []*btcec.PrivateKey,

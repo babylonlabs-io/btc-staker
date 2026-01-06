@@ -230,7 +230,7 @@ func NewStakerAppFromDeps(
 		txTracker:               tracker,
 		babylonMsgSender:        babylonMsgSender,
 		m:                       metrics,
-		stakerKeyWIFs:           config.StakerKeysConfig.DecodedWIFs,
+		stakerKeyWIFs:           config.StakerMultisigConfig.DecodedWIFs,
 		config:                  config,
 		logger:                  logger,
 		quit:                    make(chan struct{}),
@@ -867,7 +867,7 @@ func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
 	storedTx *stakerdb.StoredTransaction,
 	undelegationInfo *cl.UndelegationInfo,
 ) error {
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
 		return fmt.Errorf("multisig staker keys are not configured")
 	}
 
@@ -885,7 +885,7 @@ func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
 
 	unbondingSpendInfo, err := buildMultisigUnbondingSpendInfo(
 		stakerPubKeys,
-		app.config.StakerKeysConfig.StakerThreshold,
+		app.config.StakerMultisigConfig.StakerThreshold,
 		fpBtcPubkeys,
 		storedTx,
 		stakingOutputIndex,
@@ -908,7 +908,7 @@ func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
 		nil,
 		unbondingSpendInfo.RevealedLeaf,
 		stakerPrivKeys,
-		app.config.StakerKeysConfig.StakerThreshold,
+		app.config.StakerMultisigConfig.StakerThreshold,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to build multisig staker signatures for unbonding tx: %w", err)
@@ -1854,13 +1854,13 @@ func (app *App) StakeFundsMultisig(
 	}
 
 	// Ensure multisig staker keys are configured.
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.config.StakerKeysConfig.DecodedWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
 		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakerkeys].StakerKeyWIFs and StakerThreshold)")
 	}
 
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
-	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerKeysConfig.DecodedWIFs) {
-		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerKeysConfig.DecodedWIFs))
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerMultisigConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerMultisigConfig.DecodedWIFs))
 	}
 
 	params, err := app.babylonClient.Params()
@@ -1893,7 +1893,7 @@ func (app *App) StakeFundsMultisig(
 	msgToSign := app.babylonClient.GetKeyAddress().Bytes()
 	hash := tmhash.Sum(msgToSign)
 
-	primaryStakerSk := app.config.StakerKeysConfig.DecodedWIFs[0].PrivKey
+	primaryStakerSk := app.config.StakerMultisigConfig.DecodedWIFs[0].PrivKey
 	popSig, err := schnorr.Sign(primaryStakerSk, hash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PoP signature: %w", err)
@@ -1905,8 +1905,8 @@ func (app *App) StakeFundsMultisig(
 		return nil, fmt.Errorf("failed to create PoP: %w", err)
 	}
 
-	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerKeysConfig.DecodedWIFs))
-	for _, w := range app.config.StakerKeysConfig.DecodedWIFs {
+	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
 		stakerKeys = append(stakerKeys, w.PrivKey.PubKey())
 	}
 
@@ -2125,6 +2125,7 @@ func (app *App) StakeExpand(
 
 // StakeExpandMultisig expands an existing stake using multisig staker keys configured in stakerd.
 // Funding (fee/change) still comes from the provided wallet-controlled funding address.
+//
 //nolint:gocyclo // complex staking flow kept as-is for clarity and parity with single-sig flow
 func (app *App) StakeExpandMultisig(
 	fundingAddress btcutil.Address,
@@ -2141,13 +2142,13 @@ func (app *App) StakeExpandMultisig(
 	default:
 	}
 
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.config.StakerKeysConfig.DecodedWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
 		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakerkeys].StakerKeyWIFs and StakerThreshold)")
 	}
 
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
-	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerKeysConfig.DecodedWIFs) {
-		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerKeysConfig.DecodedWIFs))
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerMultisigConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerMultisigConfig.DecodedWIFs))
 	}
 
 	if len(fpPks) == 0 {
@@ -2204,7 +2205,7 @@ func (app *App) StakeExpandMultisig(
 		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
 	}
 
-	primaryStakerSk := app.config.StakerKeysConfig.DecodedWIFs[0].PrivKey
+	primaryStakerSk := app.config.StakerMultisigConfig.DecodedWIFs[0].PrivKey
 	msgToSign := app.babylonClient.GetKeyAddress().Bytes()
 	hash := tmhash.Sum(msgToSign)
 
@@ -2219,8 +2220,8 @@ func (app *App) StakeExpandMultisig(
 		return nil, fmt.Errorf("failed to create PoP: %w", err)
 	}
 
-	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerKeysConfig.DecodedWIFs))
-	for _, w := range app.config.StakerKeysConfig.DecodedWIFs {
+	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
 		stakerKeys = append(stakerKeys, w.PrivKey.PubKey())
 	}
 
@@ -2748,11 +2749,11 @@ func (app *App) SpendStakeMultisig(stakingTxHash *chainhash.Hash) (*chainhash.Ha
 	default:
 	}
 
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
 		return nil, nil, fmt.Errorf("multisig staker keys are not configured")
 	}
 
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
 	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
 		return nil, nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
 	}
@@ -3015,11 +3016,11 @@ func (app *App) UnbondStakingMultisig(
 	default:
 	}
 
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.stakerKeyWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
 		return nil, fmt.Errorf("multisig staker keys are not configured")
 	}
 
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
 	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
 		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
 	}

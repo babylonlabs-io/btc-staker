@@ -347,12 +347,12 @@ func (app *App) buildUnbondingPathWitnessMultisig(tx *wire.MsgTx, di *btcstktype
 	}
 	stkExp := di.BtcDelegation.StkExp
 
-	if app.config == nil || app.config.StakerKeysConfig == nil || len(app.config.StakerKeysConfig.DecodedWIFs) == 0 {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
 		return nil, fmt.Errorf("multisig staker keys are not configured")
 	}
-	stakerQuorum := app.config.StakerKeysConfig.StakerThreshold
-	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerKeysConfig.DecodedWIFs) {
-		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerKeysConfig.DecodedWIFs))
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerMultisigConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerMultisigConfig.DecodedWIFs))
 	}
 
 	var (
@@ -360,7 +360,7 @@ func (app *App) buildUnbondingPathWitnessMultisig(tx *wire.MsgTx, di *btcstktype
 		stakerPrivKeys  []*btcec.PrivateKey
 		stakerPubKeys   []*btcec.PublicKey
 	)
-	for _, w := range app.config.StakerKeysConfig.DecodedWIFs {
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
 		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
 		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
 	}

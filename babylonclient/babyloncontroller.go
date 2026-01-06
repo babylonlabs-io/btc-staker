@@ -568,39 +568,11 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 
 	// in case of multisig btc delegation, it populates DelegationData and adds to MsgCreateBTCDelegation
 	if dg.MultisigInfo != nil {
-		if len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorSlashingSigs) ||
-			len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorUnbondingSlashingSigs) {
-			return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+		mi, err := populateMultisigInfo(dg.MultisigInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to populate multisig info: %w", err)
 		}
-
-		stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(dg.MultisigInfo.StakerBtcPks))
-		slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
-		unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
-
-		for i, pk := range dg.MultisigInfo.StakerBtcPks {
-			if pk == nil || dg.MultisigInfo.DelegatorSlashingSigs[i] == nil || dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i] == nil {
-				return nil, fmt.Errorf("invalid multisig info: nil key or signature")
-			}
-
-			bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
-			stakerPkList = append(stakerPkList, *bip340Pk)
-
-			slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
-				Pk:  bip340Pk,
-				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorSlashingSigs[i]),
-			})
-			unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
-				Pk:  bip340Pk,
-				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i]),
-			})
-		}
-
-		msg.MultisigInfo = &btcstypes.AdditionalStakerInfo{
-			StakerBtcPkList:                stakerPkList,
-			StakerQuorum:                   dg.MultisigInfo.StakerQuorum,
-			DelegatorSlashingSigs:          slashingSigs,
-			DelegatorUnbondingSlashingSigs: unbondingSigs,
-		}
+		msg.MultisigInfo = mi
 	}
 
 	return msg, nil
@@ -649,42 +621,51 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcSta
 
 	// in case of multisig btc stake expansion, it populates DelegationData and adds to MsgBtcStakeExpand
 	if dg.MultisigInfo != nil {
-		if len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorSlashingSigs) ||
-			len(dg.MultisigInfo.StakerBtcPks) != len(dg.MultisigInfo.DelegatorUnbondingSlashingSigs) {
-			return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+		mi, err := populateMultisigInfo(dg.MultisigInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to populate multisig info: %w", err)
 		}
-
-		stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(dg.MultisigInfo.StakerBtcPks))
-		slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
-		unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(dg.MultisigInfo.StakerBtcPks))
-
-		for i, pk := range dg.MultisigInfo.StakerBtcPks {
-			if pk == nil || dg.MultisigInfo.DelegatorSlashingSigs[i] == nil || dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i] == nil {
-				return nil, fmt.Errorf("invalid multisig info: nil key or signature")
-			}
-
-			bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
-			stakerPkList = append(stakerPkList, *bip340Pk)
-
-			slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
-				Pk:  bip340Pk,
-				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorSlashingSigs[i]),
-			})
-			unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
-				Pk:  bip340Pk,
-				Sig: bbntypes.NewBIP340SignatureFromBTCSig(dg.MultisigInfo.DelegatorUnbondingSlashingSigs[i]),
-			})
-		}
-
-		msg.MultisigInfo = &btcstypes.AdditionalStakerInfo{
-			StakerBtcPkList:                stakerPkList,
-			StakerQuorum:                   dg.MultisigInfo.StakerQuorum,
-			DelegatorSlashingSigs:          slashingSigs,
-			DelegatorUnbondingSlashingSigs: unbondingSigs,
-		}
+		msg.MultisigInfo = mi
 	}
 
 	return msg, nil
+}
+
+// populateMultisigInfo turns MultisigStakerInfo into btcstypes.AdditionalStakerInfo
+func populateMultisigInfo(msi *MultisigStakerInfo) (mi *btcstypes.AdditionalStakerInfo, err error) {
+	if len(msi.StakerBtcPks) != len(msi.DelegatorSlashingSigs) ||
+		len(msi.StakerBtcPks) != len(msi.DelegatorUnbondingSlashingSigs) {
+		return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+	}
+
+	stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(msi.StakerBtcPks))
+	slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(msi.StakerBtcPks))
+	unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(msi.StakerBtcPks))
+
+	for i, pk := range msi.StakerBtcPks {
+		if pk == nil || msi.DelegatorSlashingSigs[i] == nil || msi.DelegatorUnbondingSlashingSigs[i] == nil {
+			return nil, fmt.Errorf("invalid multisig info: nil key or signature")
+		}
+
+		bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
+		stakerPkList = append(stakerPkList, *bip340Pk)
+
+		slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
+			Pk:  bip340Pk,
+			Sig: bbntypes.NewBIP340SignatureFromBTCSig(msi.DelegatorSlashingSigs[i]),
+		})
+		unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
+			Pk:  bip340Pk,
+			Sig: bbntypes.NewBIP340SignatureFromBTCSig(msi.DelegatorUnbondingSlashingSigs[i]),
+		})
+	}
+
+	return &btcstypes.AdditionalStakerInfo{
+		StakerBtcPkList:                stakerPkList,
+		StakerQuorum:                   msi.StakerQuorum,
+		DelegatorSlashingSigs:          slashingSigs,
+		DelegatorUnbondingSlashingSigs: unbondingSigs,
+	}, nil
 }
 
 // ReliablySendMsgs sends a batch of messages to the Babylon node
