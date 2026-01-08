@@ -419,6 +419,17 @@ type DelegationData struct {
 	BabylonPop                      *BabylonPop
 	Ud                              *UndelegationData
 	StakeExpansion                  *StakeExpansionData
+	MultisigInfo                    *MultisigStakerInfo
+}
+
+// MultisigStakerInfo holds additional staker information for M-of-N multisig
+// BTC delegations. It intentionally excludes the "main" staker pubkey/signatures
+// which are carried in the top-level fields of MsgCreateBTCDelegation.
+type MultisigStakerInfo struct {
+	StakerBtcPks                   []*btcec.PublicKey
+	StakerQuorum                   uint32
+	DelegatorSlashingSigs          []*schnorr.Signature
+	DelegatorUnbondingSlashingSigs []*schnorr.Signature
 }
 
 // StakeExpansionData holds data specific to stake expansion transactions
@@ -532,19 +543,17 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		)
 	}
 
-	return &btcstypes.MsgCreateBTCDelegation{
+	msg := &btcstypes.MsgCreateBTCDelegation{
 		// Note: this should be always safe conversion as we received data from our db
 		StakerAddr: dg.BabylonStakerAddr.String(),
 		Pop: &btcstypes.ProofOfPossessionBTC{
 			BtcSigType: btcstypes.BTCSigType(dg.BabylonPop.popType),
 			BtcSig:     dg.BabylonPop.BtcSig,
 		},
-		BtcPk:        bbntypes.NewBIP340PubKeyFromBTCPK(dg.StakerBtcPk),
-		FpBtcPkList:  fpPksList,
-		StakingTime:  uint32(dg.StakingTime),
-		StakingValue: int64(dg.StakingValue),
-		// TODO: It is super bad that this thing (TransactionInfo) spread over whole babylon codebase, and it
-		// is used in all modules, rpc, database etc.
+		BtcPk:                   bbntypes.NewBIP340PubKeyFromBTCPK(dg.StakerBtcPk),
+		FpBtcPkList:             fpPksList,
+		StakingTime:             uint32(dg.StakingTime),
+		StakingValue:            int64(dg.StakingValue),
 		StakingTx:               serizalizedStakingTransaction,
 		StakingTxInclusionProof: stakingTransactionInclusionProof,
 		SlashingTx:              slashingTx,
@@ -555,7 +564,18 @@ func delegationDataToMsg(dg *DelegationData) (*btcstypes.MsgCreateBTCDelegation,
 		UnbondingValue:                int64(dg.Ud.UnbondingTxValue),
 		UnbondingSlashingTx:           slashUnbondingTx,
 		DelegatorUnbondingSlashingSig: slashUnbondingTxSig,
-	}, nil
+	}
+
+	// in case of multisig btc delegation, it populates DelegationData and adds to MsgCreateBTCDelegation
+	if dg.MultisigInfo != nil {
+		mi, err := populateMultisigInfo(dg.MultisigInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to populate multisig info: %w", err)
+		}
+		msg.MultisigInfo = mi
+	}
+
+	return msg, nil
 }
 
 // delegationDataToMsgBtcStakeExpand is a helper function to convert delegation data to stake expansion message
@@ -580,8 +600,7 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcSta
 		return nil, fmt.Errorf("failed to serialize funding transaction: %w", err)
 	}
 
-	// Create the stake expansion message with all fields from common delegation
-	return &btcstypes.MsgBtcStakeExpand{
+	msg := &btcstypes.MsgBtcStakeExpand{
 		StakerAddr:                    commonMsg.StakerAddr,
 		Pop:                           commonMsg.Pop,
 		BtcPk:                         commonMsg.BtcPk,
@@ -598,6 +617,54 @@ func delegationDataToMsgBtcStakeExpand(dg *DelegationData) (*btcstypes.MsgBtcSta
 		DelegatorUnbondingSlashingSig: commonMsg.DelegatorUnbondingSlashingSig,
 		PreviousStakingTxHash:         dg.StakeExpansion.PreviousStakingTxHash.String(),
 		FundingTx:                     serializedFundingTx,
+	}
+
+	// in case of multisig btc stake expansion, it populates DelegationData and adds to MsgBtcStakeExpand
+	if dg.MultisigInfo != nil {
+		mi, err := populateMultisigInfo(dg.MultisigInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to populate multisig info: %w", err)
+		}
+		msg.MultisigInfo = mi
+	}
+
+	return msg, nil
+}
+
+// populateMultisigInfo turns MultisigStakerInfo into btcstypes.AdditionalStakerInfo
+func populateMultisigInfo(msi *MultisigStakerInfo) (mi *btcstypes.AdditionalStakerInfo, err error) {
+	if len(msi.StakerBtcPks) != len(msi.DelegatorSlashingSigs) ||
+		len(msi.StakerBtcPks) != len(msi.DelegatorUnbondingSlashingSigs) {
+		return nil, fmt.Errorf("invalid multisig info: pubkey/sig list lengths mismatch")
+	}
+
+	stakerPkList := make([]bbntypes.BIP340PubKey, 0, len(msi.StakerBtcPks))
+	slashingSigs := make([]*btcstypes.SignatureInfo, 0, len(msi.StakerBtcPks))
+	unbondingSigs := make([]*btcstypes.SignatureInfo, 0, len(msi.StakerBtcPks))
+
+	for i, pk := range msi.StakerBtcPks {
+		if pk == nil || msi.DelegatorSlashingSigs[i] == nil || msi.DelegatorUnbondingSlashingSigs[i] == nil {
+			return nil, fmt.Errorf("invalid multisig info: nil key or signature")
+		}
+
+		bip340Pk := bbntypes.NewBIP340PubKeyFromBTCPK(pk)
+		stakerPkList = append(stakerPkList, *bip340Pk)
+
+		slashingSigs = append(slashingSigs, &btcstypes.SignatureInfo{
+			Pk:  bip340Pk,
+			Sig: bbntypes.NewBIP340SignatureFromBTCSig(msi.DelegatorSlashingSigs[i]),
+		})
+		unbondingSigs = append(unbondingSigs, &btcstypes.SignatureInfo{
+			Pk:  bip340Pk,
+			Sig: bbntypes.NewBIP340SignatureFromBTCSig(msi.DelegatorUnbondingSlashingSigs[i]),
+		})
+	}
+
+	return &btcstypes.AdditionalStakerInfo{
+		StakerBtcPkList:                stakerPkList,
+		StakerQuorum:                   msi.StakerQuorum,
+		DelegatorSlashingSigs:          slashingSigs,
+		DelegatorUnbondingSlashingSigs: unbondingSigs,
 	}, nil
 }
 

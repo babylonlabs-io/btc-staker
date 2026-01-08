@@ -26,7 +26,6 @@ const (
 
 // NewImageConfig returns ImageConfig needed for running e2e test.
 func NewImageConfig(t *testing.T) ImageConfig {
-	// TODO: Temporary fixed babylond version with snapshot tag
 	babylondVersion, err := testutil.GetBabylonVersion()
 	require.NoError(t, err)
 	return ImageConfig{

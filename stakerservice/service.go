@@ -119,6 +119,28 @@ func (s *StakerService) stake(_ *rpctypes.Context,
 	}, nil
 }
 
+// stakeMultisig stakes staker's requested amount of BTC using multisig staker keys loaded in stakerd.
+func (s *StakerService) stakeMultisig(_ *rpctypes.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+) (*ResultStake, error) {
+	amount, fundingAddr, fpPubKeys, stakingTime, err := parseStkParams(fundingAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	stakingTxHash, err := s.staker.StakeFundsMultisig(fundingAddr, amount, fpPubKeys, stakingTime)
+	if err != nil {
+		return nil, fmt.Errorf("error staking funds (multisig): %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: stakingTxHash.String(),
+	}, nil
+}
+
 // stakeExpand stakes staker's requested amount of BTC
 func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	stakerAddress string,
@@ -140,6 +162,34 @@ func (s *StakerService) stakeExpand(_ *rpctypes.Context,
 	stakingTxHash, err := s.staker.StakeExpand(stakerAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
 	if err != nil {
 		return nil, fmt.Errorf("error stake expand funds: %w", err)
+	}
+
+	return &ResultStake{
+		TxHash: stakingTxHash.String(),
+	}, nil
+}
+
+// stakeExpandMultisig stakes staker's requested amount of BTC using multisig staker keys and a previous active staking tx as input
+func (s *StakerService) stakeExpandMultisig(_ *rpctypes.Context,
+	fundingAddress string,
+	stakingAmount int64,
+	fpBtcPks []string,
+	stakingTimeBlocks int64,
+	prevActiveStkTxHashHex string,
+) (*ResultStake, error) {
+	amount, fundingAddr, fpPubKeys, stakingTime, err := parseStkParams(fundingAddress, &s.config.ActiveNetParams, stakingAmount, fpBtcPks, stakingTimeBlocks)
+	if err != nil {
+		return nil, err
+	}
+
+	prevActiveStkTxHash, err := chainhash.NewHashFromStr(prevActiveStkTxHashHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse previous staking transaction hash hex %s: %w", prevActiveStkTxHashHex, err)
+	}
+
+	stakingTxHash, err := s.staker.StakeExpandMultisig(fundingAddr, amount, fpPubKeys, stakingTime, prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("error stake expand funds (multisig): %w", err)
 	}
 
 	return &ResultStake{
@@ -353,6 +403,29 @@ func (s *StakerService) spendStake(_ *rpctypes.Context,
 	}, nil
 }
 
+// spendStakeMultisig initiates a spend stake transaction using multisig staker keys configured in stakerd.
+func (s *StakerService) spendStakeMultisig(_ *rpctypes.Context,
+	stakingTxHash string) (*SpendTxDetails, error) {
+	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse string type of hash to chainhash.Hash: %w", err)
+	}
+
+	spendTxHash, value, err := s.staker.SpendStakeMultisig(txHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to spend stake (multisig): %w", err)
+	}
+
+	txValue := strconv.FormatInt(int64(*value), 10)
+
+	return &SpendTxDetails{
+		TxHash:  spendTxHash.String(),
+		TxValue: txValue,
+	}, nil
+}
+
 // listOutputs returns a list of outputs
 func (s *StakerService) listOutputs(_ *rpctypes.Context) (*OutputsResponse, error) {
 	outputs, err := s.staker.ListUnspentOutputs()
@@ -534,6 +607,25 @@ func (s *StakerService) unbondStaking(_ *rpctypes.Context, stakingTxHash string)
 	}, nil
 }
 
+// unbondStakingMultisig unbonds a staking transaction using multisig staker keys
+func (s *StakerService) unbondStakingMultisig(_ *rpctypes.Context, stakingTxHash string) (*UnbondingResponse, error) {
+	txHash, err := chainhash.NewHashFromStr(stakingTxHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx hash: %w", err)
+	}
+
+	unbondingTxHash, err := s.staker.UnbondStakingMultisig(*txHash)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to unbond staking (multisig): %w", err)
+	}
+
+	return &UnbondingResponse{
+		UnbondingTxHash: unbondingTxHash.String(),
+	}, nil
+}
+
 // btcStakingParamsByBtcHeight loads the BTC staking params for the BTC block height from babylon
 func (s *StakerService) btcStakingParamsByBtcHeight(_ *rpctypes.Context, btcHeight uint32) (*BtcStakingParamsByBtcHeightResponse, error) {
 	stakingParams, err := s.staker.BabylonController().ParamsByBtcHeight(btcHeight)
@@ -556,13 +648,17 @@ func (s *StakerService) GetRoutes() RoutesMap {
 		"health": NewRPCFunc(s.health, ""),
 		// staking API
 		"stake":                              NewRPCFunc(s.stake, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
+		"stake_multisig":                     NewRPCFunc(s.stakeMultisig, "fundingAddress,stakingAmount,fpBtcPks,stakingTimeBlocks"),
 		"stake_expand":                       NewRPCFunc(s.stakeExpand, "stakerAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
+		"stake_expand_multisig":              NewRPCFunc(s.stakeExpandMultisig, "fundingAddress,stakingAmount,fpBtcPks,stakingTimeBlocks,prevActiveStkTxHashHex"),
 		"consolidate_utxos":                  NewRPCFunc(s.consolidateUTXOs, "stakerAddress,targetAmount"),
 		"btc_delegation_from_btc_staking_tx": NewRPCFunc(s.btcDelegationFromBtcStakingTx, "stakerAddress,btcStkTxHash,covenantPksHex,covenantQuorum"),
 		"staking_details":                    NewRPCFunc(s.stakingDetails, "stakingTxHash"),
 		"spend_stake":                        NewRPCFunc(s.spendStake, "stakingTxHash"),
+		"spend_stake_multisig":               NewRPCFunc(s.spendStakeMultisig, "stakingTxHash"),
 		"list_staking_transactions":          NewRPCFunc(s.listStakingTransactions, "offset,limit"),
 		"unbond_staking":                     NewRPCFunc(s.unbondStaking, "stakingTxHash"),
+		"unbond_staking_multisig":            NewRPCFunc(s.unbondStakingMultisig, "stakingTxHash"),
 		"btc_staking_param_by_btc_height":    NewRPCFunc(s.btcStakingParamsByBtcHeight, "btcHeight"),
 		"withdrawable_transactions":          NewRPCFunc(s.withdrawableTransactions, "offset,limit"),
 		"btc_tx_blk_details":                 NewRPCFunc(s.btcTxBlkDetails, "txHashStr"),
