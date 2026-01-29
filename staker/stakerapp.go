@@ -20,10 +20,12 @@ import (
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/utils"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+	tmhash "github.com/cometbft/cometbft/crypto/tmhash"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"go.uber.org/zap"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -55,6 +57,7 @@ var (
 	RtyErr            = retry.LastErrorOnly(true)
 )
 
+//nolint:unparam // fixedDelay is kept for clarity of retry configuration signature
 func longRetryOps(ctx context.Context, fixedDelay time.Duration, onRetryFn retry.OnRetryFunc) []retry.Option {
 	return []retry.Option{
 		retry.Context(ctx),
@@ -121,6 +124,8 @@ type App struct {
 	txTracker        *stakerdb.TrackedTransactionStore
 	babylonMsgSender *cl.BabylonMsgSender
 	m                *metrics.StakerMetrics
+	// stakerKeyWIFs are independent of the wallet controller above. it's only used for multisig btc staker
+	stakerKeyWIFs []*btcutil.WIF
 
 	stakingRequestedCmdChan                       chan *stakingRequestCmd
 	migrateStakingCmd                             chan *migrateStakingCmd
@@ -225,6 +230,7 @@ func NewStakerAppFromDeps(
 		txTracker:               tracker,
 		babylonMsgSender:        babylonMsgSender,
 		m:                       metrics,
+		stakerKeyWIFs:           config.StakerMultisigConfig.DecodedWIFs,
 		config:                  config,
 		logger:                  logger,
 		quit:                    make(chan struct{}),
@@ -852,6 +858,154 @@ func (app *App) sendUnbondingTxToBtc(
 	return notificationEv, nil
 }
 
+// sendUnbondingTxToBtcWithWitnessMultisig sends an unbonding tx to btc with witness (multisig staker keys).
+func (app *App) sendUnbondingTxToBtcWithWitnessMultisig(
+	stakingTxHash *chainhash.Hash,
+	fpBtcPubkeys []*btcec.PublicKey,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	undelegationInfo *cl.UndelegationInfo,
+) error {
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return fmt.Errorf("error getting params: %w", err)
+	}
+
+	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.stakerKeyWIFs))
+	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.stakerKeyWIFs))
+	for _, w := range app.stakerKeyWIFs {
+		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
+		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
+	}
+
+	unbondingSpendInfo, err := buildMultisigUnbondingSpendInfo(
+		stakerPubKeys,
+		app.config.StakerMultisigConfig.StakerThreshold,
+		fpBtcPubkeys,
+		storedTx,
+		stakingOutputIndex,
+		stakingTime,
+		undelegationInfo,
+		params,
+		app.network,
+	)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Error("failed to create multisig unbonding spend info to send unbonding tx to btc")
+		return fmt.Errorf("error building multisig unbonding spend info: %w", err)
+	}
+
+	stakerSigs, err := buildOrderedMultisigSignatures(
+		undelegationInfo.UnbondingTransaction,
+		storedTx.StakingTx.TxOut[stakingOutputIndex],
+		nil,
+		unbondingSpendInfo.RevealedLeaf,
+		stakerPrivKeys,
+		app.config.StakerMultisigConfig.StakerThreshold,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build multisig staker signatures for unbonding tx: %w", err)
+	}
+
+	covenantSignatures, err := createWitnessSignaturesForPubKeys(
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		undelegationInfo.CovenantUnbondingSignatures,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to build covenant signatures for unbonding tx: %w", err)
+	}
+
+	witness, err := unbondingSpendInfo.CreateMultisigUnbondingPathWitness(
+		covenantSignatures,
+		stakerSigs,
+	)
+	if err != nil {
+		app.logger.WithFields(logrus.Fields{
+			"stakingTxHash": stakingTxHash,
+			"err":           err,
+		}).Fatalf("failed to build multisig witness from correct data")
+	}
+
+	unbondingTx := undelegationInfo.UnbondingTransaction
+	unbondingTx.TxIn[0].Witness = witness
+
+	if _, err = app.wc.SendRawTransaction(unbondingTx, true); err != nil {
+		return fmt.Errorf("failed to send unbonding tx (multisig): %w", err)
+	}
+
+	return nil
+}
+
+// sendUnbondingTxToBtcMultisig sends unbonding tx to btc and registers for inclusion notification (multisig).
+func (app *App) sendUnbondingTxToBtcMultisig(
+	ctx context.Context,
+	stakingTxHash *chainhash.Hash,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	undelegationInfo *cl.UndelegationInfo,
+	fpBtcPubkeys []*btcec.PublicKey,
+) (*notifier.ConfirmationEvent, error) {
+	err := retry.Do(func() error {
+		return app.sendUnbondingTxToBtcWithWitnessMultisig(
+			stakingTxHash,
+			fpBtcPubkeys,
+			stakingOutputIndex,
+			stakingTime,
+			storedTx,
+			undelegationInfo,
+		)
+	},
+		longRetryOps(
+			ctx,
+			unbondingSendRetryTimeout,
+			app.onLongRetryFunc(stakingTxHash, "failed to send unbonding tx to btc (multisig)"),
+		)...,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to send unbonding tx to btc (multisig): %w", err)
+	}
+
+	bestBlockAfterSend := app.currentBestBlockHeight.Load()
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+
+	var notificationEv *notifier.ConfirmationEvent
+	err = retry.Do(func() error {
+		ev, err := app.notifier.RegisterConfirmationsNtfn(
+			&unbondingTxHash,
+			undelegationInfo.UnbondingTransaction.TxOut[0].PkScript,
+			UnbondingTxConfirmations,
+			bestBlockAfterSend,
+		)
+
+		if err != nil {
+			return fmt.Errorf("failed to register for unbonding tx confirmation notification (multisig): %w", err)
+		}
+		notificationEv = ev
+		return nil
+	},
+		longRetryOps(
+			ctx,
+			unbondingSendRetryTimeout,
+			app.onLongRetryFunc(stakingTxHash, "failed to register for unbonding tx confirmation notification (multisig)"),
+		)...,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to register for unbonding tx confirmation notification (multisig): %w", err)
+	}
+	return notificationEv, nil
+}
+
 // waitForUnbondingTxConfirmation blocks until unbonding tx is confirmed on btc chain.
 func (app *App) waitForUnbondingTxConfirmation(
 	waitEv *notifier.ConfirmationEvent,
@@ -936,6 +1090,44 @@ func (app *App) sendUnbondingTxToBtcTask(
 	)
 }
 
+// sendUnbondingTxToBtcTaskMultisig tries to send unbonding tx to btc (multisig) and register for confirmation notification.
+func (app *App) sendUnbondingTxToBtcTaskMultisig(
+	stakingTxHash *chainhash.Hash,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+	fpBtcPubkeys []*btcec.PublicKey,
+	undelegationInfo *cl.UndelegationInfo,
+) {
+	defer app.wg.Done()
+	quitCtx, cancel := app.appQuitContext()
+	defer cancel()
+
+	waitEv, err := app.sendUnbondingTxToBtcMultisig(
+		quitCtx,
+		stakingTxHash,
+		stakingOutputIndex,
+		stakingTime,
+		storedTx,
+		undelegationInfo,
+		fpBtcPubkeys,
+	)
+
+	if err != nil {
+		app.reportCriticialError(*stakingTxHash, err, "failed to send unbonding tx to btc (multisig)")
+		return
+	}
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+
+	app.wg.Add(1)
+	go app.waitForUnbondingTxConfirmation(
+		waitEv,
+		&unbondingTxHash,
+		stakingTxHash,
+	)
+}
+
 // context which will be cancelled when app is shutting down
 func (app *App) appQuitContext() (context.Context, func()) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -965,6 +1157,25 @@ func (app *App) buildAndSendDelegation(
 	delegation, err := app.buildDelegation(req, stakerAddress, stakingOutputIndex, stakingTime, storedTx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build delegation: %w", err)
+	}
+
+	resp, err := app.babylonMsgSender.SendDelegation(delegation, req.requiredInclusionBlockDepth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send delegation: %w", err)
+	}
+
+	return resp, nil
+}
+
+func (app *App) buildAndSendDelegationMultisig(
+	req *sendDelegationRequest,
+	stakingOutputIndex uint32,
+	stakingTime uint16,
+	storedTx *stakerdb.StoredTransaction,
+) (*bct.RelayerTxResponse, error) {
+	delegation, err := app.buildDelegationMultisig(req, stakingOutputIndex, stakingTime, storedTx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build delegation (multisig): %w", err)
 	}
 
 	resp, err := app.babylonMsgSender.SendDelegation(delegation, req.requiredInclusionBlockDepth)
@@ -1087,6 +1298,61 @@ func (app *App) handleSendStakeExpansionRequest(cmd *stakingRequestCmd) (btcTxHa
 	return &stakingTxHash, nil
 }
 
+// handleSendStakeExpansionRequestMultisig handles a stake expansion delegation request using multisig staker keys.
+func (app *App) handleSendStakeExpansionRequestMultisig(cmd *stakingRequestCmd) (btcTxHash *chainhash.Hash, err error) {
+	// check pop is not nil
+	if cmd.pop == nil {
+		return nil, fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	stakingTx, fundingTx, err := app.buildStakingExpansionTx(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build stake expansion transaction (multisig): %w", err)
+	}
+
+	// just to pass to buildAndSendDelegationMultisig
+	fakeStoredTx, err := stakerdb.CreateTrackedTransaction(
+		stakingTx,
+		cmd.stakerAddress,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tracked transaction: %w", err)
+	}
+
+	stakingTxHash := stakingTx.TxHash()
+
+	// Create expansion request with expansion-specific data
+	req := newSendDelegationExpansionRequest(
+		&stakingTxHash,
+		cmd.requiredDepthOnBtcChain,
+		cmd.fpBtcPks,
+		cmd.pop,
+		cmd.stakeExpansion.prevActiveStkTxHash,
+		fundingTx,
+	)
+
+	if _, err = app.buildAndSendDelegationMultisig(
+		req,
+		cmd.stakeExpansion.prevActiveStkStakingOutputIdx,
+		cmd.stakingTime,
+		fakeStoredTx,
+	); err != nil {
+		return nil, fmt.Errorf("failed to build and send stake expansion delegation (multisig): %w", err)
+	}
+
+	if err := app.txTracker.AddTransactionSentToBabylon(
+		stakingTx,
+		cmd.stakerAddress,
+	); err != nil {
+		return nil, fmt.Errorf("failed to add transaction sent to babylon: %w", err)
+	}
+
+	app.wg.Add(1)
+	go app.checkForUnbondingTxSignaturesOnBabylon(&stakingTxHash)
+
+	return &stakingTxHash, nil
+}
+
 // buildStakingExpansionTx builds a stake expansion transaction with exactly 2 inputs:
 // 1. the previous active staking output
 // 2. the funding output to cover the fee and additional staking output if applicable
@@ -1130,6 +1396,17 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 
 	isStakeExpansion := cmd.stakeExpansion != nil
 	if isStakeExpansion {
+		if cmd.multisig {
+			// Send multisig stake expansion delegation to Babylon (step 1 of the flow)
+			// This will create a pending BTC delegation and wait for covenant signatures
+			btcTxHash, err := app.handleSendStakeExpansionRequestMultisig(cmd)
+			if err != nil {
+				return nil, fmt.Errorf("failed to send stake expansion delegation request (multisig): %w", err)
+			}
+
+			return btcTxHash, nil
+		}
+
 		// Send stake expansion delegation to Babylon (step 1 of the flow)
 		// This will create a pending BTC delegation and wait for covenant signatures
 		btcTxHash, err := app.handleSendStakeExpansionRequest(cmd)
@@ -1154,6 +1431,27 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 	}
 
 	// Send staking transaction to Babylon node
+	if cmd.multisig {
+		// handle multisig staking transaction
+		btcTxHash, _, err := app.handleSendDelegationRequestMultisig(
+			cmd.stakerAddress,
+			cmd.stakingTime,
+			cmd.requiredDepthOnBtcChain,
+			cmd.fpBtcPks,
+			cmd.pop,
+			stakingTx,
+			0,
+			nil,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to send delegation request: %w", err)
+		}
+
+		return btcTxHash, nil
+	}
+
+	// handle single-sig staking transaction
 	btcTxHash, _, err := app.handleSendDelegationRequest(
 		cmd.stakerAddress,
 		cmd.stakingTime,
@@ -1170,6 +1468,55 @@ func (app *App) handleStakingCmd(cmd *stakingRequestCmd) (*chainhash.Hash, error
 	}
 
 	return btcTxHash, nil
+}
+
+func (app *App) handleSendDelegationRequestMultisig(
+	fundingAddress btcutil.Address,
+	stakingTime uint16,
+	requiredDepthOnBtcChain uint32,
+	fpBtcPks []*secp256k1.PublicKey,
+	pop *cl.BabylonPop,
+	stakingTx *wire.MsgTx,
+	stakingOutputIdx uint32,
+	inclusionInfo *inclusionInfo,
+) (btcTxHash *chainhash.Hash, btcDelTxHash string, err error) {
+	if pop == nil {
+		return nil, btcDelTxHash, fmt.Errorf("cannot add transaction without proof of possession")
+	}
+
+	// just to pass to buildAndSendDelegation
+	fakeStoredTx, err := stakerdb.CreateTrackedTransaction(
+		stakingTx,
+		fundingAddress,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to create tracked transaction: %w", err)
+	}
+
+	stakingTxHash := stakingTx.TxHash()
+
+	req := newSendDelegationRequest(&stakingTxHash, inclusionInfo, requiredDepthOnBtcChain, fpBtcPks, pop)
+	resp, err := app.buildAndSendDelegationMultisig(
+		req,
+		stakingOutputIdx,
+		stakingTime,
+		fakeStoredTx,
+	)
+	if err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to build and send delegation (multisig): %w", err)
+	}
+
+	if err := app.txTracker.AddTransactionSentToBabylon(
+		stakingTx,
+		fundingAddress,
+	); err != nil {
+		return nil, btcDelTxHash, fmt.Errorf("failed to add transaction sent to babylon: %w", err)
+	}
+
+	app.wg.Add(1)
+	go app.checkForUnbondingTxSignaturesOnBabylon(&stakingTxHash)
+
+	return &stakingTxHash, resp.TxHash, nil
 }
 
 // handleStakingCommands handles staking commands
@@ -1475,6 +1822,150 @@ func (app *App) StakeFunds(
 	}
 }
 
+// StakeFundsMultisig creates a staking output that uses a taproot multisig staker
+// branch (CHECKSIGADD-chain) built from stakerd-configured private keys.
+// This method only affects the staking output construction; the funding inputs
+// are still sourced from the provided stakerAddress wallet.
+func (app *App) StakeFundsMultisig(
+	fundingAddress btcutil.Address,
+	stakingAmount btcutil.Amount,
+	fpPks []*btcec.PublicKey,
+	stakingTimeBlocks uint16,
+) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+	default:
+	}
+
+	if len(fpPks) == 0 {
+		return nil, fmt.Errorf("no finality providers public keys provided")
+	}
+
+	if haveDuplicates(fpPks) {
+		return nil, fmt.Errorf("duplicate finality provider public keys provided")
+	}
+
+	for _, fpPk := range fpPks {
+		if err := app.finalityProviderExists(fpPk); err != nil {
+			return nil, err
+		}
+	}
+
+	// Ensure multisig staker keys are configured.
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
+		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakermultisiginfo].StakerKeyWIFs and StakerThreshold)")
+	}
+
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerMultisigConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get babylon params: %w", err)
+	}
+
+	slashingFee := app.getSlashingFee(params.MinSlashingTxFeeSat)
+
+	if stakingAmount <= slashingFee {
+		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
+			stakingAmount, slashingFee)
+	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
+
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
+	}
+
+	// Unlock wallet for subsequent operations (e.g. funding transaction signing),
+	// but generate PoP using the primary multisig staker key (not the funding address).
+	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
+		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
+	}
+
+	msgToSign := app.babylonClient.GetKeyAddress().Bytes()
+	hash := tmhash.Sum(msgToSign)
+
+	primaryStakerSk := app.config.StakerMultisigConfig.DecodedWIFs[0].PrivKey
+	popSig, err := schnorr.Sign(primaryStakerSk, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PoP signature: %w", err)
+	}
+
+	popBip340 := bbntypes.NewBIP340SignatureFromBTCSig(popSig)
+	pop, err := cl.NewBabylonPop(cl.SchnorrType, popBip340.MustMarshal())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PoP: %w", err)
+	}
+
+	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
+		stakerKeys = append(stakerKeys, w.PrivKey.PubKey())
+	}
+
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerKeys,
+		stakerQuorum,
+		fpPks,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		stakingTimeBlocks,
+		stakingAmount,
+		app.network,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig staking info: %w", err)
+	}
+
+	feeRate := app.feeEstimator.EstimateFeePerKb()
+
+	app.logger.WithFields(logrus.Fields{
+		"fundingAddress": fundingAddress,
+		"stakingAmount":  stakingInfo.StakingOutput,
+		"fee":            feeRate,
+		"stakerQuorum":   stakerQuorum,
+		"stakerKeys":     len(stakerKeys),
+	}).Info("Created and signed multisig staking transaction")
+
+	req := newOwnedStakingCommand(
+		fundingAddress,
+		stakingInfo.StakingOutput,
+		feeRate,
+		stakingTimeBlocks,
+		stakingAmount,
+		fpPks,
+		params.ConfirmationTimeBlocks,
+		pop,
+	).WithMultisig()
+
+	utils.PushOrQuit[*stakingRequestCmd](
+		app.stakingRequestedCmdChan,
+		req,
+		app.quit,
+	)
+
+	select {
+	case reqErr := <-req.errChan:
+		app.logger.WithFields(logrus.Fields{
+			"fundingAddress": fundingAddress,
+			"err":            reqErr,
+		}).Debugf("Sending multisig staking tx failed")
+
+		return nil, reqErr
+	case hash := <-req.successChan:
+		return hash, nil
+	case <-app.quit:
+		return nil, nil
+	}
+}
+
 // StakeExpand expands an existing stake by consuming the previous staking UTXO
 // and creating a new larger staking transaction with additional funding
 func (app *App) StakeExpand(
@@ -1590,6 +2081,12 @@ func (app *App) StakeExpand(
 		return nil, fmt.Errorf("expansion amount must be greater than or equal to previous staking amount")
 	}
 
+	app.logger.WithFields(logrus.Fields{
+		"stakerAddress": stakerAddress,
+		"stakingAmount": stakingInfo.StakingOutput,
+		"fee":           feeRate,
+	}).Info("Created and signed stake expansion transaction")
+
 	// Create expansion command using regular staking command
 	req := newOwnedStakingCommand(
 		stakerAddress,
@@ -1617,6 +2114,190 @@ func (app *App) StakeExpand(
 			"stakerAddress": stakerAddress,
 			"err":           reqErr,
 		}).Debugf("Sending staking tx failed")
+
+		return nil, reqErr
+	case hash := <-req.successChan:
+		return hash, nil
+	case <-app.quit:
+		return nil, nil
+	}
+}
+
+// StakeExpandMultisig expands an existing stake using multisig staker keys configured in stakerd.
+// Funding (fee/change) still comes from the provided wallet-controlled funding address.
+//
+//nolint:gocyclo // complex staking flow kept as-is for clarity and parity with single-sig flow
+func (app *App) StakeExpandMultisig(
+	fundingAddress btcutil.Address,
+	stakingAmount btcutil.Amount,
+	fpPks []*btcec.PublicKey,
+	stakingTimeBlocks uint16,
+	prevActiveStkTxHash *chainhash.Hash,
+) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+
+	default:
+	}
+
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.config.StakerMultisigConfig.DecodedWIFs) == 0 {
+		return nil, fmt.Errorf("multisig staker keys are not configured (set [stakermultisiginfo].StakerKeyWIFs and StakerThreshold)")
+	}
+
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.config.StakerMultisigConfig.DecodedWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	}
+
+	if len(fpPks) == 0 {
+		return nil, fmt.Errorf("no finality providers public keys provided")
+	}
+
+	if haveDuplicates(fpPks) {
+		return nil, fmt.Errorf("duplicate finality provider public keys provided")
+	}
+
+	for _, fpPk := range fpPks {
+		if err := app.finalityProviderExists(fpPk); err != nil {
+			return nil, fmt.Errorf("error checking if finality provider exists on babylon chain: %w", err)
+		}
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get params: %w", err)
+	}
+
+	// Allow list is enabled, check if we are past the expiration height and we can
+	// create new delegations
+	if params.AllowListExpirationHeight > 0 {
+		latestBlockHeight, err := app.babylonClient.GetLatestBlockHeight()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest block height: %w", err)
+		}
+		// we add +1 to account for comet bft lazy execution
+		if latestBlockHeight <= params.AllowListExpirationHeight+1 {
+			return nil, fmt.Errorf("allow is enabled, cannot create new delegations. Latest block height %d is before allow list expiration height %d",
+				latestBlockHeight, params.AllowListExpirationHeight)
+		}
+	}
+
+	slashingFee := app.getSlashingFee(params.MinSlashingTxFeeSat)
+
+	if stakingAmount <= slashingFee {
+		return nil, fmt.Errorf("staking amount %d is less than minimum slashing fee %d",
+			stakingAmount, slashingFee)
+	}
+	if stakingTimeBlocks < params.MinStakingTime || stakingTimeBlocks > params.MaxStakingTime {
+		return nil, fmt.Errorf("staking time %d is not in range [%d, %d]",
+			stakingTimeBlocks, params.MinStakingTime, params.MaxStakingTime)
+	}
+
+	if stakingAmount < params.MinStakingValue || stakingAmount > params.MaxStakingValue {
+		return nil, fmt.Errorf("staking amount %d is not in range [%d, %d]",
+			stakingAmount, params.MinStakingValue, params.MaxStakingValue)
+	}
+
+	if err := app.wc.UnlockWallet(defaultWalletUnlockTimeout); err != nil {
+		return nil, fmt.Errorf("failed to unlock wallet: %w", err)
+	}
+
+	primaryStakerSk := app.config.StakerMultisigConfig.DecodedWIFs[0].PrivKey
+	msgToSign := app.babylonClient.GetKeyAddress().Bytes()
+	hash := tmhash.Sum(msgToSign)
+
+	popSig, err := schnorr.Sign(primaryStakerSk, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PoP signature: %w", err)
+	}
+
+	popBip340 := bbntypes.NewBIP340SignatureFromBTCSig(popSig)
+	pop, err := cl.NewBabylonPop(cl.SchnorrType, popBip340.MustMarshal())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PoP: %w", err)
+	}
+
+	stakerKeys := make([]*btcec.PublicKey, 0, len(app.config.StakerMultisigConfig.DecodedWIFs))
+	for _, w := range app.config.StakerMultisigConfig.DecodedWIFs {
+		stakerKeys = append(stakerKeys, w.PrivKey.PubKey())
+	}
+
+	stakingInfo, err := staking.BuildMultisigStakingInfo(
+		stakerKeys,
+		stakerQuorum,
+		fpPks,
+		params.CovenantPks,
+		params.CovenantQuruomThreshold,
+		stakingTimeBlocks,
+		stakingAmount,
+		app.network,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build multisig staking info: %w", err)
+	}
+
+	feeRate := app.feeEstimator.EstimateFeePerKb()
+
+	// Step 1: Get the previous staking amount to calculate additional amount needed
+	prevDelegationResult, err := app.babylonClient.QueryBTCDelegation(prevActiveStkTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous delegation: %w", err)
+	}
+
+	if prevDelegationResult.BtcDelegation == nil {
+		return nil, fmt.Errorf("previous delegation not found")
+	}
+
+	prevDel := prevDelegationResult.BtcDelegation
+
+	prevStakingMsgTx, _, err := bbntypes.NewBTCTxFromHex(prevDel.StakingTxHex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse staking tx from previous delegation: %w", err)
+	}
+
+	prevStakingAmount := btcutil.Amount(prevStakingMsgTx.TxOut[prevDel.StakingOutputIdx].Value)
+	additionalAmount := stakingAmount - prevStakingAmount
+	if additionalAmount < 0 {
+		return nil, fmt.Errorf("expansion amount must be greater than or equal to previous staking amount")
+	}
+
+	app.logger.WithFields(logrus.Fields{
+		"fundingAddress": fundingAddress,
+		"stakingAmount":  stakingInfo.StakingOutput,
+		"fee":            feeRate,
+		"stakerKeys":     len(stakerKeys),
+		"stakerQuorum":   stakerQuorum,
+	}).Info("Created and signed multisig stake expansion transaction")
+
+	req := newOwnedStakingCommand(
+		fundingAddress,
+		stakingInfo.StakingOutput,
+		feeRate,
+		stakingTimeBlocks,
+		stakingAmount,
+		fpPks,
+		params.ConfirmationTimeBlocks,
+		pop,
+	).WithStakeExpansion(
+		prevActiveStkTxHash,
+		prevDel.StakingOutputIdx,
+	).WithMultisig()
+
+	utils.PushOrQuit[*stakingRequestCmd](
+		app.stakingRequestedCmdChan,
+		req,
+		app.quit,
+	)
+
+	select {
+	case reqErr := <-req.errChan:
+		app.logger.WithFields(logrus.Fields{
+			"fundingAddress": fundingAddress,
+			"err":            reqErr,
+		}).Debugf("Sending multisig stake expansion tx failed")
 
 		return nil, reqErr
 	case hash := <-req.successChan:
@@ -2057,6 +2738,189 @@ func (app *App) SpendStake(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btc
 	return spendTxHash, &spendTxValue, nil
 }
 
+// SpendStakeMultisig spends stake identified by stakingTxHash using multisig staker keys configured in stakerd.
+// The funds are sent back to the stored funding/change address (tx.StakerAddress).
+// NOTE: for now tx.StakerAddress is set to the wallet configured in the stakerd.conf, not one of multisig members
+func (app *App) SpendStakeMultisig(stakingTxHash *chainhash.Hash) (*chainhash.Hash, *btcutil.Amount, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil, nil
+	default:
+	}
+
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return nil, nil, fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
+		return nil, nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
+	}
+
+	tx, err := app.txTracker.GetTransaction(stakingTxHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting staking transaction: %w", err)
+	}
+
+	destAddress, err := btcutil.DecodeAddress(tx.StakerAddress, app.network)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error decoding destination address: %w", err)
+	}
+
+	destAddressScript, err := txscript.PayToAddrScript(destAddress)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). cannot build destination script: %w", err)
+	}
+
+	params, err := app.babylonClient.Params()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting params: %w", err)
+	}
+
+	currentFeeRate := app.feeEstimator.EstimateFeePerKb()
+
+	di, err := app.babylonClient.QueryBTCDelegation(stakingTxHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting delegation info: %w", err)
+	}
+
+	udi, err := app.babylonClient.GetUndelegationInfo(di)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting undelegation info: %w", err)
+	}
+
+	fpBtcPubkeys, err := convertFpBtcPkToBtcPk(di.BtcDelegation.FpBtcPkList)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error converting fpBtcPkList to btcPkList: %w", err)
+	}
+
+	stakerPrivKeys := make([]*btcec.PrivateKey, 0, len(app.stakerKeyWIFs))
+	stakerPubKeys := make([]*btcec.PublicKey, 0, len(app.stakerKeyWIFs))
+	for _, w := range app.stakerKeyWIFs {
+		stakerPrivKeys = append(stakerPrivKeys, w.PrivKey)
+		stakerPubKeys = append(stakerPubKeys, w.PrivKey.PubKey())
+	}
+
+	// check if the status of btc delegation is already EXPIRED, and if it is,
+	// skip getting tx details of unbondingTxHash
+	// Note: in case of expired staking output, TxDetails of unbondingTxHash will result in nil confirmation
+	var spendStakeTxInfo *spendStakeTxInfo
+	babylonStatus := di.BtcDelegation.GetStatusDesc()
+	if babylonStatus != BabylonExpiredStatus {
+		unbondingTxHash := udi.UnbondingTransaction.TxHash()
+		confirmation, txStatus, err := app.Wallet().TxDetails(
+			&unbondingTxHash,
+			udi.UnbondingTransaction.TxOut[0].PkScript,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error getting confirmation info from btc: %w", err)
+		}
+
+		if confirmation == nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). tx status: %s", txStatus.String())
+		}
+
+		if confirmation.BlockHash != nil && confirmation.BlockHeight > 0 {
+			unbondingConfirmedTxInfo, err := createSpendStakeTxUnbondingConfirmedMultisig(
+				stakerPubKeys,
+				stakerQuorum,
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				destAddressScript,
+				currentFeeRate,
+				udi,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingConfirmedTxInfo
+		} else {
+			unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmedMultisig(
+				stakerPubKeys,
+				stakerQuorum,
+				di.BtcDelegation.StakingOutputIdx,
+				uint16(di.BtcDelegation.StakingTime),
+				fpBtcPubkeys,
+				params.CovenantPks,
+				params.CovenantQuruomThreshold,
+				tx,
+				destAddressScript,
+				currentFeeRate,
+				app.network,
+			)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake non-unbonding confirmed tx: %w", err)
+			}
+			spendStakeTxInfo = unbondingNotConfirmedTxInfo
+		}
+	} else {
+		unbondingNotConfirmedTxInfo, err := createSpendStakeTxUnbondingNotConfirmedMultisig(
+			stakerPubKeys,
+			stakerQuorum,
+			di.BtcDelegation.StakingOutputIdx,
+			uint16(di.BtcDelegation.StakingTime),
+			fpBtcPubkeys,
+			params.CovenantPks,
+			params.CovenantQuruomThreshold,
+			tx,
+			destAddressScript,
+			currentFeeRate,
+			app.network,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error creating spend stake non-unbonding confirmed tx: %w", err)
+		}
+		spendStakeTxInfo = unbondingNotConfirmedTxInfo
+	}
+
+	witness, err := buildMultisigTimeLockPathWitness(
+		spendStakeTxInfo.spendStakeTx,
+		spendStakeTxInfo.fundingOutput,
+		spendStakeTxInfo.fundingOutputSpendInfo,
+		spendStakeTxInfo.fundingOutputSpendInfo.RevealedLeaf,
+		stakerPrivKeys,
+		stakerQuorum,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error building witness: %w", err)
+	}
+
+	spendStakeTxInfo.spendStakeTx.TxIn[0].Witness = witness
+
+	spendTxHash, err := app.wc.SendRawTransaction(spendStakeTxInfo.spendStakeTx, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot spend staking output (multisig). error sending tx: %w", err)
+	}
+
+	spendTxValue := btcutil.Amount(spendStakeTxInfo.spendStakeTx.TxOut[0].Value)
+
+	app.logger.WithFields(logrus.Fields{
+		"stakeValue":    btcutil.Amount(spendStakeTxInfo.fundingOutput.Value),
+		"spendTxHash":   spendTxHash,
+		"spendTxValue":  spendTxValue,
+		"fee":           spendStakeTxInfo.calculatedFee,
+		"stakerAddress": destAddress,
+		"destAddress":   destAddress,
+	}).Infof("Successfully sent transaction spending staking output (multisig)")
+
+	confEvent, err := app.notifier.RegisterConfirmationsNtfn(
+		spendTxHash,
+		spendStakeTxInfo.spendStakeTx.TxOut[0].PkScript,
+		SpendStakeTxConfirmations,
+		app.currentBestBlockHeight.Load(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("spend tx sent (multisig). error registering confirmation notification: %w", err)
+	}
+
+	go app.waitForSpendConfirmation(*stakingTxHash, confEvent)
+
+	return spendTxHash, &spendTxValue, nil
+}
+
 // ListActiveFinalityProviders fetches active finality providers using the given
 // pagination parameters.
 func (app *App) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.FinalityProvidersClientResponse, error) {
@@ -2064,9 +2928,9 @@ func (app *App) ListActiveFinalityProviders(limit uint64, offset uint64) (*cl.Fi
 }
 
 // UnbondStaking initiates whole unbonding process. Whole process looks like this:
-// 1. Unbonding data is build based on exsitng staking transaction data
-// 2. Unbonding data is sent to babylon as part of undelegete request
-// 3. If request is successful, unbonding transaction is registred in db and
+// 1. Unbonding data is built based on existing staking transaction data
+// 2. Unbonding data is sent to babylon as part of undelegate request
+// 3. If request is successful, unbonding transaction is registered in db and
 // staking transaction is marked as unbonded
 // 4. Staker program starts watching for unbodning transactions signatures from
 // covenant and finality provider
@@ -2118,6 +2982,78 @@ func (app *App) UnbondStaking(
 	go app.sendUnbondingTxToBtcTask(
 		&stakingTxHash,
 		stakerAddress,
+		di.BtcDelegation.StakingOutputIdx,
+		uint16(di.BtcDelegation.StakingTime),
+		tx,
+		fpBtcPubkeys,
+		undelegationInfo,
+	)
+
+	unbondingTxHash := undelegationInfo.UnbondingTransaction.TxHash()
+	return &unbondingTxHash, nil
+}
+
+// UnbondStakingMultisig initiates unbonding for a multisig staker configuration.
+// It builds the unbonding witness using in-process multisig keys rather than the wallet.
+// Whole process of unbonding staking transaction for a multisig staker is identical to a
+// single sig staker:
+// 1. Unbonding data is built based on existing staking transaction data
+// 2. Unbonding data is sent to babylon as part of undelegate request
+// 3. If request is successful, unbonding transaction is registered in db and
+// staking transaction is marked as unbonded
+// 4. Staker program starts watching for unbodning transactions signatures from
+// covenant and finality provider
+// 5. After gathering all signatures, unbonding transaction is sent to bitcoin
+// This function returns control to the caller after step 3. Later is up to the caller
+// to check what is state of unbonding transaction
+func (app *App) UnbondStakingMultisig(
+	stakingTxHash chainhash.Hash) (*chainhash.Hash, error) {
+	// check we are not shutting down
+	select {
+	case <-app.quit:
+		return nil, nil
+
+	default:
+	}
+
+	if app.config == nil || app.config.StakerMultisigConfig == nil || len(app.stakerKeyWIFs) == 0 {
+		return nil, fmt.Errorf("multisig staker keys are not configured")
+	}
+
+	stakerQuorum := app.config.StakerMultisigConfig.StakerThreshold
+	if stakerQuorum == 0 || int(stakerQuorum) > len(app.stakerKeyWIFs) {
+		return nil, fmt.Errorf("invalid staker multisig threshold %d for %d keys", stakerQuorum, len(app.stakerKeyWIFs))
+	}
+
+	// Check staking tx is managed by staker program
+	tx, err := app.txTracker.GetTransaction(&stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("cannont unbond (multisig): %w", err)
+	}
+
+	di, err := app.babylonClient.QueryBTCDelegation(&stakingTxHash)
+	if err != nil {
+		return nil, fmt.Errorf("error getting delegation info (multisig): %w", err)
+	}
+
+	if !di.BtcDelegation.Active {
+		return nil, fmt.Errorf("cannot unbond transaction which is not active")
+	}
+
+	fpBtcPubkeys, err := convertFpBtcPkToBtcPk(di.BtcDelegation.FpBtcPkList)
+	if err != nil {
+		return nil, fmt.Errorf("error converting fpBtcPkList to btcPkList (multisig): %w", err)
+	}
+
+	undelegationInfo, err := app.babylonClient.GetUndelegationInfo(di)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get undelegation info from babylon (multisig): %w", err)
+	}
+
+	// TODO: Move this to event handler to avoid somebody starting multiple unbonding routines
+	app.wg.Add(1)
+	go app.sendUnbondingTxToBtcTaskMultisig(
+		&stakingTxHash,
 		di.BtcDelegation.StakingOutputIdx,
 		uint16(di.BtcDelegation.StakingTime),
 		tx,

@@ -12,21 +12,22 @@ import (
 	"testing"
 	"time"
 
+	"github.com/babylonlabs-io/networks/parameters/parser"
+
 	"github.com/babylonlabs-io/btc-staker/babylonclient/keyringcontroller"
 	"github.com/babylonlabs-io/btc-staker/itest/containers"
 	"github.com/babylonlabs-io/btc-staker/itest/testutil"
-	"github.com/babylonlabs-io/networks/parameters/parser"
-
-	"github.com/babylonlabs-io/babylon/v4/btcstaking"
-	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
-	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
-
-	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
-	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
 	"github.com/babylonlabs-io/btc-staker/staker"
 	"github.com/babylonlabs-io/btc-staker/stakercfg"
 	"github.com/babylonlabs-io/btc-staker/types"
 	"github.com/babylonlabs-io/btc-staker/walletcontroller"
+
+	"github.com/babylonlabs-io/babylon/v4/btcstaking"
+	"github.com/babylonlabs-io/babylon/v4/crypto/bip322"
+	"github.com/babylonlabs-io/babylon/v4/testutil/datagen"
+	bbntypes "github.com/babylonlabs-io/babylon/v4/types"
+	btcctypes "github.com/babylonlabs-io/babylon/v4/x/btccheckpoint/types"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcjson"
@@ -598,7 +599,7 @@ func TestPopCreationTaprootAddress(t *testing.T) {
 	bitcoind := h.Start()
 	passphrase := "pass"
 	walletName := "test-wallet"
-	_ = h.CreateWallet(walletName, passphrase)
+	_ = h.CreateWalletWithDescriptor(walletName, passphrase, true)
 
 	rpcHost := fmt.Sprintf("127.0.0.1:%s", bitcoind.GetPort("18443/tcp"))
 	cfg, c := defaultStakerConfigAndBtc(t, walletName, passphrase, rpcHost)
@@ -772,7 +773,6 @@ func TestStakingUnbonding(t *testing.T) {
 
 	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
 	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
-	require.NoError(t, err)
 
 	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
 	require.NoError(t, err)
@@ -848,6 +848,100 @@ func TestStakingUnbonding(t *testing.T) {
 	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
 	// so at this point time lock should already have passed
 	tm.spendStakingTxWithHash(t, txHash)
+	tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
+	tm.waitForTxOutputSpent(t, unbondingTxHash)
+}
+
+// TestMultisigStakingUnbonding mirrors the single-sig unbond flow using multisig staker keys.
+func TestMultisigStakingUnbonding(t *testing.T) {
+	t.Parallel()
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+	// large staking time
+	stakingTime := uint16(1000)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, 100000, 1)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendMultisigStakingTxBTC(t, testStakingData)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	tm.insertCovenantSigForMultisigDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
+
+	// unbond staking transaction using multisig staker keys.
+	unbondResponse, err := tm.StakerClient.UnbondStakingMultisig(context.Background(), txHash.String())
+	require.NoError(t, err)
+	unbondingTxHash, err := chainhash.NewHashFromStr(unbondResponse.UnbondingTxHash)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		tx, err := tm.TestRpcBtcClient.GetRawTransaction(unbondingTxHash)
+		if err != nil {
+			return false
+		}
+		return tx != nil
+	}, 1*time.Minute, eventuallyPollTime)
+
+	block := tm.mineBlock(t)
+	require.Equal(t, 2, len(block.Transactions))
+	require.Equal(t, block.Transactions[1].TxHash(), *unbondingTxHash)
+
+	tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations, false)
+	tm.waitForUnbondingTxConfirmedOnBtc(t, txHash, unbondingTxHash)
+
+	require.Eventually(t, func() bool {
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
+		if err != nil {
+			return false
+		}
+		if len(withdrawableTransactionsResp.Transactions) != 1 {
+			return false
+		}
+
+		return true
+	}, 1*time.Minute, eventuallyPollTime)
+
+	// We can spend unbonding tx immediately as in e2e test, min unbonding time is 5 blocks and we locked it
+	// for 5 blocks, but to consider unbonding tx as confirmed we need to wait for 6 blocks
+	// so at this point time lock should already have passed
+	tm.spendStakingTxWithHashMultisig(t, txHash)
 	tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
 	tm.waitForTxOutputSpent(t, unbondingTxHash)
 }
@@ -1018,6 +1112,159 @@ func TestStakeExpansion(t *testing.T) {
 	require.True(t, expansionDelegation.BtcDelegation.Active)
 
 	// Verify the expansion delegation has the expected larger amount
+	require.True(t, expansionDelegation.BtcDelegation.TotalSat > originalDelegation.BtcDelegation.TotalSat)
+}
+
+// TestMultisigStakeExpansion mirrors TestStakeExpansion but uses multisig staking/expansion flow.
+func TestMultisigStakeExpansion(t *testing.T) {
+	t.Parallel()
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+
+	// large staking time
+	stakingTime := uint16(800)
+	originalStakingAmount := int64(50000)
+	expandedStakingAmount := int64(100000)
+
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, originalStakingAmount, 1)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	// Step 1: Create and activate initial multisig BTC delegation
+	originalTxHash := tm.sendMultisigStakingTxBTC(t, testStakingData)
+
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonPendingStatus)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+	tm.insertCovenantSigForMultisigDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{originalTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions))
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*originalTxHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, originalTxHash, staker.BabylonActiveStatus)
+
+	// Step 2: Send multisig stake expansion
+	fpKeys := make([]string, len(testStakingData.FinalityProviderBtcKeys))
+	for i, fpKey := range testStakingData.FinalityProviderBtcKeys {
+		fpKeys[i] = hex.EncodeToString(schnorr.SerializePubKey(fpKey))
+	}
+
+	expansionResp, err := tm.StakerClient.StakeExpandMultisig(
+		context.Background(),
+		tm.MinerAddr.String(),
+		expandedStakingAmount,
+		fpKeys,
+		int64(stakingTime),
+		originalTxHash.String(),
+	)
+	require.NoError(t, err)
+
+	expansionTxHash, err := chainhash.NewHashFromStr(expansionResp.TxHash)
+	require.NoError(t, err)
+
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonPendingStatus)
+
+	pendingDel, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pendingDel, 1)
+	require.NotNil(t, pendingDel[0].StkExp)
+
+	tm.insertCovenantSigForMultisigDelegation(t, pendingDel[0])
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonVerifiedStatus)
+
+	// stake expansion delegation should be in verified sate
+	verifiedDel, err := tm.BabylonClient.QueryVerifiedBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, verifiedDel, 1)
+	require.NotNil(t, verifiedDel[0].StkExp)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{expansionTxHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	expansionBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(expansionBlock.Transactions))
+
+	expansionHeaderBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&expansionBlock.Header)
+	expansionTxInclProof, err := btcctypes.SpvProofFromHeaderAndTransactions(&expansionHeaderBytes, txsToBytes(expansionBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&expansionBlock.Header})
+	require.NoError(t, err)
+
+	// Wait for confirmations on BTC
+	tm.mineNEmptyBlocks(t, staker.UnbondingTxConfirmations, true)
+	require.Eventually(t, func() bool {
+		res, err := tm.Sa.Wallet().TxVerbose(expansionTxHash)
+		if err != nil {
+			return false
+		}
+		return res.Confirmations >= staker.UnbondingTxConfirmations
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	// Report expansion transaction via MsgBTCUndelegate for the original delegation
+	rawStkExpTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(expansionTxHash)
+	require.NoError(t, err)
+	expansionMsgTx := rawStkExpTransaction.MsgTx()
+
+	var fundingTxs [][]byte
+	for _, txIn := range expansionMsgTx.TxIn {
+		rawTransaction, err := tm.TestRpcBtcClient.GetRawTransaction(&txIn.PreviousOutPoint.Hash)
+		require.NoError(t, err)
+
+		serializedTx, err := bbntypes.SerializeBTCTx(rawTransaction.MsgTx())
+		require.NoError(t, err)
+
+		fundingTxs = append(fundingTxs, serializedTx)
+	}
+
+	err = tm.BabylonClient.ReportUnbonding(
+		*originalTxHash,
+		expansionMsgTx,
+		expansionTxInclProof,
+		fundingTxs,
+	)
+	require.NoError(t, err)
+
+	tm.waitForStakingTxState(t, expansionTxHash, staker.BabylonActiveStatus)
+
+	originalDelegation, err := tm.BabylonClient.QueryBTCDelegation(originalTxHash)
+	require.NoError(t, err)
+	require.False(t, originalDelegation.BtcDelegation.Active)
+
+	expansionDelegation, err := tm.BabylonClient.QueryBTCDelegation(expansionTxHash)
+	require.NoError(t, err)
+	require.True(t, expansionDelegation.BtcDelegation.Active)
 	require.True(t, expansionDelegation.BtcDelegation.TotalSat > originalDelegation.BtcDelegation.TotalSat)
 }
 
@@ -1222,6 +1469,88 @@ func TestSpendExpiredStakingOutput(t *testing.T) {
 	tm.waitForTxOutputSpentAtIndex(t, txHash, di.BtcDelegation.StakingOutputIdx)
 }
 
+// TestMultisigSpendExpiredStakingOutput covers stake-multisig with a short timelock,
+// waits for expiry without unbonding, and spends the staking output via unstake-multisig.
+func TestMultisigSpendExpiredStakingOutput(t *testing.T) {
+	t.Parallel()
+	numMatureOutputs := uint32(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	tm := StartManager(t, ctx, numMatureOutputs)
+	defer tm.Stop(t, cancel)
+	tm.insertAllMinedBlocksToBabylon(t)
+
+	cl := tm.Sa.BabylonController()
+	params, err := cl.Params()
+	require.NoError(t, err)
+	stakingTime := params.MinStakingTime
+
+	// build finality providers and Babylon data as in single-sig tests.
+	testStakingData := tm.getTestStakingData(t, tm.WalletPubKey, stakingTime, 100000, 1)
+	tm.createAndRegisterFinalityProviders(t, testStakingData)
+
+	txHash := tm.sendMultisigStakingTxBTC(t, testStakingData)
+
+	// mine to reach pending/verified as usual.
+	go tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonPendingStatus)
+
+	pend, err := tm.BabylonClient.QueryPendingBTCDelegations()
+	require.NoError(t, err)
+	require.Len(t, pend, 1)
+
+	tm.insertCovenantSigForMultisigDelegation(t, pend[0])
+	tm.waitForStakingTxState(t, txHash, staker.BabylonVerifiedStatus)
+
+	require.Eventually(t, func() bool {
+		txFromMempool := retrieveTransactionFromMempool(t, tm.TestRpcBtcClient, []*chainhash.Hash{txHash})
+		return len(txFromMempool) == 1
+	}, eventuallyWaitTimeOut, eventuallyPollTime)
+
+	mBlock := tm.mineBlock(t)
+	require.Equal(t, 2, len(mBlock.Transactions)) // coinbase + staking tx
+
+	headerBytes := bbntypes.NewBTCHeaderBytesFromBlockHeader(&mBlock.Header)
+	proof, err := btcctypes.SpvProofFromHeaderAndTransactions(&headerBytes, txsToBytes(mBlock.Transactions), 1)
+	require.NoError(t, err)
+
+	_, err = tm.BabylonClient.InsertBtcBlockHeaders([]*wire.BlockHeader{&mBlock.Header})
+	require.NoError(t, err)
+
+	tm.mineNEmptyBlocks(t, params.ConfirmationTimeBlocks, true)
+
+	_, err = tm.BabylonClient.ActivateDelegation(
+		*txHash,
+		proof,
+	)
+	require.NoError(t, err)
+	tm.waitForStakingTxState(t, txHash, staker.BabylonActiveStatus)
+
+	blocksToExpire := uint32(stakingTime) + params.ConfirmationTimeBlocks + 1
+	tm.mineNEmptyBlocks(t, blocksToExpire, true)
+
+	require.Eventually(t, func() bool {
+		withdrawableTransactionsResp, err := tm.StakerClient.WithdrawableTransactions(context.Background(), nil, nil)
+		if err != nil {
+			return false
+		}
+		for _, tx := range withdrawableTransactionsResp.Transactions {
+			if tx.StakingTxHash == txHash.String() {
+				return true
+			}
+		}
+		return false
+	}, eventuallyTimeout, eventuallyPollTime)
+
+	_, _ = tm.spendStakingTxWithHashMultisig(t, txHash)
+
+	tm.mineNEmptyBlocks(t, staker.SpendStakeTxConfirmations, false)
+
+	di, err := tm.BabylonClient.QueryBTCDelegation(txHash)
+	require.NoError(t, err)
+	tm.waitForTxOutputSpentAtIndex(t, txHash, di.BtcDelegation.StakingOutputIdx)
+}
+
+// TestMultisigStakeExpansion mirrors TestStakeExpansion but uses multisig staking/expansion flow.
 func TestStakeExpansionWithConsolidation(t *testing.T) {
 	t.Parallel()
 	// need to have at least 300 block on testnet as only then segwit is activated.

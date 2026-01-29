@@ -2,18 +2,22 @@
 package admin
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path"
 
-	babylonApp "github.com/babylonlabs-io/babylon/v4/app"
-	"github.com/babylonlabs-io/btc-staker/stakercfg"
-	"github.com/babylonlabs-io/btc-staker/stakerdb"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/jessevdk/go-flags"
+	"github.com/urfave/cli"
+
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/go-bip39"
-	"github.com/jessevdk/go-flags"
-	"github.com/urfave/cli"
+
+	babylonApp "github.com/babylonlabs-io/babylon/v4/app"
+	"github.com/babylonlabs-io/btc-staker/stakercfg"
+	"github.com/babylonlabs-io/btc-staker/stakerdb"
 )
 
 // AdminCommands exposes the admin subcommands consumed by stakercli.
@@ -27,12 +31,14 @@ var AdminCommands = []cli.Command{
 			dumpCfgCommand,
 			createCosmosKeyringCommand,
 			migrateTrackedTransactionsCommand,
+			dumpStakerKeysCommand,
 		},
 	},
 }
 
 const (
 	configFileDirFlag = "config-file-dir"
+	configFileFlag    = "config-file"
 )
 
 var (
@@ -103,6 +109,56 @@ var (
 	defaultKeyName   = defaultBBNconfig.Key
 	defaultKeyDir    = defaultBBNconfig.KeyDirectory
 )
+
+var dumpStakerKeysCommand = cli.Command{
+	Name:      "dump-staker-keys",
+	ShortName: "dsk",
+	Usage:     "Print loaded staker private keys (hex) and pubkeys (x-only) from stakerd config",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  configFileFlag,
+			Usage: "Path to stakerd config file",
+			Value: defaultConfigPath,
+		},
+	},
+	Action: dumpStakerKeys,
+}
+
+func dumpStakerKeys(c *cli.Context) error {
+	cfgPath := c.String(configFileFlag)
+
+	cfg := stakercfg.DefaultConfig()
+	parser := flags.NewParser(&cfg, flags.Default)
+	if err := flags.NewIniParser(parser).ParseFile(cfgPath); err != nil {
+		return cli.NewExitError(fmt.Sprintf("failed to parse config: %v", err), 1)
+	}
+
+	cleanCfg, err := stakercfg.ValidateConfig(cfg)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("config validation failed: %v", err), 1)
+	}
+
+	keys := cleanCfg.StakerMultisigConfig.DecodedWIFs
+	if len(keys) == 0 {
+		fmt.Println("no staker keys configured")
+		return nil
+	}
+
+	fmt.Printf("staker threshold: %d\n", cleanCfg.StakerMultisigConfig.StakerThreshold)
+	fmt.Printf("staker keys (sorted by x-only pubkey): %d\n", len(keys))
+
+	for idx, w := range keys {
+		privHex := hex.EncodeToString(w.PrivKey.Serialize())
+		pubXOnly := hex.EncodeToString(schnorr.SerializePubKey(w.PrivKey.PubKey()))
+		orig := ""
+		if idx < len(cleanCfg.StakerMultisigConfig.RawWIFs) {
+			orig = cleanCfg.StakerMultisigConfig.RawWIFs[idx]
+		}
+		fmt.Printf("%d) priv(hex): %s pub(x-only): %s original_wif: %s\n", idx, privHex, pubXOnly, orig)
+	}
+
+	return nil
+}
 
 func createKey(name string, kr keyring.Keyring) (*keyring.Record, error) {
 	keyringAlgos, _ := kr.SupportedAlgorithms()
