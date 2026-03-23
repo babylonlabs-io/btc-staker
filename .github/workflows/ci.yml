@@ -19,7 +19,11 @@ jobs:
       run-lint: true
 
   docker_pipeline:
-    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@92817762adb32ebbe832abfebe98efa09f7072e2 #v0.13.5
+    permissions:
+      contents: read         # Required by reusable workflow
+      id-token: write        # Required for AWS OIDC
+      security-events: write # Required for Trivy SARIF uploads
+    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@d2299e834fcbaca4bf2db043a2939798043d5951 # v0.16.1
     secrets: inherit
     with:
       publish: false
