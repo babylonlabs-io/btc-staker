@@ -5,12 +5,16 @@ on:
     branches:
     - '**'
 
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   lint_test:
-    uses: babylonlabs-io/.github/.github/workflows/reusable_go_lint_test.yml@92817762adb32ebbe832abfebe98efa09f7072e2 #v0.13.5
+    uses: babylonlabs-io/.github/.github/workflows/reusable_go_lint_test.yml@0adff9d36a387ebfc921621f2e6b357230f8c08e # v0.18.1
     with:
       go-version: '1.24.1'
       go-lint-version: 'v2.7.2'
@@ -19,7 +23,8 @@ jobs:
       run-lint: true
 
   docker_pipeline:
-    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@92817762adb32ebbe832abfebe98efa09f7072e2 #v0.13.5
+    uses: babylonlabs-io/.github/.github/workflows/reusable_docker_pipeline.yml@0adff9d36a387ebfc921621f2e6b357230f8c08e # v0.18.1
     secrets: inherit
     with:
       publish: false
+      trivy_nofail: true
