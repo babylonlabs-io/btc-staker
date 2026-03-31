@@ -1,4 +1,4 @@
-FROM golang:1.23.8 AS builder
+FROM golang:1.24.13 AS builder
 
 # Install cli tools for building and final image
 RUN apt-get update && apt-get install -y --no-install-recommends make git bash gcc curl jq && rm -rf /var/lib/apt/lists/*
