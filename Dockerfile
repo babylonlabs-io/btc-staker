@@ -23,7 +23,7 @@ RUN BUILD_TAGS=netgo \
 FROM debian:bookworm-slim AS run
 
 RUN addgroup --gid 1138 --system btcstaker && adduser --uid 1138 --system --home /home/btcstaker btcstaker
-RUN apt-get update && apt-get install -y --no-install-recommends bash curl jq wget && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends bash curl jq wget ca-certificates && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/go.mod /tmp
