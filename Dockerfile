@@ -32,7 +32,7 @@ RUN WASMVM_VERSION=$(grep github.com/CosmWasm/wasmvm /tmp/go.mod | cut -d' ' -f2
     -O "/lib/libwasmvm.$(uname -m).so" && \
     # verify checksum
     wget -q "https://github.com/CosmWasm/wasmvm/releases/download/${WASMVM_VERSION}/checksums.txt" -O /tmp/checksums.txt && \
-    sha256sum "/lib/libwasmvm.$(uname -m).so" | grep "$(cat /tmp/checksums.txt | grep "libwasmvm.$(uname -m)" | cut -d ' ' -f 1)"
+    sha256sum "/lib/libwasmvm.$(uname -m).so" | grep "$(grep "libwasmvm.$(uname -m)" /tmp/checksums.txt | cut -d ' ' -f 1)"
 RUN rm -f /tmp/go.mod
 
 COPY --from=builder /go/src/github.com/babylonlabs-io/btc-staker/build/stakerd /bin/stakerd
