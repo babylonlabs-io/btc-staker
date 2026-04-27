@@ -4,7 +4,6 @@ package testutil
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -92,15 +91,10 @@ func AppRunCreatePhase1StakingTxWithParams(r *rand.Rand, t *testing.T, app *cli.
 }
 
 // AppRunStakeFromPhase1 runs the daemon stake-from-phase1 command.
-func AppRunStakeFromPhase1(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) error {
+func AppRunStakeFromPhase1(_ *rand.Rand, _ *testing.T, app *cli.App, arguments []string) error {
 	args := []string{"stakercli", "daemon", "stake-from-phase1"}
 	args = append(args, arguments...)
-	output := appRunWithOutput(r, t, app, args)
-
-	if len(output) > 0 {
-		return errors.New(output)
-	}
-	return nil
+	return app.Run(args)
 }
 
 func appRunWithOutput(r *rand.Rand, t *testing.T, app *cli.App, arguments []string) string {

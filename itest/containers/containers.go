@@ -89,6 +89,8 @@ func (m *Manager) ExecCmd(t *testing.T, containerName string, command []string) 
 	require.Eventually(
 		t,
 		func() bool {
+			outBuf.Reset()
+			errBuf.Reset()
 			exec, err := m.pool.Client.CreateExec(docker.CreateExecOptions{
 				Context:      ctx,
 				AttachStdout: true,
