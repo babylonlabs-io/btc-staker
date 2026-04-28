@@ -427,8 +427,6 @@ func StartManagerStakerApp(
 	stakerClient, err := daemon.NewStakerServiceJSONRPCClient("tcp://" + addressString)
 	require.NoError(t, err)
 
-	fmt.Printf("\n log config %+v", cfg)
-
 	return &TestManagerStakerApp{
 		Config:           cfg,
 		Db:               dbbackend,
