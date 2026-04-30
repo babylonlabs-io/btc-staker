@@ -1,4 +1,6 @@
 // Package types provides common type definitions for the staker daemon.
+//
+//nolint:revive
 package types
 
 import "fmt"

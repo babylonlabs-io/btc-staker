@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/urfave/cli"
+
 	"github.com/babylonlabs-io/btc-staker/cmd"
 	"github.com/babylonlabs-io/btc-staker/cmd/stakercli/helpers"
 	dc "github.com/babylonlabs-io/btc-staker/stakerservice/client"
-	"github.com/urfave/cli"
 )
 
 // DaemonCommands is the set of stakercli commands that require a running daemon.
@@ -25,13 +26,17 @@ var DaemonCommands = []cli.Command{
 			listOutputsCmd,
 			babylonFinalityProvidersCmd,
 			stakeCmd,
+			stakeMultisigCmd,
 			stakeExpansionCmd,
+			stakeExpansionMultisigCmd,
 			consolidateUtxosCmd,
 			unstakeCmd,
+			unstakeMultisigCmd,
 			stakingDetailsCmd,
 			listStakingTransactionsCmd,
 			withdrawableTransactionsCmd,
 			unbondCmd,
+			unbondMultisigCmd,
 			stakeFromPhase1Cmd,
 		},
 	},
@@ -43,6 +48,7 @@ const (
 	fpPksFlag                  = "finality-providers-pks"
 	stakingTransactionHashFlag = "staking-transaction-hash"
 	stakerAddressFlag          = "staker-address"
+	fundingAddressFlag         = "funding-address"
 	targetAmountFlag           = "target-amount"
 )
 
@@ -132,6 +138,41 @@ var stakeCmd = cli.Command{
 	Action: stake,
 }
 
+var stakeMultisigCmd = cli.Command{
+	Name:      "stake-multisig",
+	ShortName: "stm",
+	Usage:     "Stake an amount of BTC to Babylon using multisig staker keys loaded in stakerd",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "Full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name: fundingAddressFlag,
+			// TODO: should we merge funding address and the staker address into one for multisig?
+			Usage:    "BTC funding/change address (must be controlled by the wallet configured in stakerd)",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingAmountFlag,
+			Usage:    "Staking amount in satoshis",
+			Required: true,
+		},
+		cli.StringSliceFlag{
+			Name:     fpPksFlag,
+			Usage:    "BTC public keys of the finality providers in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingTimeBlocksFlag,
+			Usage:    "Staking time in BTC blocks",
+			Required: true,
+		},
+	},
+	Action: stakeMultisig,
+}
+
 var stakeExpansionCmd = cli.Command{
 	Name:      "stake-expand",
 	ShortName: "stxp",
@@ -169,6 +210,45 @@ var stakeExpansionCmd = cli.Command{
 		},
 	},
 	Action: stakeExpand,
+}
+
+var stakeExpansionMultisigCmd = cli.Command{
+	Name:      "stake-expand-multisig",
+	ShortName: "stxpm",
+	Usage:     "Stakes an amount of BTC to Babylon using multisig staker keys and a previous active BTC staking tx as input",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     fundingAddressFlag,
+			Usage:    "BTC funding/change address (must be controlled by the wallet configured in stakerd)",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingAmountFlag,
+			Usage:    "Staking amount in satoshis",
+			Required: true,
+		},
+		cli.StringSliceFlag{
+			Name:     fpPksFlag,
+			Usage:    "BTC public keys of the finality providers in hex",
+			Required: true,
+		},
+		cli.Int64Flag{
+			Name:     helpers.StakingTimeBlocksFlag,
+			Usage:    "Staking time in BTC blocks",
+			Required: true,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of previous staking transaction in bitcoin hex format which is currently an active BTC delegation",
+			Required: true,
+		},
+	},
+	Action: stakeExpandMultisig,
 }
 
 var consolidateUtxosCmd = cli.Command{
@@ -244,6 +324,25 @@ var unstakeCmd = cli.Command{
 	Action: unstake,
 }
 
+var unstakeMultisigCmd = cli.Command{
+	Name:      "unstake-multisig",
+	ShortName: "ustm",
+	Usage:     "Spends staking transaction using multisig staker keys configured in stakerd; sends funds back to the funding/change address",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: unstakeMultisig,
+}
+
 var unbondCmd = cli.Command{
 	Name:      "unbond",
 	ShortName: "ubd",
@@ -261,6 +360,25 @@ var unbondCmd = cli.Command{
 		},
 	},
 	Action: unbond,
+}
+
+var unbondMultisigCmd = cli.Command{
+	Name:      "unbond-multisig",
+	ShortName: "ubdm",
+	Usage:     "initiates unbonding flow using multisig staker keys",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  helpers.StakingDaemonAddressFlag,
+			Usage: "full address of the staker daemon in format tcp:://<host>:<port>",
+			Value: helpers.DefaultStakingDaemonAddress,
+		},
+		cli.StringFlag{
+			Name:     stakingTransactionHashFlag,
+			Usage:    "Hash of original staking transaction in bitcoin hex format",
+			Required: true,
+		},
+	},
+	Action: unbondMultisig,
 }
 
 var stakingDetailsCmd = cli.Command{
@@ -430,6 +548,30 @@ func stake(ctx *cli.Context) error {
 	return nil
 }
 
+func stakeMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	fundingAddress := ctx.String(fundingAddressFlag)
+	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
+	fpPks := ctx.StringSlice(fpPksFlag)
+	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+
+	results, err := client.StakeMultisig(sctx, fundingAddress, stakingAmount, fpPks, stakingTimeBlocks)
+	if err != nil {
+		return fmt.Errorf("failed to stake multisig: %w", err)
+	}
+
+	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
 // stakeExpand creates a new btc staking transaction from an previous
 // active BTC staking delegation and another new input.
 func stakeExpand(ctx *cli.Context) error {
@@ -457,6 +599,33 @@ func stakeExpand(ctx *cli.Context) error {
 	}
 
 	helpers.PrintRespJSON(results)
+
+	return nil
+}
+
+// stakeExpandMultisig creates a new btc staking transaction from an previous
+// active BTC staking delegation and another new input by using multisig staker keys
+func stakeExpandMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	fundingAddress := ctx.String(fundingAddressFlag)
+	stakingAmount := ctx.Int64(helpers.StakingAmountFlag)
+	fpPks := ctx.StringSlice(fpPksFlag)
+	stakingTimeBlocks := ctx.Int64(helpers.StakingTimeBlocksFlag)
+	prevActiveStkTxHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.StakeExpandMultisig(sctx, fundingAddress, stakingAmount, fpPks, stakingTimeBlocks, prevActiveStkTxHash)
+	if err != nil {
+		return fmt.Errorf("failed to stake expand (multisig): %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
 
 	return nil
 }
@@ -543,7 +712,28 @@ func unstake(ctx *cli.Context) error {
 	return nil
 }
 
-// unbondStaking unbonds a staking transaction.
+func unstakeMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.SpendStakingTransactionMultisig(sctx, stakingTransactionHash)
+	if err != nil {
+		return fmt.Errorf("failed to spend staking transaction (multisig): %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
+
+	return nil
+}
+
+// unbond unbonds a staking transaction.
 func unbond(ctx *cli.Context) error {
 	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
 	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
@@ -558,6 +748,28 @@ func unbond(ctx *cli.Context) error {
 	result, err := client.UnbondStaking(sctx, stakingTransactionHash)
 	if err != nil {
 		return fmt.Errorf("failed to unbond staking: %w", err)
+	}
+
+	helpers.PrintRespJSON(result)
+
+	return nil
+}
+
+// unbondMultisig unbonds a staking transaction using multisig staker keys.
+func unbondMultisig(ctx *cli.Context) error {
+	daemonAddress := ctx.String(helpers.StakingDaemonAddressFlag)
+	client, err := NewStakerServiceJSONRPCClient(daemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to create staker service JSON-RPC client: %w", err)
+	}
+
+	sctx := context.Background()
+
+	stakingTransactionHash := ctx.String(stakingTransactionHashFlag)
+
+	result, err := client.UnbondStakingMultisig(sctx, stakingTransactionHash)
+	if err != nil {
+		return fmt.Errorf("failed to unbond staking (multisig): %w", err)
 	}
 
 	helpers.PrintRespJSON(result)
